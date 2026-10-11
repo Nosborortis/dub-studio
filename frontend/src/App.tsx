@@ -629,10 +629,11 @@ function StatusBar() {
   const progress = useStore((s) => s.progress);
   const rendering = useStore((s) => s.rendering);
   const jobSteps = useStore((s) => s.jobSteps);
+  const firstRun = useStore((s) => s.stage === "setup");
   const [open, setOpen] = useState(false);
   const last = activities[activities.length - 1];
   const busy = rendering || progress.pct != null || (!!progress.stage && !["", "done", "error"].includes(progress.stage));
-  const text = busy ? (stageLabel(progress.stage, t, jobSteps) || progress.msg || last?.text || t("status.working")) : (last?.text || t("status.idle"));
+  const text = busy ? (stageLabel(progress.stage, t, jobSteps) || progress.msg || last?.text || t("status.working")) : (last?.text || t(firstRun ? "status.setupNeeded" : "status.idle"));
   const errored = !busy && last?.kind === "error";
   const fmt = (ms: number) => new Date(ms).toLocaleTimeString();
   return (
@@ -4040,6 +4041,11 @@ const QUANT_GROUP: Record<string, string> = {
 const preselect = (s: SetupStatus) =>
   new Set(s.components.filter((c) => c.delivery === "download" && !c.installed && c.requirement !== "optional").map((c) => c.id));
 
+/** Обязательные компоненты, без которых «Первый запуск» не пускает дальше, — по именам, для подсказки. */
+function owedNames(s: SetupStatus): string {
+  return s.components.filter((c) => c.requirement === "required" && !c.installed && c.delivery !== "external").map((c) => c.name).join(", ");
+}
+
 function FirstRun() {
   const { t } = useTranslation();
   // Галочка статистики «Первого запуска»: включена, уходит с первой закачкой или «Продолжить» (выбор увиден).
@@ -4053,11 +4059,12 @@ function FirstRun() {
   const [err, setErr] = useState<string | null>(null);
   // Закачка идёт фоном на сервере: прогресс — опросом статуса, переживает перезагрузку окна и приложения.
   const onSettled = (job: DownloadJob, s: SetupStatus) => {
-    if (job.status === "completed") useStore.getState().pushActivity(t(s.ready ? "setup.ready" : "setup.done"), "done");
+    if (job.status === "completed") useStore.getState().pushActivity(s.ready ? t("setup.ready") : t("setup.owed", { list: owedNames(s) }), "done");
     if (job.status === "completed" && s.ready) { setStage("empty"); playSfx("success"); }   // всё скачано -> сразу на стартовый экран
     else if (job.status === "failed") useStore.getState().pushActivity(`${errText(job.errorCode)} · ${job.error ?? ""}`, "error");
   };
   const { status, error: statusErr, refresh, adopt, downloading: busy } = useSetupStatus(onSettled);
+  const owed = status && !status.ready ? owedNames(status) : "";
   const sel = picked ?? (status ? preselect(status) : new Set<string>());
   const setSel = (f: (prev: Set<string>) => Set<string>) => setPicked(f(sel));
   const active = status?.active ?? null;
@@ -4086,7 +4093,7 @@ function FirstRun() {
   const selectedSpace = selectedComps.reduce((a, c) => a + c.spaceNeeded, 0);
   const noSpace = status?.freeBytes != null && selectedSpace > status.freeBytes;
 
-  const reqLabel = (r: string) => (r === "required" ? t("setup.required") : t("setup.recommended"));
+  const reqLabel = (r: string) => t(r === "required" ? "setup.required" : r === "recommended" ? "setup.recommended" : "setup.optional");
   const deliveryNote = (c: SetupComponent) =>
     c.delivery === "bundled" ? t("setup.reinstallHint") : c.delivery === "external" ? t("setup.external") : "";
   const GROUP_LABEL: Record<string, string> = { higgs: t("setup.grpHiggs"), gemma: t("setup.grpGemma"), parakeet: t("setup.grpParakeet"), roformer: t("setup.grpRoformer") };
@@ -4265,6 +4272,7 @@ function FirstRun() {
               <Check size={16} />{t("setup.continue")}</button>
           )}
         </div>
+        {owed && !busy && <div className="mt-3 text-[13px] leading-snug text-[var(--color-text)]">{t("setup.owed", { list: owed })}</div>}
         <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-[var(--color-muted)]">
           <label className="inline-flex items-center gap-2 cursor-pointer">
             <input type="checkbox" className="h-4 w-4 accent-[var(--color-accent)]" checked={telemetryOn} onChange={(e) => { setTelemetryOn(e.target.checked); setTelemetry(e.target.checked, true).catch((err: Error) => console.warn("[hub] the statistics choice was not saved:", err.message)); }} />

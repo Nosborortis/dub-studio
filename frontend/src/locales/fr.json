@@ -302,6 +302,7 @@
   "status": {
     "working": "En cours…",
     "idle": "Prêt",
+    "setupNeeded": "Composants à télécharger",
     "log": "Journal d'activité",
     "clear": "Effacer",
     "backendOffline": "backend hors ligne"
@@ -534,8 +535,8 @@
   },
   "setup": {
     "title": "Premier lancement",
-    "subtitle": "Dub Studio a besoin de quelques composants avant le premier doublage. Tout le nécessaire est déjà coché — il suffit d’appuyer sur « Télécharger ».",
-    "download": "Tout télécharger",
+    "subtitle": "Dub Studio a besoin de quelques composants avant le premier doublage. Tout le nécessaire est déjà coché — il suffit d’appuyer sur « Télécharger la sélection » en bas.",
+    "download": "Télécharger la sélection",
     "downloadOne": "Télécharger",
     "cancel": "Annuler",
     "installed": "Installé",
@@ -543,6 +544,7 @@
     "downloading": "Téléchargement…",
     "required": "Obligatoire",
     "recommended": "Recommandé",
+    "optional": "Facultatif",
     "bundled": "Fourni avec l'application",
     "external": "Système",
     "driverMissing": "Pilote NVIDIA non détecté",
@@ -552,6 +554,7 @@
     "totalToDownload": "À télécharger",
     "reinstallHint": "Fourni avec l'application — réinstallez-la s'il manque",
     "done": "Terminé",
+    "owed": "Pour commencer, il reste à télécharger : {{list}}.",
     "error": "Erreur",
     "pickNoteTitle": "Un quant par modèle.",
     "pickNote": "Le nécessaire est déjà coché. Les quants sont des variantes du même modèle (OU) : quant plus élevé = meilleure qualité et plus lourd, plus bas = plus léger. Pas besoin de tout télécharger.",

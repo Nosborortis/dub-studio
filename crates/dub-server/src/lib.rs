@@ -33,6 +33,7 @@ mod google_tts;
 mod guard;
 mod hub;
 pub use hub::flush_on_exit as flush_hub_on_exit;
+pub use models::apply_faces_backend;
 mod hw;
 mod job_store;
 mod jobs;
@@ -663,10 +664,7 @@ async fn capabilities(State(st): State<AppState>) -> Json<Value> {
 }
 
 fn which_ffmpeg() -> bool {
-    let name = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
-    std::env::var_os("PATH")
-        .map(|paths| std::env::split_paths(&paths).any(|dir| dir.join(name).is_file()))
-        .unwrap_or(false)
+    setup::ffmpeg_on_path()
 }
 
 // ─── /setup/status ; /setup/download ; /setup/cancel ; /setup/remove ; /setup/open-models ───────────

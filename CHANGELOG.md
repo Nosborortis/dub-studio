@@ -4,6 +4,16 @@ What changed, newest first. Dates are release dates; the app is versioned by its
 build. Every change a user can see is written here in the commit that makes it, and the
 release notes on GitHub are taken from the release's section.
 
+## 2026-10-11 — 4.2.2
+
+### Fixed
+
+- **The first-run screen accepts the variant you pick.** Choosing Parakeet Ultra (or another quant of a model) instead of the default no longer leaves the screen waiting for the default after the download ([#26](https://github.com/timoncool/dub-studio/issues/26)). The screen now says in so many words what is still needed to start, the header no longer says "Ready" before anything is downloaded, optional parts are marked optional instead of recommended, the button says what it downloads, and every part is described by what it does for you instead of by its technical name.
+- **Translation downloads its Gemma when it is missing**, with progress in the same job, instead of failing after the whole video was transcribed.
+- **ffprobe is checked with ffmpeg.** An ffmpeg found on the system without ffprobe beside it no longer counts as installed: the studio downloads its own pair, and analysis no longer stops with "ffprobe not found". A failing ffprobe now says why, and a container without a duration is measured from its streams.
+- **Subtitles burn on any driver.** The bundled ffmpeg encodes on the graphics card only from NVIDIA driver 610; with an older driver, or with the studio running on the processor, the video is encoded on the processor and the render log says why.
+- **Character casting runs on the graphics card** when the studio does: face detection, face and voice recognition are three to nine times faster, with the same results.
+
 ## 2026-10-10 — 4.2.1
 
 ### Added

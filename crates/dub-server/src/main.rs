@@ -46,6 +46,7 @@ async fn main() -> anyhow::Result<()> {
     dub_server::set_ort_dylib_env(&repo_root, &exe_dir);
 
     let state = AppState::new(&repo_root);
+    dub_server::apply_faces_backend(&state.models_root);
     tracing::info!(
         "dub-server {}: repo_root={}, workspace={}, web_root={:?}",
         service::app_version(),

@@ -143,7 +143,10 @@ impl Localize for CaptionsError {
             CaptionsError::Spawn(error) => t!("common-ffmpeg-start", error = error.clone()),
             CaptionsError::Wait(error) => t!("captions-ffmpeg-wait", error = error.clone()),
             CaptionsError::Timeout { secs, tail } => t!("captions-ffmpeg-timeout", secs = *secs, tail = tail.clone()),
-            CaptionsError::BurnFailed { tail } => t!("captions-burn-failed", tail = tail.clone()),
+            CaptionsError::BurnFailed { tail } => match nvenc_driver_needed(tail) {
+                Some(need) => t!("captions-nvenc-driver-old", need = need),
+                None => t!("captions-burn-failed", tail = tail.clone()),
+            },
             CaptionsError::FrameFailed { tail } => t!("captions-frame-failed", tail = tail.clone()),
         }
     }
@@ -290,5 +293,24 @@ mod tests {
 
         crate::i18n::set_language("zh").unwrap();
         assert!(!Reject::Echo.localize().chars().any(|c| ('\u{0400}'..='\u{04FF}').contains(&c)));
+    }
+}
+
+/// ffmpeg отказывает в NVENC строкой «...nvidia driver for nvenc is 610.00 or newer»: версия драйвера,
+/// которой не хватает, — чтобы сказать человеку, что обновить, а не показывать хвост лога.
+fn nvenc_driver_needed(tail: &str) -> Option<String> {
+    let lower = tail.to_ascii_lowercase();
+    let at = lower.find("driver for nvenc is ")? + "driver for nvenc is ".len();
+    let version: String = lower[at..].chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+    (!version.is_empty() && lower[at + version.len()..].trim_start().starts_with("or newer")).then_some(version)
+}
+
+#[cfg(test)]
+mod nvenc_tests {
+    #[test]
+    fn an_old_driver_for_nvenc_names_the_version_needed() {
+        let tail = "[h264_nvenc] The minimum required Nvidia driver for nvenc is 610.00 or newer [vost#0:0/h264_nvenc] Error while opening encoder";
+        assert_eq!(super::nvenc_driver_needed(tail).as_deref(), Some("610.00"));
+        assert_eq!(super::nvenc_driver_needed("Error while opening encoder"), None);
     }
 }

@@ -294,6 +294,7 @@
   "status": {
     "working": "处理中…",
     "idle": "就绪",
+    "setupNeeded": "需要下载组件",
     "log": "活动日志",
     "clear": "清除",
     "backendOffline": "后端不可用"
@@ -524,8 +525,8 @@
   },
   "setup": {
     "title": "首次运行",
-    "subtitle": "首次配音前，Dub Studio 需要几个组件。所需内容已全部勾选——只需点击“下载”。",
-    "download": "全部下载",
+    "subtitle": "首次配音前，Dub Studio 需要几个组件。所需内容已全部勾选——只需点击下方的“下载所选”。",
+    "download": "下载所选",
     "downloadOne": "下载",
     "cancel": "取消",
     "installed": "已安装",
@@ -533,6 +534,7 @@
     "downloading": "下载中…",
     "required": "必需",
     "recommended": "推荐",
+    "optional": "可选",
     "bundled": "随应用附带",
     "external": "系统",
     "driverMissing": "未检测到 NVIDIA 驱动",
@@ -542,6 +544,7 @@
     "totalToDownload": "待下载",
     "reinstallHint": "随应用附带——如缺失请重新安装应用",
     "done": "完成",
+    "owed": "开始之前还需要下载：{{list}}。",
     "error": "错误",
     "pickNoteTitle": "每个模型选一个量化。",
     "pickNote": "需要的已勾选。量化是同一模型的变体（可选其一）：量化越高质量越好也越重，越低越轻。无需全部下载。",

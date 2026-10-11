@@ -273,7 +273,7 @@ mod platform {
         files: &[
             FileSpec { url: GH_FFMPEG, dest_rel: "tools/ffmpeg/_ffmpeg.zip", size: 170_732_198, sha256: "b4da332540eaebc6939181b59e267f163dd57407ef6596f7f3452845921d1d91", extract: Extract::Pick },
         ],
-        markers: &[Marker { rel: "tools/ffmpeg/ffmpeg.exe", expect: 0 }],
+        markers: &[Marker { rel: "tools/ffmpeg/ffmpeg.exe", expect: 0 }, Marker { rel: "tools/ffmpeg/ffprobe.exe", expect: 0 }],
     };
 
     pub const YTDLP: Parts = Parts {
@@ -404,7 +404,7 @@ mod platform {
         files: &[
             FileSpec { url: "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-08-31-13-27/ffmpeg-N-126342-gf88b741dbf-linux64-gpl.tar.xz", dest_rel: "tools/ffmpeg/_ffmpeg.tar.xz", size: 128_065_756, sha256: "d1cf19f669510448f18a4cffcdbd8fa9592ee7c15c92feb5b96ad7e9ccc30114", extract: Extract::Pick },
         ],
-        markers: &[Marker { rel: "tools/ffmpeg/ffmpeg", expect: 0 }],
+        markers: &[Marker { rel: "tools/ffmpeg/ffmpeg", expect: 0 }, Marker { rel: "tools/ffmpeg/ffprobe", expect: 0 }],
     };
 
     pub const YTDLP: Parts = Parts {
@@ -1262,12 +1262,13 @@ fn write_record(repo_root: &Path, f: &FileSpec, written: &[PathBuf]) -> Result<(
     std::fs::rename(&tmp, &path).map_err(|e| DlError::new("io", t!("common-write", what = path.display().to_string(), error = e.to_string())))
 }
 
-/// ffmpeg доступен в системном PATH? (Command::new("ffmpeg") найдёт его при рендере.)
-fn ffmpeg_on_path() -> bool {
-    let name = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
-    std::env::var_os("PATH")
-        .map(|paths| std::env::split_paths(&paths).any(|dir| dir.join(name).is_file()))
-        .unwrap_or(false)
+/// ffmpeg и ffprobe доступны в системном PATH? Студия зовёт оба по имени, а ffmpeg без ffprobe рядом
+/// валит анализ на первом же замере длительности.
+pub(crate) fn ffmpeg_on_path() -> bool {
+    let names: &[&str] = if cfg!(windows) { &["ffmpeg.exe", "ffprobe.exe"] } else { &["ffmpeg", "ffprobe"] };
+    let Some(paths) = std::env::var_os("PATH") else { return false };
+    let dirs: Vec<PathBuf> = std::env::split_paths(&paths).collect();
+    names.iter().all(|name| dirs.iter().any(|dir| dir.join(name).is_file()))
 }
 
 /// Место под докачку одного файла: чего ещё не занял его .part (под докачку по Range он сразу занимает полный
@@ -1612,6 +1613,20 @@ fn fit_to_vram(comps: &mut [ComponentStatus], total: u64) {
     }
 }
 
+/// Варианты одной модели (`parakeet`, `parakeet-ultra`, ...) взаимозаменяемы: скачанный вариант закрывает
+/// группу, и обязательный по умолчанию больше не держит готовность — иначе выбор юзера на первом запуске
+/// упирается в докачку варианта, который он не выбирал.
+fn installed_variant_covers_group(comps: &mut [ComponentStatus]) {
+    let group = |id: &str| id.split('-').next().unwrap_or(id).to_string();
+    let covered: std::collections::BTreeSet<String> =
+        comps.iter().filter(|c| c.vram > 0 && c.installed).map(|c| group(&c.id)).collect();
+    for c in comps.iter_mut() {
+        if c.vram > 0 && !c.installed && c.requirement == Requirement::Required && covered.contains(&group(&c.id)) {
+            c.requirement = Requirement::Optional;
+        }
+    }
+}
+
 pub fn setup_status(repo_root: &Path) -> SetupStatus {
     let mut comps: Vec<ComponentStatus> = manifest()
         .iter()
@@ -1654,6 +1669,7 @@ pub fn setup_status(repo_root: &Path) -> SetupStatus {
     if backend == "gpu" {
         fit_to_vram(&mut comps, crate::hw::total_vram());
     }
+    installed_variant_covers_group(&mut comps);
     // ready = всё СКАЧИВАЕМОЕ/бандл-обязательное на месте. External (драйвер NVIDIA) НЕ гейтит: без NVIDIA
     // приложение работает на CPU/в облаке, а старый драйвер — предупреждение на экране, а не запертый вход.
     let ready = comps
@@ -2919,6 +2935,23 @@ mod tests {
 
     fn required(comps: &[ComponentStatus]) -> Vec<&str> {
         comps.iter().filter(|c| c.requirement == Requirement::Required).map(|c| c.id.as_str()).collect()
+    }
+
+    #[test]
+    fn a_downloaded_variant_stands_for_its_model_on_the_first_run() {
+        let mut comps = vec![
+            model("parakeet", 1.1, Requirement::Required),
+            model("parakeet-ultra", 2.7, Requirement::Optional),
+            model("gemma", 8.5, Requirement::Required),
+            model("higgs-engine", 0.0, Requirement::Required),
+        ];
+        comps[1].installed = true;
+        installed_variant_covers_group(&mut comps);
+        assert_eq!(required(&comps), ["gemma", "higgs-engine"], "ultra was picked, the int8 default is no longer owed");
+
+        let mut comps = models();
+        installed_variant_covers_group(&mut comps);
+        assert_eq!(required(&comps), ["higgs", "gemma", "higgs-engine"], "nothing downloaded keeps every default");
     }
 
     #[test]

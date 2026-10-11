@@ -51,6 +51,28 @@ fn fill_ref_texts(
 }
 
 /// Пути к моделям/движкам для рендера (резолвятся из AppState).
+/// Скачиваемый студией ffmpeg собран под NVENC SDK 13.1: он открывается только на этом драйвере и новее —
+/// это выше 580, которых хватает CUDA-стадиям студии.
+const NVENC_MIN_DRIVER: u32 = 610;
+
+/// Видео кодируется на видеокарте, только когда студия работает на ней и драйвер открывает NVENC; иначе — на
+/// процессоре, и причина уходит в журнал рендера.
+fn nvenc_encoder(models_root: &std::path::Path) -> Result<(), String> {
+    if crate::models::stage_backend(models_root, "local_backend") != "gpu" {
+        return Err(t!("render-encode-cpu-mode"));
+    }
+    let driver = crate::hw::gpu_report().driver_version;
+    let major = driver.as_deref().and_then(|v| v.split('.').next()).and_then(|v| v.trim().parse::<u32>().ok());
+    match major {
+        Some(major) if major < NVENC_MIN_DRIVER => Err(t!(
+            "render-encode-cpu-driver",
+            have = driver.unwrap_or_default(),
+            need = NVENC_MIN_DRIVER.to_string()
+        )),
+        _ => Ok(()),
+    }
+}
+
 pub struct RenderPaths {
     pub input: PathBuf,        // исходное видео
     pub work_dir: PathBuf,     // workspace/<pid>
@@ -309,6 +331,11 @@ pub fn run(
         let mut blur_boxes = collect_blur_boxes(proj);
         blur_boxes.extend(sub_covers.iter().map(cover_to_blur)); // блюр-подложка ПОД нашим текстом
         let captioned = wd.join("captioned.mp4");
+        let nvenc = nvenc_encoder(&paths.models_root);
+        if let Err(why) = &nvenc {
+            emit(progress, "burn", why);
+        }
+        let nvenc = nvenc.is_ok();
         dub_captions::burn(
             &paths.input,
             &ass_path,
@@ -316,8 +343,8 @@ pub fn run(
             &blur_boxes,
             Some((vw, vh)),
             proj.render.blur,
-            true, // gpu_encode (NVENC)
-            true, // gpu_decode
+            nvenc, // gpu_encode (NVENC)
+            nvenc, // gpu_decode
             proj.render.burn_cq,
             Some(&src_codec),
             proj.render.blur_sigma,
