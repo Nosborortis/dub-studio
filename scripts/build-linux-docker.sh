@@ -12,7 +12,7 @@ if [ "${1:-}" = "--inside" ]; then
   apt-get update -q >/dev/null
   apt-get install -y -q --no-install-recommends build-essential pkg-config curl ca-certificates git unzip xz-utils \
     libssl-dev libasound2-dev libwayland-dev libxkbcommon-dev libgtk-3-dev \
-    libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev libxdo-dev patchelf file libfuse2 >/dev/null
+    libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev libxdo-dev patchelf file libfuse2 gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav >/dev/null
   if [ ! -x /cache/node/bin/node ]; then
     echo "[..] node 24"
     v=$(curl -s https://nodejs.org/dist/latest-v24.x/ | grep -o 'node-v24[0-9.]*-linux-x64.tar.xz' | head -1)

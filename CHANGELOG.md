@@ -12,6 +12,7 @@ release notes on GitHub are taken from the release's section.
 - **Translation downloads its Gemma when it is missing**, with progress in the same job, instead of failing after the whole video was transcribed.
 - **ffprobe is checked with ffmpeg.** An ffmpeg found on the system without ffprobe beside it no longer counts as installed: the studio downloads its own pair, and analysis no longer stops with "ffprobe not found". A failing ffprobe now says why, and a container without a duration is measured from its streams.
 - **Subtitles burn on any driver.** The bundled ffmpeg encodes on the graphics card only from NVIDIA driver 610; with an older driver, or with the studio running on the processor, the video is encoded on the processor and the render log says why.
+- **Playback on Linux.** The AppImage now carries the GStreamer libraries and plugins the window plays video and sound with, so playback no longer depends on what the system has installed.
 - **Character casting runs on the graphics card** when the studio does: face detection, face and voice recognition are three to nine times faster, with the same results.
 
 ## 2026-10-10 — 4.2.1
