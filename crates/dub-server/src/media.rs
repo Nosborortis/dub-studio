@@ -47,7 +47,7 @@ pub fn probe(input: &Path) -> Result<MediaMeta, String> {
     let out = Command::new(FFPROBE)
         .args([
             "-v",
-            "quiet",
+            "error",
             "-print_format",
             "json",
             "-show_format",
@@ -252,10 +252,12 @@ pub fn duration(path: &Path) -> Result<f64, String> {
     if !out.status.success() {
         return Err(t!("media-ffprobe-duration-exit", code = format!("{:?}", out.status.code())));
     }
-    String::from_utf8_lossy(&out.stdout)
-        .trim()
-        .parse::<f64>()
-        .map_err(|e| format!("duration parse: {e}"))
+    let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    match text.parse::<f64>() {
+        Ok(seconds) => Ok(seconds),
+        // контейнер без format.duration (ffprobe печатает N/A): длительность есть у потоков
+        Err(_) => probe(path).map(|meta| meta.duration).map_err(|e| format!("{}: {e}", path.display())),
+    }
 }
 
 /// atempo-цепочка для factor вне [0.5,2.0] (порт media._atempo_chain).

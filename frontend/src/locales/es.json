@@ -302,6 +302,7 @@
   "status": {
     "working": "Trabajando…",
     "idle": "Listo",
+    "setupNeeded": "Faltan componentes por descargar",
     "log": "Registro de actividad",
     "clear": "Borrar",
     "backendOffline": "backend sin conexión"
@@ -534,8 +535,8 @@
   },
   "setup": {
     "title": "Primer inicio",
-    "subtitle": "Dub Studio necesita algunos componentes antes del primer doblaje. Todo lo necesario ya está marcado: solo pulsa «Descargar».",
-    "download": "Descargar todo",
+    "subtitle": "Dub Studio necesita algunos componentes antes del primer doblaje. Todo lo necesario ya está marcado: solo pulsa «Descargar lo marcado» abajo.",
+    "download": "Descargar lo marcado",
     "downloadOne": "Descargar",
     "cancel": "Cancelar",
     "installed": "Instalado",
@@ -543,6 +544,7 @@
     "downloading": "Descargando…",
     "required": "Obligatorio",
     "recommended": "Recomendado",
+    "optional": "Opcional",
     "bundled": "Incluido en la aplicación",
     "external": "Sistema",
     "driverMissing": "No se detectó el controlador de NVIDIA",
@@ -552,6 +554,7 @@
     "totalToDownload": "Por descargar",
     "reinstallHint": "Viene con la aplicación: reinstálala si falta",
     "done": "Listo",
+    "owed": "Para empezar, aún falta descargar: {{list}}.",
     "error": "Error",
     "pickNoteTitle": "Un quant por modelo.",
     "pickNote": "Lo necesario ya está marcado. Los quants son variantes del mismo modelo (O): quant más alto = mejor calidad y más pesado, más bajo = más ligero. No hace falta descargarlos todos.",

@@ -69,6 +69,30 @@ const UNTRANSLATED_FAIL_SHARE: f64 = 0.5;
 
 /// Прогнать стадию. proj уже собран транскрипт-стадией (segments + mode/tgt_lang). vh/total — из probe.
 /// Err — перевод нужен (дубляж, закадр, перевод субтитров, ремикс), но не выполнен.
+/// Перевод своей Gemma, а выбранного кванта (или llama-server) нет на диске: качаем их тут же, с прогрессом в
+/// ту же задачу, как модели кастинга, — иначе перевод падает уже после распознавания всего ролика.
+fn ensure_local_gemma(paths: &AnalyzePaths, progress: &Progress) -> Result<(std::path::PathBuf, std::path::PathBuf), String> {
+    let mroot = &paths.models_root;
+    let resolved = crate::models::resolve_mt(mroot, &crate::models::load_selection(mroot));
+    if crate::models::llm_backend(mroot, "llm") != crate::models::LlmBackend::Local
+        || (resolved.0.is_file() && paths.llama_bin.is_file())
+    {
+        return Ok(resolved);
+    }
+    let selection = crate::models::load_selection(mroot);
+    let quant = selection.get("mt").and_then(Value::as_str).map(str::trim).filter(|q| !q.is_empty()).unwrap_or("q4_0");
+    let mut need = vec![if quant == "q4_0" { "gemma".to_string() } else { format!("gemma-{quant}") }];
+    if !paths.llama_bin.is_file() {
+        need.push("llama".to_string());
+    }
+    emit(progress, "download", &t!("setup-fetching-missing"));
+    let ctl = crate::jobs::current();
+    let cancel = move || ctl.as_ref().is_some_and(|c| c.is_cancelled());
+    let cb = |event: Value| progress(event);
+    crate::setup::download_components(&paths.repo_root, &need, &cancel, &cb).map_err(|e| t!("translate-no-llm", error = e.detail))?;
+    Ok(crate::models::resolve_mt(mroot, &crate::models::load_selection(mroot)))
+}
+
 pub fn stage(
     args: &AnalyzeArgs,
     paths: &AnalyzePaths,
@@ -112,10 +136,11 @@ pub fn stage(
     // Провайдеры перевода и vision выбираются независимо (своя Gemma / локальный сервер / OpenRouter): облачный
     // перевод не требует локальных весов. Перевод недоступен — Err с причиной; недоступный vision перевод
     // не останавливает.
+    let (mt_model, mmproj) = ensure_local_gemma(paths, progress)?;
     let pair = match crate::llm_provider::open_pair(&crate::llm_provider::LlmOpen {
         llama_bin: &paths.llama_bin,
-        mt_model: &paths.mt_model,
-        mmproj: &paths.mmproj,
+        mt_model: &mt_model,
+        mmproj: &mmproj,
         models_root: &paths.models_root,
     }) {
         Ok(pair) => {

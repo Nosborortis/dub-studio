@@ -52,7 +52,15 @@ pub fn write_selection(mroot: &Path, selection: &Value) -> std::io::Result<()> {
     let tmp = mroot.join("active.json.tmp");
     std::fs::write(&tmp, serde_json::to_vec_pretty(selection).unwrap_or_default(),
     )?;
-    std::fs::rename(&tmp, mroot.join("active.json"))
+    std::fs::rename(&tmp, mroot.join("active.json"))?;
+    apply_faces_backend(mroot);
+    Ok(())
+}
+
+/// Модели кастинга (лица и голос, крейт dub-faces) идут туда же, куда локальные стадии: читают
+/// DUB_FACES_BACKEND при загрузке. Ставится на старте и при каждой записи выбора — переключение без рестарта.
+pub fn apply_faces_backend(mroot: &Path) {
+    std::env::set_var("DUB_FACES_BACKEND", stage_backend(mroot, "local_backend"));
 }
 
 /// Выбор для ответов API. Секреты не уходят никогда: вместо ключа OpenRouter — `or_key_set`, пароль

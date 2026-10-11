@@ -61,10 +61,18 @@ pub struct OnnxModel {
 }
 
 impl OnnxModel {
+    /// Модель на видеокарте, когда DUB_FACES_BACKEND=gpu (сервер ставит его из выбора бэкенда локальных
+    /// стадий): CUDA-провайдер с error_on_failure — недоступная CUDA становится ошибкой, а не тихим CPU.
     pub fn load(path: &Path) -> Result<Self, FacesError> {
         ensure_ort_dylib();
-        let session = Session::builder()
-            .map_err(|e| FacesError::Ort(format!("ort builder: {e}")))?
+        let gpu = std::env::var("DUB_FACES_BACKEND").is_ok_and(|v| v == "gpu");
+        let mut builder = Session::builder().map_err(|e| FacesError::Ort(format!("ort builder: {e}")))?;
+        if gpu {
+            builder = builder
+                .with_execution_providers([ort::ep::CUDA::default().build().error_on_failure()])
+                .map_err(|e| FacesError::Ort(format!("CUDA for {}: {e}", path.display())))?;
+        }
+        let session = builder
             .commit_from_file(path)
             .map_err(|e| FacesError::Ort(format!("commit_from_file {}: {e}", path.display())))?;
         Ok(Self { session })

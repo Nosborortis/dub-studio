@@ -330,6 +330,7 @@
   "status": {
     "working": "Working…",
     "idle": "Ready",
+    "setupNeeded": "Components to download",
     "log": "Activity log",
     "clear": "Clear",
     "backendOffline": "backend offline"
@@ -561,7 +562,7 @@
   },
   "setup": {
     "title": "First run",
-    "subtitle": "Dub Studio needs a few components before the first dub. Everything needed is already checked — just click Download.",
+    "subtitle": "Dub Studio needs a few components before the first dub. Everything needed is already checked — just click Download selected at the bottom.",
     "pickNoteTitle": "One quant per model.",
     "pickNote": "What's needed is already checked. Quants are variants of the same model (OR): higher quant = better quality and heavier, lower = lighter. No need to download them all.",
     "grpHiggs": "Voice · Higgs Audio v3",
@@ -575,7 +576,7 @@
     "noVram": "Will not fit this card's video memory, so there is no point downloading it.",
     "noVramShort": "won't fit in VRAM",
     "noVramGroup": "No variant fits this card's video memory: run this stage on a server or in the cloud, with the preset above.",
-    "download": "Download all",
+    "download": "Download selected",
     "downloadOne": "Download",
     "cancel": "Cancel",
     "installed": "Installed",
@@ -583,6 +584,7 @@
     "downloading": "Downloading…",
     "required": "Required",
     "recommended": "Recommended",
+    "optional": "Optional",
     "bundled": "Bundled with app",
     "external": "System",
     "driverMissing": "NVIDIA driver not detected",
@@ -592,6 +594,7 @@
     "totalToDownload": "To download",
     "reinstallHint": "Ships with the app — reinstall if missing",
     "done": "Done",
+    "owed": "To start, these are still needed: {{list}}.",
     "error": "Error",
     "cloudHint": "Picked <b>Cloud</b> and entered the key? You can skip downloading the heavy local models below — translation and voiceover will go through OpenRouter."
   },
