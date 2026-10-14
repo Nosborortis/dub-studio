@@ -319,7 +319,7 @@ pub async fn serve(state: AppState, listener: std::net::TcpListener) -> anyhow::
     // models another program already has are linked in at start; only what is missing everywhere is downloaded
     let root = state.repo_root.clone();
     tokio::task::spawn_blocking(move || {
-        for (id, app) in setup::import_from_neighbors(&root, &hub::neighbors(), false) {
+        for (id, app) in setup::import_from_neighbors(&root, &hub::neighbors(), false, None) {
             tracing::info!("model {id} taken from {app}, not downloaded");
         }
     });

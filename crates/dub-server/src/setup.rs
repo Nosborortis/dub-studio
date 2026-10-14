@@ -1191,6 +1191,11 @@ fn vram_estimate(id: &str) -> u64 {
     }
 }
 
+/// Компонент — модель (весам нужна видеопамять), а не движок, рантайм или инструмент.
+pub fn is_model(id: &str) -> bool {
+    vram_estimate(id) > 0
+}
+
 /// Файл на месте и (если размер задан) ровно этого размера. Ревизии закреплены, поэтому допуска нет:
 /// другой размер — другой или оборванный файл.
 fn file_ok(path: &Path, size: u64) -> bool {
@@ -1553,12 +1558,16 @@ fn taken() -> &'static Mutex<std::collections::BTreeMap<String, String>> {
 
 /// Недостающие веса из папок соседних программ (YuE2, MiniMax, Dungeon...) тем же импортом, что и из папки
 /// пользователя: имя файла и точный размер. При старте — только жёсткие ссылки (место не тратится); перед закачкой
-/// и копией, если программа на другом диске, — это всё равно быстрее сети. Отдаёт (компонент, программа).
-pub fn import_from_neighbors(repo_root: &Path, neighbors: &[(String, PathBuf)], copy: bool) -> Vec<(String, String)> {
+/// и копией, если программа на другом диске, — это всё равно быстрее сети, но только для того, что человек качает
+/// (`only`). Отдаёт (компонент, программа).
+pub fn import_from_neighbors(repo_root: &Path, neighbors: &[(String, PathBuf)], copy: bool, only: Option<&[String]>) -> Vec<(String, String)> {
     let mut took = Vec::new();
     for (app, dir) in neighbors {
-        let report = import_from_dir(repo_root, dir, None, copy, true);
-        for id in report.imported {
+        let reports: Vec<ImportReport> = match only {
+            None => vec![import_from_dir(repo_root, dir, None, copy, true)],
+            Some(ids) => ids.iter().map(|id| import_from_dir(repo_root, dir, Some(id), copy, true)).collect(),
+        };
+        for id in reports.into_iter().flat_map(|report| report.imported) {
             lock(taken()).insert(id.clone(), app.clone());
             took.push((id, app.clone()));
         }
@@ -3560,9 +3569,9 @@ mod tests {
         for f in tiny.files {
             sized(&decoy.join("other-model").join(Path::new(f.dest_rel).file_name().unwrap()), f.size);
         }
-        assert!(import_from_neighbors(&root, &[("ace".to_string(), decoy.clone())], false).is_empty());
+        assert!(import_from_neighbors(&root, &[("ace".to_string(), decoy.clone())], false, None).is_empty());
 
-        let took = import_from_neighbors(&root, &[("yue2".to_string(), other.clone())], false);
+        let took = import_from_neighbors(&root, &[("yue2".to_string(), other.clone())], false, None);
         assert!(took.contains(&("whisper-tiny".to_string(), "yue2".to_string())));
         let status = component_status(&root, &tiny);
         assert!(status.installed);
