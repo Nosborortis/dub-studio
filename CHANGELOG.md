@@ -12,6 +12,7 @@ release notes on GitHub are taken from the release's section.
 
 ### Fixed
 
+- **An agent's command to a closed window fails at once.** A window that closed without saying so kept the agent waiting for its answer until the timeout; the command now fails as the window goes, and the next call reaches another open window or says none is open.
 - **Analysis downloads ffmpeg when it is missing** instead of stopping on every file with "ffprobe not found". A project opened by its link, or a start when the first-run check did not answer, reached the editor without the first-run screen, and nothing fetched the tools afterwards.
 
 ## 2026-10-11 — 4.2.2
