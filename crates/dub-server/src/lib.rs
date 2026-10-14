@@ -315,7 +315,7 @@ pub async fn serve(state: AppState, listener: std::net::TcpListener) -> anyhow::
     listener.set_nonblocking(true)?;
     service::record_port(listener.local_addr()?.port());
     let listener = tokio::net::TcpListener::from_std(listener)?;
-    hub::start(&state.repo_root);
+    hub::start(&state.repo_root, &state.workspace);
     axum::serve(listener, build_router(state)).await?;
     Ok(())
 }
@@ -613,6 +613,8 @@ pub fn build_router(state: AppState) -> Router {
         .layer(axum::middleware::from_fn(mcp::track))
         .merge(hub::router())
         .with_state(state);
+    // counted before the MCP tools take the router, so an agent's calls count as the features they use
+    let api = hub::track(api);
     // MCP-инструменты зовут те же маршруты внутри процесса. Гард Origin/Host вешается ниже этой точки,
     // снаружи /mcp и /mcp/status, а не внутри `api`.
     mcp::install(api.clone());

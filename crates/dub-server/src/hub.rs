@@ -9,11 +9,14 @@ use crate::jobs::{JobKind, JobStatus};
 static HUB: OnceLock<Option<studio_hub_client::Hub>> = OnceLock::new();
 /// The models folder, whose active.json says what a job ran on.
 static MODELS: OnceLock<PathBuf> = OnceLock::new();
+/// The projects folder, whose project.json says how long a finished job's video is.
+static WORKSPACE: OnceLock<PathBuf> = OnceLock::new();
 
 /// Starts the hub once, inside the tokio runtime of the server; a state file that cannot be read leaves the studio
 /// without it, said once.
-pub fn start(repo_root: &Path) {
+pub fn start(repo_root: &Path, workspace: &Path) {
     let _ = MODELS.set(crate::models_root(repo_root));
+    let _ = WORKSPACE.set(workspace.to_path_buf());
     HUB.get_or_init(|| {
         let gpu = crate::hw::gpu_report();
         let name = gpu.name.clone().unwrap_or_default().to_ascii_lowercase();
@@ -82,9 +85,33 @@ pub fn router<S: Clone + Send + Sync + 'static>() -> axum::Router<S> {
     HUB.get().and_then(Option::as_ref).map(studio_hub_client::Hub::router).unwrap_or_default()
 }
 
+/// Every call to the studio's API counted by route, the features people use; the router as it is without the hub.
+pub fn track<S: Clone + Send + Sync + 'static>(router: axum::Router<S>) -> axum::Router<S> {
+    match HUB.get().and_then(Option::as_ref) {
+        Some(hub) => hub.track(router),
+        None => router,
+    }
+}
+
+/// A model download finished: the step between installing the studio and the first dub.
+pub fn setup_ready() {
+    if let Some(hub) = HUB.get().and_then(Option::as_ref) {
+        hub.setup_ready();
+    }
+}
+
+/// A model download failed, with its error code (network, disk_space, hash_mismatch...): the detail is in the
+/// window's language and would split one cause into rows per language.
+pub fn setup_failed(reason: &str) {
+    if let Some(hub) = HUB.get().and_then(Option::as_ref) {
+        hub.setup_failed(reason);
+    }
+}
+
 /// A finished job, counted as `<kind>_done`, `<kind>_failed` or `<kind>_cancelled` (frame previews are not counted);
-/// a failure keeps its reason, which the hub client scrubs, and finished work names the models it ran on.
-pub fn job_ended(kind: JobKind, status: JobStatus, error: Option<&str>) {
+/// a failure keeps its reason, which the hub client scrubs, and finished work names the models it ran on. Jobs run one
+/// at a time, so an analysis's `worked_ms` (running to finished) against the video's length is the card's speed.
+pub fn job_ended(kind: JobKind, status: JobStatus, error: Option<&str>, pid: Option<&str>, worked_ms: Option<u64>) {
     let Some(hub) = HUB.get().and_then(Option::as_ref) else { return };
     if kind == JobKind::Frame {
         return;
@@ -108,10 +135,21 @@ pub fn job_ended(kind: JobKind, status: JobStatus, error: Option<&str>) {
                 Some(root) if !stages.is_empty() => hub.used_models(None, &models_in_use(root, stages), 1),
                 _ => {}
             }
+            let seconds = pid.and_then(video_seconds);
+            // rendering and voicing reuse the lines already voiced, so only analysis always works the whole video
+            if let (Some(seconds), Some(worked_ms), JobKind::Analyze) = (seconds, worked_ms, kind) {
+                hub.worked(kind.as_str(), seconds, std::time::Duration::from_millis(worked_ms));
+            }
         }
         JobStatus::Cancelled => {}
         _ => hub.failed(kind.as_str(), error.unwrap_or("")),
     }
+}
+
+/// How long a project's video is, from its project.json.
+fn video_seconds(pid: &str) -> Option<f64> {
+    let text = std::fs::read_to_string(WORKSPACE.get()?.join(pid).join("project.json")).ok()?;
+    dub_core::Project::from_json(&text).ok().map(|project| project.meta.duration)
 }
 
 /// What these stages run on now, each as `stage:model`: Dub has no named sets, its choice per stage is the set.

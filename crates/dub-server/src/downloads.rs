@@ -224,10 +224,14 @@ impl Downloads {
                 }
                 Err(e) => {
                     tracing::warn!("download {:?}: {} ({})", job.ids, e.detail, e.code);
+                    crate::hub::setup_failed(&e.code);
                     job.status = DownloadStatus::Failed;
                     job.error_code = Some(e.code.to_string());
                     job.error = Some(e.detail);
                 }
+            }
+            if job.status == DownloadStatus::Completed {
+                crate::hub::setup_ready();
             }
         }
         self.save(&state);

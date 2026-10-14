@@ -575,7 +575,8 @@ impl JobQueue {
                     };
                     j.status = status;
                     ctl.finish(status, err.as_deref(), ev);
-                    crate::hub::job_ended(kind, status, err.as_deref());
+                    let worked = j.started_at.zip(j.finished_at).map(|(from, to)| to.saturating_sub(from));
+                    crate::hub::job_ended(kind, status, err.as_deref(), j.pid.as_deref(), worked);
                     if let Some(sender) = j.result_sender.take() {
                         let delivered = if cancelled {
                             sender.send(Err(CANCELLED.to_string()))
