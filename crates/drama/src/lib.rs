@@ -2,7 +2,7 @@
 //! `capi/drama_engine.h`). Один движок обслуживает одного вызывающего; `cancel` — из любого потока.
 
 use libloading::Library;
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{c_char, c_void, CStr, CString};
 use std::path::Path;
 use thiserror::Error;
 
@@ -50,6 +50,18 @@ type FnLastError = unsafe extern "C" fn() -> *const c_char;
 type FnLoad = unsafe extern "C" fn(*const c_char, u32, u32) -> *mut RawEngine;
 type FnFree = unsafe extern "C" fn(*mut RawEngine);
 type FnSpeak = unsafe extern "C" fn(*mut RawEngine, *const c_char, *const c_char, *const c_char, *const Params, *mut *mut f32, *mut usize) -> i32;
+type FnChunk = unsafe extern "C" fn(*const f32, usize, *mut c_void);
+type FnSpeakStream = unsafe extern "C" fn(
+    *mut RawEngine,
+    *const c_char,
+    *const c_char,
+    *const c_char,
+    *const Params,
+    Option<FnChunk>,
+    *mut c_void,
+    *mut *mut f32,
+    *mut usize,
+) -> i32;
 type FnFreeAudio = unsafe extern "C" fn(*mut f32, usize);
 type FnCancel = unsafe extern "C" fn(*mut RawEngine);
 
@@ -60,8 +72,18 @@ struct Api {
     load: FnLoad,
     free: FnFree,
     speak: FnSpeak,
+    /// Нет у DLL до engine-0.1.2.
+    speak_stream: Option<FnSpeakStream>,
     free_audio: FnFreeAudio,
     cancel: FnCancel,
+}
+
+unsafe extern "C" fn chunk_trampoline(audio: *const f32, len: usize, user: *mut c_void) {
+    if audio.is_null() || user.is_null() {
+        return;
+    }
+    let sink = &*(user as *const &(dyn Fn(&[f32]) + Sync));
+    sink(std::slice::from_raw_parts(audio, len));
 }
 
 /// Загруженные веса Drama 3 на видеокарте; освобождаются при drop.
@@ -99,6 +121,7 @@ impl DramaEngine {
                 load: sym!("drama_load"),
                 free: sym!("drama_free"),
                 speak: sym!("drama_speak"),
+                speak_stream: lib.get::<FnSpeakStream>(b"drama_speak_stream\0").ok().map(|s| *s),
                 free_audio: sym!("drama_free_audio"),
                 cancel: sym!("drama_cancel"),
             }
@@ -125,6 +148,36 @@ impl DramaEngine {
         let mut ptr: *mut f32 = std::ptr::null_mut();
         let mut len = 0usize;
         let code = unsafe { (self.api.speak)(self.raw, t.as_ptr(), w.as_ptr(), r.as_ptr(), params, &mut ptr, &mut len) };
+        self.take_audio(code, ptr, len)
+    }
+
+    /// Отдаёт ли DLL звук кусками по мере синтеза (`speak_stream`).
+    pub fn supports_streaming(&self) -> bool {
+        self.api.speak_stream.is_some()
+    }
+
+    /// Как `speak`, и `on_chunk` получает каждый декодированный кусок (предложение и больше) из потока кодека DLL.
+    /// У DLL без потоковой точки — ошибка, без молчаливого перехода на `speak`.
+    pub fn speak_stream(
+        &self,
+        text: &str,
+        ref_wav: &Path,
+        ref_text: &str,
+        params: &Params,
+        on_chunk: &(dyn Fn(&[f32]) + Sync),
+    ) -> Result<Vec<f32>, DramaError> {
+        let stream = self.api.speak_stream.ok_or_else(|| DramaError::Engine("drama_speak_stream is missing in this DLL".into()))?;
+        let (t, w, r) = (cstring(text, "text")?, cstring(&ref_wav.to_string_lossy(), "ref_wav")?, cstring(ref_text, "ref_text")?);
+        let mut ptr: *mut f32 = std::ptr::null_mut();
+        let mut len = 0usize;
+        let user = &on_chunk as *const &(dyn Fn(&[f32]) + Sync) as *mut c_void;
+        let code = unsafe {
+            stream(self.raw, t.as_ptr(), w.as_ptr(), r.as_ptr(), params, Some(chunk_trampoline), user, &mut ptr, &mut len)
+        };
+        self.take_audio(code, ptr, len)
+    }
+
+    fn take_audio(&self, code: i32, ptr: *mut f32, len: usize) -> Result<Vec<f32>, DramaError> {
         match code {
             DRAMA_OK => {
                 let audio = unsafe { std::slice::from_raw_parts(ptr, len) }.to_vec();
