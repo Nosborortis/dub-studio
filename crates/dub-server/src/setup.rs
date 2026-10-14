@@ -1081,6 +1081,8 @@ pub struct ComponentStatus {
     pub vram: u64,
     /// Влезает ли модель в видеопамять карты; None — модель без весов, карты нет или стадии идут на CPU.
     pub fits_vram: Option<bool>,
+    /// Id программы (yue2, minimax, dungeon...), у которой компонент взят в этом запуске, вместо закачки.
+    pub taken_from: Option<String>,
 }
 
 /// Оценка VRAM загруженной модели по id (движки/рантаймы = 0). Грубо, для показа в UI.
@@ -1345,6 +1347,7 @@ fn status_with_system_dir(repo_root: &Path, c: &Component, system: Option<&Path>
         external_url: c.external_url.map(|s| s.to_string()),
         vram: vram_estimate(c.id),
         fits_vram: None,
+        taken_from: if installed { lock(taken()).get(c.id).cloned() } else { None },
     }
 }
 
@@ -1388,16 +1391,18 @@ pub struct ImportReport {
 }
 
 /// Положить src на место dest: жёсткая ссылка (тот же том — мгновенно и без второй копии гигабайт), иначе
-/// копия через .part + rename (частичной копии под финальным именем не бывает).
-fn adopt_file(src: &Path, dest: &Path) -> std::io::Result<()> {
+/// копия через .part + rename (частичной копии под финальным именем не бывает). Без `copy` — только ссылка:
+/// автоподхват у соседних программ не тратит гигабайты места молча.
+fn adopt_file(src: &Path, dest: &Path, copy: bool) -> std::io::Result<()> {
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)?;
     }
     if dest.exists() {
         std::fs::remove_file(dest)?;
     }
-    if std::fs::hard_link(src, dest).is_ok() {
-        return Ok(());
+    let linked = std::fs::hard_link(src, dest);
+    if linked.is_ok() || !copy {
+        return linked;
     }
     let tmp = with_suffix(dest, ".import");
     std::fs::copy(src, &tmp)?;
@@ -1407,7 +1412,7 @@ fn adopt_file(src: &Path, dest: &Path) -> std::io::Result<()> {
 /// Импорт готовых весов из папки без закачки: для каждого недостающего ПРЯМОГО файла компонента ищем в src_dir
 /// файл того же имени и ТОЧНО того же размера. Архивные компоненты (движки, CUDA) не импортируются: по россыпи
 /// файлов не проверить, что это закреплённая версия, — их докачивает «Первый запуск».
-pub fn import_from_dir(repo_root: &Path, src_dir: &Path, only: Option<&str>) -> ImportReport {
+pub fn import_from_dir(repo_root: &Path, src_dir: &Path, only: Option<&str>, copy: bool, same_folder: bool) -> ImportReport {
     let mut map = std::collections::HashMap::new();
     let mut budget = 200_000usize;
     index_dir(src_dir, &mut map, 0, &mut budget);
@@ -1422,18 +1427,22 @@ pub fn import_from_dir(repo_root: &Path, src_dir: &Path, only: Option<&str>) -> 
             if file_ok(&dest, f.size) {
                 continue;
             }
+            // у соседней программы — ещё и та же папка модели: config.json и словари совпадают по имени и размеру у
+            // разных моделей, а контрольной суммы, которая отличила бы их, здесь нет
+            let folder = dest.parent().and_then(Path::file_name);
+            let in_place = |p: &Path| !same_folder || p.parent().and_then(Path::file_name) == folder;
             let src = match c.markers.iter().find(|m| m.rel == f.dest_rel) {
-                Some(m) => pick_import_source(&c, m, &map).filter(|p| file_len(p) == f.size),
+                Some(m) => pick_import_source(&c, m, &map).filter(|p| file_len(p) == f.size && in_place(p)),
                 None => Path::new(f.dest_rel)
                     .file_name()
                     .and_then(|s| s.to_str())
                     .map(|s| s.to_lowercase())
                     .and_then(|base| map.get(&base))
-                    .and_then(|cands| cands.iter().find(|(_, sz)| *sz == f.size))
+                    .and_then(|cands| cands.iter().find(|(p, sz)| *sz == f.size && in_place(p)))
                     .map(|(p, _)| p),
             };
             let Some(src) = src else { continue };
-            match adopt_file(src, &dest) {
+            match adopt_file(src, &dest, copy) {
                 Ok(()) => {
                     let part = part_path(repo_root, f);
                     let _ = std::fs::remove_file(done_manifest_path(&part));
@@ -1451,6 +1460,27 @@ pub fn import_from_dir(repo_root: &Path, src_dir: &Path, only: Option<&str>) -> 
         }
     }
     report
+}
+
+/// Компоненты, взятые в этом запуске у соседних программ: id → программа, для пометки в «Первом запуске».
+fn taken() -> &'static Mutex<std::collections::BTreeMap<String, String>> {
+    static TAKEN: OnceLock<Mutex<std::collections::BTreeMap<String, String>>> = OnceLock::new();
+    TAKEN.get_or_init(Default::default)
+}
+
+/// Недостающие веса из папок соседних программ (YuE2, MiniMax, Dungeon...) тем же импортом, что и из папки
+/// пользователя: имя файла и точный размер. При старте — только жёсткие ссылки (место не тратится); перед закачкой
+/// и копией, если программа на другом диске, — это всё равно быстрее сети. Отдаёт (компонент, программа).
+pub fn import_from_neighbors(repo_root: &Path, neighbors: &[(String, PathBuf)], copy: bool) -> Vec<(String, String)> {
+    let mut took = Vec::new();
+    for (app, dir) in neighbors {
+        let report = import_from_dir(repo_root, dir, None, copy, true);
+        for id in report.imported {
+            lock(taken()).insert(id.clone(), app.clone());
+            took.push((id, app.clone()));
+        }
+    }
+    took
 }
 
 // ── Место на диске ───────────────────────────────────────────────────────────
@@ -2919,6 +2949,7 @@ mod tests {
             external_url: None,
             vram: (gb * 1024.0 * 1024.0 * 1024.0) as u64,
             fits_vram: None,
+            taken_from: None,
         }
     }
 
@@ -3407,7 +3438,7 @@ mod tests {
         }
         sized(&src.join(".hidden").join("model.bin"), 1);
         sized(&src.join("other").join("config.json"), 7);
-        let r = import_from_dir(&root, &src, Some("whisper-tiny"));
+        let r = import_from_dir(&root, &src, Some("whisper-tiny"), true, false);
         assert_eq!(r.imported, vec!["whisper-tiny".to_string()]);
         assert_eq!(r.files, tiny.files.len());
         assert!(r.errors.is_empty(), "{:?}", r.errors);
@@ -3423,6 +3454,39 @@ mod tests {
         assert!(try_claim(&["roformer-q5".to_string()]).is_some(), "другой компонент качается параллельно");
         drop(a);
         assert!(try_claim(&["roformer-q4".to_string()]).is_some());
+    }
+
+    #[test]
+    fn a_model_another_program_has_is_linked_in_and_says_where_from() {
+        let root = temp_root("neighbor-dst");
+        let other = temp_root("neighbor-src");
+        let tiny = manifest().into_iter().find(|c| c.id == "whisper-tiny").unwrap();
+        // the neighbour keeps the model in a folder of the same name, under its own layout
+        let in_neighbor = |rel: &str| {
+            let rel = Path::new(rel);
+            other.join("karaoke").join(rel.parent().unwrap().file_name().unwrap()).join(rel.file_name().unwrap())
+        };
+        for f in tiny.files {
+            sized(&in_neighbor(f.dest_rel), f.size);
+        }
+        // the same names and sizes in another model's folder are not taken: nothing proves they are this model
+        let decoy = temp_root("neighbor-decoy");
+        for f in tiny.files {
+            sized(&decoy.join("other-model").join(Path::new(f.dest_rel).file_name().unwrap()), f.size);
+        }
+        assert!(import_from_neighbors(&root, &[("ace".to_string(), decoy.clone())], false).is_empty());
+
+        let took = import_from_neighbors(&root, &[("yue2".to_string(), other.clone())], false);
+        assert!(took.contains(&("whisper-tiny".to_string(), "yue2".to_string())));
+        let status = component_status(&root, &tiny);
+        assert!(status.installed);
+        assert_eq!(status.taken_from.as_deref(), Some("yue2"));
+        let dest = root.join(tiny.files[0].dest_rel);
+        std::fs::write(in_neighbor(tiny.files[0].dest_rel), vec![7u8; tiny.files[0].size as usize]).unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap()[0], 7, "a hard link: one file on disk for both programs");
+        std::fs::remove_dir_all(&root).ok();
+        std::fs::remove_dir_all(&other).ok();
+        std::fs::remove_dir_all(&decoy).ok();
     }
 
     /// Заголовок в том виде, в каком его шлёт Hugging Face.

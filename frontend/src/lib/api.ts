@@ -193,6 +193,7 @@ export type SetupComponent = {
   size: number; installed: boolean; bytesOnDisk: number;
   spaceNeeded: number;   // место на томе моделей под докачку (остаток + распаковка архивов)
   missing: string[]; detail?: string | null; externalUrl?: string | null; vram?: number; fitsVram?: boolean | null;
+  takenFrom?: string | null;   // id программы, у которой модель взята в этом запуске вместо закачки
 };
 // Фоновая закачка (мимо GPU-очереди): её состояние приходит в /setup/status.active, опрос вместо SSE.
 export type DownloadStatus = "downloading" | "completed" | "paused" | "interrupted" | "failed";

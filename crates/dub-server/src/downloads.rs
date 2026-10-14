@@ -203,6 +203,8 @@ impl Downloads {
     fn run(&self, id: &str, ids: Vec<String>, pause: Arc<AtomicBool>) {
         let stop = move || pause.load(Ordering::SeqCst);
         let on_progress = |ev: Value| self.apply_progress(id, &ev);
+        // what another program has is taken first, by copy too when it sits on another drive: still faster than the network
+        setup::import_from_neighbors(&self.inner.repo_root, &crate::hub::neighbors(), true);
         let res = setup::download_components(&self.inner.repo_root, &ids, &stop, &on_progress);
         let mut state = lock(&self.inner.state);
         // Закачку уже сменила следующая — итог этой никому не нужен.

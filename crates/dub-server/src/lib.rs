@@ -316,6 +316,13 @@ pub async fn serve(state: AppState, listener: std::net::TcpListener) -> anyhow::
     service::record_port(listener.local_addr()?.port());
     let listener = tokio::net::TcpListener::from_std(listener)?;
     hub::start(&state.repo_root, &state.workspace);
+    // models another program already has are linked in at start; only what is missing everywhere is downloaded
+    let root = state.repo_root.clone();
+    tokio::task::spawn_blocking(move || {
+        for (id, app) in setup::import_from_neighbors(&root, &hub::neighbors(), false) {
+            tracing::info!("model {id} taken from {app}, not downloaded");
+        }
+    });
     axum::serve(listener, build_router(state)).await?;
     Ok(())
 }
@@ -1528,7 +1535,7 @@ async fn setup_browse(State(st): State<AppState>, Json(body): Json<Value>) -> Re
         rfd::FileDialog::new()
             .set_title(title)
             .pick_folder()
-            .map(|d| setup::import_from_dir(&root, &d, only.as_deref()))
+            .map(|d| setup::import_from_dir(&root, &d, only.as_deref(), true, false))
     })
     .await;
     let report = match res {
@@ -1556,7 +1563,7 @@ async fn setup_import(State(st): State<AppState>, Json(body): Json<Value>) -> Re
     let only = body.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
     let root = st.repo_root.clone();
     let report = match tokio::task::spawn_blocking(move || {
-        setup::import_from_dir(&root, Path::new(&path), only.as_deref())
+        setup::import_from_dir(&root, Path::new(&path), only.as_deref(), true, false)
     }).await {
         Ok(r) => r,
         Err(e) => return join_failure(e),

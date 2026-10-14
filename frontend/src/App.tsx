@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { FolderOpen } from "lucide-react";
-import { DONATE } from "./lib/links";
+import { DONATE, PROGRAM_NAMES } from "./lib/links";
 import { OPEN_SETTINGS_EVENT, SETTINGS_SECTIONS, openSettings } from "./lib/settingsNav";
 import { createLaunchSaver, loadWithMigration } from "./lib/launchDefaults";
 import SettingsModal from "./components/settings/SettingsModal";
@@ -4180,7 +4180,7 @@ function FirstRun() {
                               {isDefault
                                 ? <span className="text-[9px] px-1.5 py-0.5 rounded bg-[color-mix(in_oklab,var(--color-accent)_16%,transparent)] text-[var(--color-accent)] uppercase tracking-wide shrink-0">{t("setup.default")}</span>
                                 : <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--color-surface-2)] text-[var(--color-muted)] uppercase tracking-wide shrink-0">{t("setup.alt")}</span>}
-                              {c.installed && <span className="text-[10px] text-[var(--color-accent)] shrink-0">{t("setup.installed")}</span>}
+                              {c.installed && <span className="text-[10px] text-[var(--color-accent)] shrink-0">{c.takenFrom ? t("setup.takenFrom", { app: PROGRAM_NAMES[c.takenFrom] ?? c.takenFrom }) : t("setup.installed")}</span>}
                             </div>
                             {ASR_VARIANT_I18N[c.id] && <div className="text-[11px] leading-snug text-[var(--color-muted)]">{t(ASR_VARIANT_I18N[c.id].hint)}</div>}
                             {c.fitsVram === false && !c.installed && <div className="text-[11px] leading-snug text-[var(--color-warn)]">{t("setup.noVram")}</div>}

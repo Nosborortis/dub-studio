@@ -93,6 +93,11 @@ pub fn track<S: Clone + Send + Sync + 'static>(router: axum::Router<S>) -> axum:
     }
 }
 
+/// The other programs of timoncool's on this computer and their data folders, to take models from.
+pub fn neighbors() -> Vec<(String, PathBuf)> {
+    HUB.get().and_then(Option::as_ref).map(|hub| hub.neighbors().into_iter().map(|n| (n.app, n.data_dir)).collect()).unwrap_or_default()
+}
+
 /// A model download finished: the step between installing the studio and the first dub.
 pub fn setup_ready() {
     if let Some(hub) = HUB.get().and_then(Option::as_ref) {

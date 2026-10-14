@@ -2065,6 +2065,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dae608c151f68243f2b000364e1f7b186d9c29845f7d2d85bd31b9ad77ad552b"
 
 [[package]]
+name = "machine-uid"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfe0d6336d341b10ae80e099b8f3c59f34bf8aef66ef25e83aa98bf2955c0ae7"
+dependencies = [
+ "libc",
+ "windows-registry",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "macro_rules_attribute"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3662,14 +3673,17 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 [[package]]
 name = "studio-hub-client"
 version = "0.1.0"
-source = "git+https://github.com/timoncool/studio-hub-client?rev=0d158def13c07455c99fe5347738c623cca090dd#0d158def13c07455c99fe5347738c623cca090dd"
+source = "git+https://github.com/timoncool/studio-hub-client?rev=e44abf030d5a5acc48ef693a395a04109db8fa16#e44abf030d5a5acc48ef693a395a04109db8fa16"
 dependencies = [
  "axum",
  "chrono",
+ "hmac",
+ "machine-uid",
  "regex",
  "reqwest 0.13.5",
  "serde",
  "serde_json",
+ "sha2",
  "tokio",
  "tracing",
  "uuid",
