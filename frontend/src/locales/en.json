@@ -1332,7 +1332,7 @@
     "batch": "Batch — 50% lower API tariff",
     "batchHint": "Google queues the batch (target: 24 hours). Cancelling the local job pauses polling; the remote batch continues. Resume retrieves it without another paid submission. Usage and estimated cost: project_google_tts_report in MCP.",
     "standardHint": "Parallel direct requests using the cloud concurrency setting. Usage and estimated cost: project_google_tts_report in MCP.",
-    "provider_local": "Local · Higgs",
+    "provider_local": "Local · Higgs / Drama",
     "provider_openrouter": "OpenRouter",
     "provider_google": "Google · direct"
   },

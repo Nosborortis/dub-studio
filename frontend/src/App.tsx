@@ -401,7 +401,7 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
         ) : (
           <>
             <VariantPicker base={(picks[TTS_IDS[0]] ?? activeVariantId(TTS_IDS, cap?.selection ?? {})) === "drama3" ? "Fish Audio Drama 3" : "Higgs Audio v3"} ids={TTS_IDS} i18n={TTS_VARIANT_I18N} />
-            {rowOf("higgs-engine")}
+            {(picks[TTS_IDS[0]] ?? activeVariantId(TTS_IDS, cap?.selection ?? {})) !== "drama3" && rowOf("higgs-engine")}
           </>
         )}
       </Group>
@@ -4784,7 +4784,8 @@ export default function App() {
     const asrLabel = sel.asr_engine === "whisper" ? `whisper ${sel.whisper_model || "auto"}` : `${c.asr_model}${sel.asr ? ` ${sel.asr}` : ""}`;
     const parts = [c.device, `ASR ${asrLabel}`];
     if (c.models?.llm) parts.push(`MT+vision ${base(c.models.llm)}`);
-    if (c.models?.tts) parts.push(`TTS ${c.models.tts}${c.tts_quant ? ` ${c.tts_quant}` : ""}`);
+    const ttsQuant = sel.tts || c.tts_quant;
+    if (c.models?.tts) parts.push(sel.tts === "drama3" ? "TTS Fish Audio Drama 3 q4" : `TTS ${c.models.tts}${ttsQuant ? ` ${ttsQuant}` : ""}`);
     parts.push("sep BSRoformer", "diar Nemotron 3", "OCR PP-OCR");   // фикс-движки пайплайна
     setCap(parts.join(" · "));
   }).catch(() => setCapOffline(true)); }, []);

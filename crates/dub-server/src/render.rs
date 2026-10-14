@@ -670,18 +670,40 @@ impl TtsEngine {
     }
 }
 
-/// Параметры Drama 3 из JSON попытки Higgs: seed (его нет у первой попытки — берётся хэш опций, чтобы попытки
-/// различались), `max_new_tokens` Higgs (75 токенов/с с запасом 1.5) -> кадры Drama (21.5/с с запасом 2),
-/// температура Higgs 0.1-0.35 -> 0.8-1.0.
+/// Прибавка к seed попыток и дублей фразы от её метки перегенерации: движок, который seed соблюдает (Drama 3),
+/// на «Перегенерировать» даёт новые дубли, а не копии прежних. Без метки — 0.
+fn regen_seed(s: &dub_core::Segment) -> u64 {
+    s.extra.get(REGEN_NONCE).and_then(|v| v.as_str()).map_or(0, |nonce| {
+        nonce.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3))
+    })
+}
+
+/// Параметры Drama 3 из JSON попытки Higgs: seed — его, а у попытки без seed свежий случайный (как сэмплинг Higgs:
+/// перегенерация фразы даёт новый дубль, а не тот же файл), `max_new_tokens` Higgs (75 токенов/с с запасом 1.5) ->
+/// кадры Drama (21.5/с с запасом 2), температура Higgs 0.1-0.35 -> 0.8-1.0.
 fn drama_params(opts: &str) -> drama::Params {
     let v: serde_json::Value = serde_json::from_str(opts).unwrap_or_default();
-    let seed = v.get("seed").and_then(|s| s.as_u64()).unwrap_or_else(|| {
-        opts.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3))
-    });
+    let seed = v.get("seed").and_then(|s| s.as_u64()).unwrap_or_else(|| uuid::Uuid::new_v4().as_u64_pair().0);
     let tokens = v.get("max_new_tokens").and_then(|t| t.as_u64()).unwrap_or(2048) as f64;
     let max_new = ((tokens * drama::FRAMES_PER_SECOND * 2.0 / (75.0 * 1.5)).ceil() as u32).clamp(64, 2048);
     let temperature = v.get("temperature").and_then(|t| t.as_f64()).map_or(1.0, |t| (0.7 + t).min(1.0)) as f32;
     drama::Params { temperature, seed, max_new, ..Default::default() }
+}
+
+#[cfg(test)]
+mod drama_params_tests {
+    use super::drama_params;
+
+    #[test]
+    fn a_seedless_attempt_draws_a_new_seed_and_a_seeded_one_keeps_it() {
+        let first = r#"{"temperature":0.30,"max_new_tokens":365}"#;
+        assert_ne!(drama_params(first).seed, drama_params(first).seed, "regenerating a line must give a new take");
+        let seeded = r#"{"temperature":0.10,"max_new_tokens":365,"seed":2002}"#;
+        assert_eq!(drama_params(seeded).seed, 2002);
+        assert_eq!(drama_params(seeded).max_new, 140);
+        assert!((drama_params(seeded).temperature - 0.8).abs() < 1e-6);
+        assert!((drama_params(first).temperature - 1.0).abs() < 1e-6);
+    }
 }
 
 /// Ошибка синтеза, после которой лестницу ретраев не продолжают: движок завис или джобу отменили.
@@ -1617,7 +1639,7 @@ fn build_dub_pass(
                 } else {
                     (&ref_wav, ref_text.as_deref())
                 };
-                let seed = (fi as u64) * 1000 + attempt as u64;
+                let seed = ((fi as u64) * 1000 + attempt as u64).wrapping_add(regen_seed(s));
                 let opts = match attempt {
                     0 | 3 => format!(
                         "{{\"temperature\":{base_temp:.2},\"top_p\":0.95,\"top_k\":50,\"max_new_tokens\":{tok_cap},\"ras_win_len\":7{base_ras_rep},\"return_audio_in_tokens\":true}}"
@@ -1765,7 +1787,7 @@ fn build_dub_pass(
             for take_i in 1..=2u64 {
                 crate::jobs::check_cancelled()?;
                 let take_path = wd.join(format!("seg_{sid}_take{take_i}.wav"));
-                let seed = (fi as u64) * 10000 + take_i * 100 + 77;
+                let seed = ((fi as u64) * 10000 + take_i * 100 + 77).wrapping_add(regen_seed(s));
                 let temp = if take_i == 1 { 0.25 } else { 0.35 };
                 let opts = format!(
                     "{{\"temperature\":{temp:.2},\"top_p\":0.95,\"top_k\":50,\"max_new_tokens\":{tok_cap},\"ras_win_len\":7,\"return_audio_in_tokens\":true,\"seed\":{seed}}}"
