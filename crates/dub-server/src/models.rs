@@ -728,7 +728,7 @@ pub fn resolve_tts(mroot: &Path, sel: &Value) -> (PathBuf, String) {
 /// Значение слота `tts` и папка весов Drama 3 (apiplant/drama-q4) в каталоге моделей.
 pub const DRAMA_TTS: &str = "drama3";
 
-/// Видеопамяти нужно Drama 3: карта «24 ГБ» отдаёт ~23.99 ГиБ, 20-гиговая не влезает (пик движка 22.6 ГиБ).
+/// Видеопамяти нужно Drama 3: карты «24 ГБ» проходят, 20-гиговые — нет.
 pub const DRAMA_MIN_VRAM: u64 = 23 * 1024 * 1024 * 1024;
 
 /// Веса и движок Drama 3 на месте (последний слой весов и DLL).

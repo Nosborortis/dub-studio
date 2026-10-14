@@ -1173,7 +1173,6 @@ fn vram_estimate(id: &str) -> u64 {
         "higgs" => gb(5.6),
         "higgs-q6_k" => gb(5.1),
         "higgs-q4_k_m" => gb(4.2),
-        // замер drama-rs на RTX 4090: веса 20.0 ГиБ + кодек, KV и cuBLAS — пик процесса 22.6 ГиБ
         "drama3" => gb(22.6),
         "gemma" => gb(8.5),
         "gemma-q5_0" => gb(9.9),
