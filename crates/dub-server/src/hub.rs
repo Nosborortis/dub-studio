@@ -157,25 +157,29 @@ fn video_seconds(pid: &str) -> Option<f64> {
     dub_core::Project::from_json(&text).ok().map(|project| project.meta.duration)
 }
 
-/// What these stages run on now, each as `stage:model`: Dub has no named sets, its choice per stage is the set.
+/// What these stages run on now, each as `stage:model`: Dub has no named sets, its choice per stage is the set. The
+/// model is the one the job loads (the same resolution), not the raw choice, which is empty until the person picks.
 fn models_in_use(mroot: &Path, stages: &[&str]) -> Vec<String> {
     use crate::models::{self, LlmBackend};
     let sel = models::load_selection(mroot);
-    let slot = |key: &str| sel.get(key).and_then(serde_json::Value::as_str).map(str::trim).filter(|value| !value.is_empty()).unwrap_or("default").to_string();
+    let slot = |key: &str, default: &str| sel.get(key).and_then(serde_json::Value::as_str).map(str::trim).filter(|value| !value.is_empty()).unwrap_or(default).to_string();
+    let stem = |path: &Path| path.file_stem().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
     stages
         .iter()
         .map(|&stage| match stage {
             "tts" => match models::tts_provider(mroot) {
-                "local" if slot("tts") == models::DRAMA_TTS => format!("tts:{}", models::DRAMA_TTS),
-                "local" => format!("tts:higgs-{}", slot("tts")),
+                "local" => match models::resolve_tts(mroot, &sel).1 {
+                    quant if quant == models::DRAMA_TTS => format!("tts:{quant}"),
+                    quant => format!("tts:higgs-{quant}"),
+                },
                 provider => format!("tts:{provider}:{}", models::tts_model(mroot)),
             },
-            "asr" if models::openrouter_asr_on(mroot) => format!("asr:openrouter:{}", slot("or_asr")),
-            "asr" if slot("asr_engine") == "whisper" => format!("asr:whisper-{}", slot("whisper_model")),
-            "asr" => format!("asr:parakeet-{}", slot("asr")),
-            "sep" => format!("sep:roformer-{}", slot("sep")),
+            "asr" if models::openrouter_asr_on(mroot) => format!("asr:openrouter:{}", slot("or_asr", "default")),
+            "asr" if slot("asr_engine", "parakeet") == "whisper" => format!("asr:whisper-{}", slot("whisper_model", "default")),
+            "asr" => format!("asr:parakeet-{}", slot("asr", "int8")),
+            "sep" => format!("sep:roformer-{}", stem(&models::resolve_sep(mroot, &sel)).trim_start_matches("voc_fv6-")),
             stage => match models::llm_backend(mroot, stage) {
-                LlmBackend::Local => format!("{stage}:gemma-{}", slot("mt")),
+                LlmBackend::Local => format!("{stage}:{}", stem(&models::resolve_mt(mroot, &sel).0)),
                 LlmBackend::Server => format!("{stage}:server"),
                 LlmBackend::OpenRouter => format!("{stage}:openrouter:{}", models::openrouter_model(mroot, stage)),
             },
@@ -190,11 +194,22 @@ mod tests {
     #[test]
     fn a_job_names_only_the_stages_it_ran() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("active.json"), r#"{"tts_provider":"local","tts":"q8_0","llm_provider":"local","mt":"e4b","sep":"fv6"}"#).unwrap();
+        let file = |rel: &str| {
+            let path = dir.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, b"x").unwrap();
+        };
+        file("mt-q6_k/gemma-4-12b-it-Q6_K.gguf");
+        file("mt-q6_k/mmproj-gemma-4-12b-it.gguf");
+        file("bsroformer/voc_fv6-Q5_0.gguf");
+        file("higgs-q6_k/q6_k.gguf");
+        std::fs::write(dir.path().join("active.json"), r#"{"tts_provider":"local","tts":"q6_k","llm_provider":"local","mt":"q6_k","sep":"Q5_0"}"#).unwrap();
         let retranslate = models_in_use(dir.path(), &["llm"]);
-        assert_eq!(retranslate, ["llm:gemma-e4b"]);
+        assert_eq!(retranslate, ["llm:gemma-4-12b-it-Q6_K"]);
         let render = models_in_use(dir.path(), &["tts", "sep"]);
-        assert_eq!(render, ["tts:higgs-q8_0", "sep:roformer-fv6"]);
+        assert_eq!(render, ["tts:higgs-q6_k", "sep:roformer-Q5_0"]);
+        std::fs::write(dir.path().join("active.json"), r#"{"tts_provider":"local"}"#).unwrap();
+        assert_eq!(models_in_use(dir.path(), &["tts", "sep", "asr"]), ["tts:higgs-q6_k", "sep:roformer-Q5_0", "asr:parakeet-int8"], "an empty choice names what loads");
         std::fs::write(dir.path().join("active.json"), r#"{"tts_provider":"local","tts":"drama3"}"#).unwrap();
         assert_eq!(models_in_use(dir.path(), &["tts"]), ["tts:drama3"]);
     }
