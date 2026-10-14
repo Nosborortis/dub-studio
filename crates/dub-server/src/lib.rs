@@ -819,6 +819,10 @@ fn ensure_job_components(
             .unwrap_or(false)
     };
     let mut need: Vec<String> = Vec::new();
+    // ffmpeg/ffprobe нужны любой джобе, а до неё можно дойти мимо экрана первого запуска (?pid=, сбой /setup/status).
+    if missing("ffmpeg") {
+        need.push("ffmpeg".to_string());
+    }
     // Кастинг персонажей (#115) → его модели (детект лиц + эмбеддинг лица/голоса + аниме/окклюдер).
     if casting && missing("casting") {
         need.push("casting".to_string());

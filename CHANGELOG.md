@@ -4,6 +4,16 @@ What changed, newest first. Dates are release dates; the app is versioned by its
 build. Every change a user can see is written here in the commit that makes it, and the
 release notes on GitHub are taken from the release's section.
 
+## Unreleased
+
+### Added
+
+- **Drama 3 voice** for NVIDIA cards with 24 GB and more: a local expressive voice that clones each speaker, chosen in Settings like the other voices.
+
+### Fixed
+
+- **Analysis downloads ffmpeg when it is missing** instead of stopping on every file with "ffprobe not found". A project opened by its link, or a start when the first-run check did not answer, reached the editor without the first-run screen, and nothing fetched the tools afterwards.
+
 ## 2026-10-11 — 4.2.2
 
 ### Fixed
