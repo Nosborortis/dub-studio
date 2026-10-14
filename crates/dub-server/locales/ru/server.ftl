@@ -964,3 +964,4 @@ render-drama-load-failed = загрузка Drama 3: { $error }
 render-loading-drama = загрузка Drama 3
 render-drama-no-ref-text = у рефа голоса нет расшифровки, а Drama 3 без неё голос не клонирует
 setup-comp-drama3-purpose = Озвучка голосами исходных актёров, второй движок — только для видеокарт 24 ГБ+
+render-drama-kept-original = ⚠ сегмент { $line }: у рефа голоса нет расшифровки (в нём не распознана речь), Drama 3 без неё не клонирует — оставлен оригинал

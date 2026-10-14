@@ -938,3 +938,4 @@ render-drama-load-failed = cargando Drama 3: { $error }
 render-loading-drama = cargando Drama 3
 render-drama-no-ref-text = la referencia de voz no tiene transcripción, y Drama 3 no clona una voz sin ella
 setup-comp-drama3-purpose = Dobla la traducción con las voces de los actores originales; segundo motor, solo para tarjetas gráficas de 24 GB o más
+render-drama-kept-original = ⚠ frase { $line }: la referencia de voz no tiene transcripción (no se reconoció habla en ella), Drama 3 no clona sin ella — se conserva el original

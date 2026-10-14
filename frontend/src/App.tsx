@@ -173,6 +173,7 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
   const hasOrKey = cap?.selection?.or_key_set === true;
   const setSel = (k: string, v: string) => api.setSelection(k, v).then(loadCap).catch(() => {});
   // Голоса выбранной облачной TTS-модели (пол/возраст/русский) для дропдауна + предупреждения о русском.
+  const ttsPick = picks[TTS_IDS[0]] ?? activeVariantId(TTS_IDS, cap?.selection ?? {});
   const ttsProvider = slot(cap?.selection, "tts_provider") ?? (selv("or_tts_on") === "1" ? "openrouter" : "local");
   const orTtsModel = slot(cap?.selection, ttsProvider === "google" ? "google_tts_model" : "or_tts_model") ?? "";
   useEffect(() => {
@@ -400,8 +401,8 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
           </div>
         ) : (
           <>
-            <VariantPicker base={(picks[TTS_IDS[0]] ?? activeVariantId(TTS_IDS, cap?.selection ?? {})) === "drama3" ? "Fish Audio Drama 3" : "Higgs Audio v3"} ids={TTS_IDS} i18n={TTS_VARIANT_I18N} />
-            {(picks[TTS_IDS[0]] ?? activeVariantId(TTS_IDS, cap?.selection ?? {})) !== "drama3" && rowOf("higgs-engine")}
+            <VariantPicker base={ttsPick === "drama3" ? "Fish Audio Drama 3" : "Higgs Audio v3"} ids={TTS_IDS} i18n={TTS_VARIANT_I18N} />
+            {ttsPick !== "drama3" && rowOf("higgs-engine")}
           </>
         )}
       </Group>

@@ -938,3 +938,4 @@ render-drama-load-failed = chargement de Drama 3 : { $error }
 render-loading-drama = chargement de Drama 3
 render-drama-no-ref-text = la référence vocale n'a pas de transcription, et Drama 3 ne clone pas une voix sans elle
 setup-comp-drama3-purpose = Double la traduction avec les voix des acteurs d'origine ; second moteur, réservé aux cartes graphiques de 24 Go ou plus
+render-drama-kept-original = ⚠ phrase { $line } : la référence vocale n'a pas de transcription (aucune parole n'y a été reconnue), Drama 3 ne clone pas sans elle — l'original est conservé

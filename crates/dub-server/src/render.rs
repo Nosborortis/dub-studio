@@ -612,6 +612,7 @@ fn load_higgs(paths: &RenderPaths) -> Result<AudiocppEngine, String> {
 }
 
 /// Drama 3 только на CUDA и карте 24 ГБ+; не та карта или нет файлов — ошибка с причиной, Higgs её не подменяет.
+/// cuBLAS она находит в models/higgs-engine, который augment_path_for_tools кладёт в PATH на старте.
 fn load_drama(paths: &RenderPaths) -> Result<drama::DramaEngine, String> {
     if let Some(why) = crate::models::drama_unavailable() {
         return Err(why);
@@ -620,8 +621,7 @@ fn load_drama(paths: &RenderPaths) -> Result<drama::DramaEngine, String> {
     if !crate::models::drama_installed(&paths.models_root) {
         return Err(t!("render-drama-missing"));
     }
-    let cuda_libs = paths.higgs_dll.parent().map(Path::to_path_buf).unwrap_or_default();
-    drama::DramaEngine::load(&dll, &[cuda_libs.as_path()], &paths.higgs_model_root, DRAMA_MAX_LEN)
+    drama::DramaEngine::load(&dll, &[], &paths.higgs_model_root, DRAMA_MAX_LEN)
         .map_err(|e| t!("render-drama-load-failed", error = e.to_string()))
 }
 
@@ -671,10 +671,11 @@ impl TtsEngine {
 }
 
 /// Прибавка к seed попыток и дублей фразы от её метки перегенерации: движок, который seed соблюдает (Drama 3),
-/// на «Перегенерировать» даёт новые дубли, а не копии прежних. Без метки — 0.
+/// на «Перегенерировать» даёт новые дубли, а не копии прежних. Без метки — 0. Сумма с seed остаётся меньше 2^31:
+/// поле seed в опциях Higgs не должно выйти за знаковое 32-битное.
 fn regen_seed(s: &dub_core::Segment) -> u64 {
     s.extra.get(REGEN_NONCE).and_then(|v| v.as_str()).map_or(0, |nonce| {
-        nonce.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3))
+        nonce.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3)) % 1_000_000_000
     })
 }
 
@@ -1628,7 +1629,17 @@ fn build_dub_pass(
             let mut retried = false;
             // Лучшая из ДЕФЕКТНЫХ попыток (по размаху) — на случай полного провала лестницы.
             let mut best_bad: Option<(Vec<f32>, i32, f64)> = None;
-            let (samples, sr) = loop {
+            // Drama клонирует голос только по рефу с расшифровкой; реф без речи (ASR не дал текста) — оригинал
+            // реплики сразу, без лестницы попыток, которые все кончились бы той же ошибкой.
+            let drama_no_text = matches!(engine.as_deref(), Some(TtsEngine::Drama(_)))
+                && ref_text.is_none()
+                && alt.is_none_or(|(_, t)| t.is_none());
+            let (samples, sr) = if drama_no_text {
+                media::trim(&vocals, &raw, s.start, s.end, 24_000)?;
+                kept_original = true;
+                emit(progress, "tts", &t!("render-drama-kept-original", line = fi));
+                (Vec::new(), 24_000)
+            } else { loop {
                 // Лестница (ENGINES_FINDINGS §1.3/1.8: на КВАНТЕ temperature ВНИЗ 0.3→0.1, НЕ вверх;
                 // офиц. voice-clone примеры = 0.3): 0 — temp 0.3 + кап + RAS7; 1 — жёстче RAS (repeat=1),
                 // temp 0.2, seed; 2 — temp 0.1, top_p 0.9, seed; 3-4 — АЛЬТ-РЕФ спикера (0.3 / 0.15+RAS1).
@@ -1719,7 +1730,7 @@ fn build_dub_pass(
                         emit(progress, "tts", &t!("render-defect-regenerating", line = fi, defect = defect_name(kind), via = via, attempt = attempt + 1, attempts = MAX_TTS_ATTEMPTS));
                     }
                 }
-            };
+            } };
             if !kept_original {
                 let wav = AudiocppEngine::encode_wav(&samples, sr, 1);
                 dub_core::atomic::write(&raw, &wav).map_err(|e| t!("render-write-segment", line = fi, error = e.to_string()))?;

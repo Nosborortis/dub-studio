@@ -740,3 +740,4 @@ render-drama-load-failed = 加载 Drama 3：{ $error }
 render-loading-drama = 正在加载 Drama 3
 render-drama-no-ref-text = 声音参考没有文字稿，Drama 3 没有文字稿无法克隆声音
 setup-comp-drama3-purpose = 用原演员的声音为译文配音；第二个引擎，仅适用于 24 GB 及以上显存的显卡
+render-drama-kept-original = ⚠ 第 { $line } 句：声音参考没有文字稿（其中未识别到语音），Drama 3 没有文字稿无法克隆 — 已保留原声

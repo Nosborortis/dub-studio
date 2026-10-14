@@ -209,7 +209,7 @@ mod platform {
 
     // Движок Drama 3 (C ABI форка timoncool/drama-rs, capi), CUDA 13.3, sm 75/80/86/89/90/100/120 без PTX:
     // импортирует cublas64_13.dll (ставит cuda-runtime), cudart слинкован статически.
-    pub const DRAMA_ENGINE: FileSpec = FileSpec { url: "https://github.com/timoncool/drama-rs/releases/download/engine-0.1.0/drama_engine.dll", dest_rel: "models/drama-engine/drama_engine.dll", size: 31_561_216, sha256: "60735a6e577652f6f76748da1b2835a6dcc1ceb984481b47cc6eae3c316f7948", extract: Extract::None };
+    pub const DRAMA_ENGINE: FileSpec = FileSpec { url: "https://github.com/timoncool/drama-rs/releases/download/engine-0.1.1/drama_engine.dll", dest_rel: "models/drama-engine/drama_engine.dll", size: 31_564_288, sha256: "20ad48ef845dda15292eec9fb9b3386a13f79611fccf491ebcb8410dceb3412e", extract: Extract::None };
 
     pub const WHISPER_ENGINE: Parts = Parts {
         size: 87_654_143,
@@ -336,7 +336,7 @@ mod platform {
 
     // Движок Drama 3 (форк timoncool/drama-rs, capi/build-linux-docker.sh: CUDA 13.3, Ubuntu 22.04, sm 75/80/86/89/90/
     // 100/120): RUNPATH $ORIGIN и ../higgs-engine, где libcudart и libcublas ставит cuda-runtime.
-    pub const DRAMA_ENGINE: FileSpec = FileSpec { url: "https://github.com/timoncool/drama-rs/releases/download/engine-0.1.0/libdrama_engine.so", dest_rel: "models/drama-engine/libdrama_engine.so", size: 32_121_168, sha256: "bb66481959c8725ca774813d878b05a6636cd75d8b61d84241945c6e8bf0e217", extract: Extract::None };
+    pub const DRAMA_ENGINE: FileSpec = FileSpec { url: "https://github.com/timoncool/drama-rs/releases/download/engine-0.1.1/libdrama_engine.so", dest_rel: "models/drama-engine/libdrama_engine.so", size: 32_123_408, sha256: "bdb5fb5aa433411619c8aa7698ca9d18eea7fdbb32d4504d784a382ffb25796f", extract: Extract::None };
 
     // Purfview faster-whisper r189.1 для Linux (последняя Linux-сборка не-XXL, CTranslate2 под CUDA 11).
     pub const WHISPER_ENGINE: Parts = Parts {
