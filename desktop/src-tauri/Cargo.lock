@@ -1381,6 +1381,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "drama"
+version = "2.0.0"
+dependencies = [
+ "libloading 0.9.0",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "dtoa"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1498,6 +1506,7 @@ dependencies = [
  "blake3",
  "chrono",
  "cpal",
+ "drama",
  "dub-asr",
  "dub-captions",
  "dub-core",

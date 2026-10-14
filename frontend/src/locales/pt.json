@@ -820,6 +820,10 @@
     "ultraInt8": "Ultra · int8",
     "ultraInt8Hint": "Versão do modelo base ajustada pela Moondream, quantizada: menos erros de reconhecimento, os mesmos 25 idiomas · int8 ~0,7 GB"
   },
+  "ttsVariant": {
+    "drama3": "Drama 3",
+    "drama3Hint": "Um segundo motor de voz (Fish Audio), só para placas de vídeo de 24 GB ou mais · ~21 GB"
+  },
   "units": {
     "gb": "GB",
     "mb": "MB",

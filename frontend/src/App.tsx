@@ -105,7 +105,7 @@ function LanguageSwitcher() {
 // показать в дропдауне РЕАЛЬНО активный вариант (а не «первый установленный»), совпадая с тем, что
 // резолвится при генерации.
 const VARIANT_SLOT: Record<string, [string, string]> = {
-  higgs: ["tts", "q8_0"], "higgs-q6_k": ["tts", "q6_k"], "higgs-q4_k_m": ["tts", "q4_k_m"],
+  higgs: ["tts", "q8_0"], "higgs-q6_k": ["tts", "q6_k"], "higgs-q4_k_m": ["tts", "q4_k_m"], drama3: ["tts", "drama3"],
   parakeet: ["asr", "int8"], "parakeet-fp32": ["asr", "fp32"], "parakeet-ultra": ["asr", "ultra"],
   "parakeet-ultra-int8": ["asr", "ultra-int8"],
   gemma: ["mt", "q4_0"], "gemma-q5_0": ["mt", "q5_0"], "gemma-q6_k": ["mt", "q6_k"], "gemma-q8_0": ["mt", "q8_0"],
@@ -118,7 +118,10 @@ const VARIANT_SLOT: Record<string, [string, string]> = {
 const activeVariantId = (ids: string[], sel: Selection): string | undefined =>
   ids.find((id) => { const m = VARIANT_SLOT[id]; return !!m && sel[m[0]] === m[1]; });
 
-type VariantI18n = Record<string, { label: "asrVariant.int8" | "asrVariant.fp32" | "asrVariant.ultra" | "asrVariant.ultraInt8"; hint: "asrVariant.int8Hint" | "asrVariant.fp32Hint" | "asrVariant.ultraHint" | "asrVariant.ultraInt8Hint" }>;
+type VariantI18n = Record<string, { label: "asrVariant.int8" | "asrVariant.fp32" | "asrVariant.ultra" | "asrVariant.ultraInt8" | "ttsVariant.drama3"; hint: "asrVariant.int8Hint" | "asrVariant.fp32Hint" | "asrVariant.ultraHint" | "asrVariant.ultraInt8Hint" | "ttsVariant.drama3Hint" }>;
+// Drama 3 — второй движок озвучки в том же слоте tts, что и кванты Higgs: выбирается из того же списка.
+const TTS_IDS = ["higgs", "higgs-q6_k", "higgs-q4_k_m", "drama3"];
+const TTS_VARIANT_I18N: VariantI18n = { drama3: { label: "ttsVariant.drama3", hint: "ttsVariant.drama3Hint" } };
 // Варианты Parakeet: int8 и fp32 — базовая модель NVIDIA, Ultra — её дообученная Moondream версия.
 const ASR_VARIANT_I18N: VariantI18n = {
   parakeet: { label: "asrVariant.int8", hint: "asrVariant.int8Hint" },
@@ -397,7 +400,7 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
           </div>
         ) : (
           <>
-            <VariantPicker base="Higgs Audio v3" ids={["higgs", "higgs-q6_k", "higgs-q4_k_m"]} />
+            <VariantPicker base={(picks[TTS_IDS[0]] ?? activeVariantId(TTS_IDS, cap?.selection ?? {})) === "drama3" ? "Fish Audio Drama 3" : "Higgs Audio v3"} ids={TTS_IDS} i18n={TTS_VARIANT_I18N} />
             {rowOf("higgs-engine")}
           </>
         )}

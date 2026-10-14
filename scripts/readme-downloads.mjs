@@ -94,8 +94,10 @@ const NAMES = {
   parakeet: "Parakeet-TDT 0.6B v3 int8",
   "higgs-q6_k": "Higgs Audio v3 Q6_K",
   "higgs-q4_k_m": "Higgs Audio v3 Q4_K_M",
+  drama3: "Fish Audio Drama 3 Q4 + drama_engine (24 GB+ GPU)",
   "parakeet-fp32": "Parakeet-TDT 0.6B v3 fp32",
   "parakeet-ultra": "Parakeet Ultra 0.6B fp32 (Moondream)",
+  "parakeet-ultra-int8": "Parakeet Ultra 0.6B int8 (Moondream)",
   "whisper-engine": "Whisper-Faster (faster-whisper standalone)",
   "whisper-cuda": "Whisper CUDA (cuBLAS 11, cuDNN 8)",
   "whisper-tiny": "Whisper tiny",
@@ -120,10 +122,37 @@ const NAMES = {
   cudnn: "cuDNN 9",
 };
 
+// The README describes the Windows build: platform::X is read from the Windows platform module.
+function windowsModule(src) {
+  return src.slice(src.indexOf("#[cfg(windows)]\nmod platform"), src.indexOf("#[cfg(not(windows))]\nmod platform"));
+}
+
+// The body of `pub const X: Parts = Parts { ... };` of the Windows platform module.
+function windowsParts(src, x) {
+  const windows = windowsModule(src);
+  const at = windows.indexOf(`pub const ${x}: Parts = Parts {`);
+  if (at < 0) throw new Error(`platform::${x} Parts not found in the Windows platform module`);
+  return windows.slice(at, windows.indexOf("\n    };", at));
+}
+
+// The body of `const NAME: &[FileSpec] = &[...];` with every `platform::X` replaced by the Windows definition of X.
+function constArray(src, name) {
+  const at = src.indexOf(`const ${name}: &[FileSpec] = &[`);
+  if (at < 0) throw new Error(`const ${name} not found in setup.rs`);
+  const body = src.slice(at, src.indexOf("\n];", at));
+  const windows = windowsModule(src);
+  return body.replace(/platform::(\w+)/g, (_, x) => {
+    const def = windows.match(new RegExp(`pub const ${x}: FileSpec = (FileSpec \\{[^\\n]*\\});`))?.[1];
+    if (!def) throw new Error(`platform::${x} not found in the Windows platform module`);
+    return def;
+  });
+}
+
 function readManifest() {
   const src = readFileSync(join(root, "crates/dub-server/src/setup.rs"), "utf8").replace(/\r\n/g, "\n");
   const consts = {};
   for (const m of src.matchAll(/const (\w+): &str =\s*"([^"]+)";/g)) consts[m[1]] = m[2];
+  for (const m of windowsModule(src).matchAll(/const (\w+): &str =\s*"([^"]+)";/g)) consts[m[1]] = m[2];
   const at = src.indexOf("pub fn manifest()");
   if (at < 0) throw new Error("manifest() not found in setup.rs");
   const body = src.slice(at, src.indexOf("\n}\n", at));
@@ -135,12 +164,18 @@ function readManifest() {
     const delivery = p.match(/delivery: Delivery::(\w+)/)?.[1];
     const size = num(p.match(/delivery: Delivery::\w+,\s*(?:\/\/[^\n]*\n\s*)*size: ([\d_]+)/)?.[1] ?? "0");
     if (!id || !requirement || !delivery) throw new Error("cannot parse a manifest component: " + p.slice(0, 120));
-    const files = [...p.matchAll(/FileSpec \{ url: (?:"([^"]+)"|(\w+)), dest_rel: "([^"]+)", size: ([\d_]+),(?: sha256: "[0-9a-f]{64}",)? extract: Extract::(\w+) \}/g)].map((f) => {
+    // files: CONST — a const array of setup.rs; files: platform::X.files — the Windows Parts X
+    const listed = p.match(/files: ([A-Z][A-Z0-9_]+),/)?.[1];
+    const parts = p.match(/files: platform::(\w+)\.files,/)?.[1];
+    const scope = listed ? constArray(src, listed) : parts ? windowsParts(src, parts) : p;
+    const files = [...scope.matchAll(/FileSpec \{ url: (?:"([^"]+)"|(\w+)), dest_rel: "([^"]+)", size: ([\d_]+),(?: sha256: "[0-9a-f]{64}",)? extract: Extract::(\w+) \}/g)].map((f) => {
       const url = f[1] ?? consts[f[2]];
       if (!url) throw new Error(`unknown URL constant ${f[2]} in component ${id}`);
-      return { url, destRel: f[3], size: num(f[4]), extract: f[5].toLowerCase() };
+      const extract = { None: "none", Flat: "zipflat", Pick: "zippick", Tree: "ziptree", Libs: "wheeldlls" }[f[5]];
+      if (!extract) throw new Error(`unknown Extract::${f[5]} in component ${id}`);
+      return { url, destRel: f[3], size: num(f[4]), extract };
     });
-    return { id, requirement, delivery, size, files };
+    return { id, requirement, delivery, size: size || files.reduce((s, f) => s + f.size, 0), files };
   });
 }
 

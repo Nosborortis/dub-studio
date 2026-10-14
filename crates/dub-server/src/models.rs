@@ -128,6 +128,7 @@ pub fn component_selection(id: &str) -> Vec<(&'static str, String)> {
         "higgs" => vec![("tts", "q8_0".into())],
         "higgs-q6_k" => vec![("tts", "q6_k".into())],
         "higgs-q4_k_m" => vec![("tts", "q4_k_m".into())],
+        "drama3" => vec![("tts", DRAMA_TTS.into())],
         "parakeet" => vec![("asr_engine", "parakeet".into()), ("asr", "int8".into())],
         "parakeet-fp32" => vec![("asr_engine", "parakeet".into()), ("asr", "fp32".into())],
         "parakeet-ultra" => vec![("asr_engine", "parakeet".into()), ("asr", "ultra".into())],
@@ -691,7 +692,8 @@ pub fn build_engine(choice: &AsrChoice) -> Box<dyn dub_asr::AsrEngine> {
 }
 
 /// Higgs TTS: папки higgs-{q8_0,q6_k,q4_k_m}, внутри файл {q}.gguf. Возврат (каталог, квант-строка
-/// для audiocpp load_model). Env DUB_STUDIO_HIGGS_MODEL (портатив) имеет приоритет.
+/// для audiocpp load_model). Env DUB_STUDIO_HIGGS_MODEL (портатив) имеет приоритет. Выбранная Drama 3 —
+/// (`drama3`, [`DRAMA_TTS`]) и без скачанных файлов: её загрузка скажет, чего нет, а не подменит её Higgs.
 pub fn resolve_tts(mroot: &Path, sel: &Value) -> (PathBuf, String) {
     if let Ok(env) = std::env::var("DUB_STUDIO_HIGGS_MODEL") {
         let d = PathBuf::from(env);
@@ -702,6 +704,9 @@ pub fn resolve_tts(mroot: &Path, sel: &Value) -> (PathBuf, String) {
             .unwrap_or("q8_0")
             .to_string();
         return (d, q);
+    }
+    if pick(sel, "tts") == Some(DRAMA_TTS) {
+        return (mroot.join(DRAMA_TTS), DRAMA_TTS.to_string());
     }
     let has = |q: &str| {
         mroot.join(format!("higgs-{q}")).join(format!("{q}.gguf")).is_file()
@@ -718,6 +723,36 @@ pub fn resolve_tts(mroot: &Path, sel: &Value) -> (PathBuf, String) {
         }
     }
     ret("q8_0") // дефолт-fallback (может ещё не быть скачан)
+}
+
+/// Значение слота `tts` и папка весов Drama 3 (apiplant/drama-q4) в каталоге моделей.
+pub const DRAMA_TTS: &str = "drama3";
+
+/// Видеопамяти нужно Drama 3: карта «24 ГБ» отдаёт ~23.99 ГиБ, 20-гиговая не влезает (пик движка 22.6 ГиБ).
+pub const DRAMA_MIN_VRAM: u64 = 23 * 1024 * 1024 * 1024;
+
+/// Веса и движок Drama 3 на месте (последний слой весов и DLL).
+pub fn drama_installed(mroot: &Path) -> bool {
+    mroot.join(DRAMA_TTS).join("layer39.safetensors").is_file() && drama_dll(mroot).is_file()
+}
+
+pub fn drama_dll(mroot: &Path) -> PathBuf {
+    mroot.join("drama-engine").join(if cfg!(windows) { "drama_engine.dll" } else { "libdrama_engine.so" })
+}
+
+/// Почему Drama 3 на этой машине не пойдёт: None — карта NVIDIA с CUDA 13 и ≥ [`DRAMA_MIN_VRAM`].
+pub fn drama_unavailable() -> Option<String> {
+    let gpu = crate::hw::gpu_report();
+    let card = gpu.summary().unwrap_or_else(|| "-".to_string());
+    if !gpu.cuda13_ok {
+        return Some(t!("drama-needs-cuda", card = card));
+    }
+    let total = crate::hw::total_vram();
+    if total < DRAMA_MIN_VRAM {
+        let gb = format!("{:.0}", total as f64 / (1u64 << 30) as f64);
+        return Some(t!("drama-needs-24gb", card = card, gb = gb));
+    }
+    None
 }
 
 /// Roformer сепарация: models/bsroformer/voc_fv6-{Q8_0,Q5_0,Q4_0}.gguf (все в одном каталоге).

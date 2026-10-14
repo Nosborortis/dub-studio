@@ -166,6 +166,7 @@ fn models_in_use(mroot: &Path, stages: &[&str]) -> Vec<String> {
         .iter()
         .map(|&stage| match stage {
             "tts" => match models::tts_provider(mroot) {
+                "local" if slot("tts") == models::DRAMA_TTS => format!("tts:{}", models::DRAMA_TTS),
                 "local" => format!("tts:higgs-{}", slot("tts")),
                 provider => format!("tts:{provider}:{}", models::tts_model(mroot)),
             },
@@ -194,5 +195,7 @@ mod tests {
         assert_eq!(retranslate, ["llm:gemma-e4b"]);
         let render = models_in_use(dir.path(), &["tts", "sep"]);
         assert_eq!(render, ["tts:higgs-q8_0", "sep:roformer-fv6"]);
+        std::fs::write(dir.path().join("active.json"), r#"{"tts_provider":"local","tts":"drama3"}"#).unwrap();
+        assert_eq!(models_in_use(dir.path(), &["tts"]), ["tts:drama3"]);
     }
 }

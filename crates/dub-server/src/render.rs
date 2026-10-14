@@ -538,7 +538,7 @@ const ENGINE_STUCK: &str = "ENGINE_STUCK";
 /// обрывает рендер (НЕ гоняет движок параллельно с зависшим потоком). Так воркер не блокируется навечно и
 /// не ловит гонку FFI.
 fn voice_clone_guarded(
-    engine: &Arc<AudiocppEngine>,
+    engine: &Arc<TtsEngine>,
     text: &str,
     ref_wav: &str,
     ref_text: Option<&str>,
@@ -554,9 +554,7 @@ fn voice_clone_guarded(
         opts.to_string(),
     );
     std::thread::spawn(move || {
-        let r = eng
-            .voice_clone(&t, &rw, rt.as_deref(), &op)
-            .map_err(|e| e.localize());
+        let r = eng.voice_clone(&t, &rw, rt.as_deref(), &op);
         let _ = tx.send(r); // получателя уже нет по таймауту — send вернёт Err, не паникуем
     });
     // Ждём порциями, чтобы отмена джобы доходила до движка, не дожидаясь таймаута синтеза.
@@ -589,7 +587,7 @@ fn voice_clone_guarded(
     }
 }
 
-fn load_higgs(paths: &RenderPaths) -> Result<Arc<AudiocppEngine>, String> {
+fn load_higgs(paths: &RenderPaths) -> Result<AudiocppEngine, String> {
     if paths.higgs_backend == "cuda" {
         let gpu = crate::hw::gpu_report();
         if !gpu.cuda13_ok {
@@ -601,8 +599,7 @@ fn load_higgs(paths: &RenderPaths) -> Result<Arc<AudiocppEngine>, String> {
             });
         }
     }
-    let e = Arc::new(AudiocppEngine::load(&paths.higgs_dll).map_err(|e| t!("render-higgs-load-failed", error = e.localize()))?,
-    );
+    let e = AudiocppEngine::load(&paths.higgs_dll).map_err(|e| t!("render-higgs-load-failed", error = e.localize()))?;
     e.load_model(
         &paths.higgs_model_root,
         &paths.higgs_backend,
@@ -612,6 +609,79 @@ fn load_higgs(paths: &RenderPaths) -> Result<Arc<AudiocppEngine>, String> {
     )
     .map_err(|e| t!("render-higgs-model-failed", error = e.localize()))?;
     Ok(e)
+}
+
+/// Drama 3 только на CUDA и карте 24 ГБ+; не та карта или нет файлов — ошибка с причиной, Higgs её не подменяет.
+fn load_drama(paths: &RenderPaths) -> Result<drama::DramaEngine, String> {
+    if let Some(why) = crate::models::drama_unavailable() {
+        return Err(why);
+    }
+    let dll = crate::models::drama_dll(&paths.models_root);
+    if !crate::models::drama_installed(&paths.models_root) {
+        return Err(t!("render-drama-missing"));
+    }
+    let cuda_libs = paths.higgs_dll.parent().map(Path::to_path_buf).unwrap_or_default();
+    drama::DramaEngine::load(&dll, &[cuda_libs.as_path()], &paths.higgs_model_root, DRAMA_MAX_LEN)
+        .map_err(|e| t!("render-drama-load-failed", error = e.to_string()))
+}
+
+/// Строк промпта Drama 3 на одну фразу: реф (~22 кадра на секунду) + текст + сгенерированное.
+const DRAMA_MAX_LEN: u32 = 2048;
+
+/// Загрузить локальный TTS, выбранный в настройках, с сообщением в журнал.
+fn load_tts(paths: &RenderPaths, progress: &Progress) -> Result<Arc<TtsEngine>, String> {
+    if paths.higgs_quant == crate::models::DRAMA_TTS {
+        emit(progress, "tts", &t!("render-loading-drama"));
+        Ok(Arc::new(TtsEngine::Drama(load_drama(paths)?)))
+    } else {
+        emit(progress, "tts", &t!("render-loading-higgs"));
+        Ok(Arc::new(TtsEngine::Higgs(load_higgs(paths)?)))
+    }
+}
+
+/// Локальный TTS дубляжа: на карте одна модель — Higgs Audio v3 или Drama 3.
+pub enum TtsEngine {
+    Higgs(AudiocppEngine),
+    Drama(drama::DramaEngine),
+}
+
+impl TtsEngine {
+    /// Клон голоса рефа. `opts` — JSON лестницы попыток Higgs; Drama берёт из него seed, потолок длины и
+    /// ступень температуры (у Drama своя шкала: 1.0 по умолчанию, ступени лестницы опускают её до 0.8).
+    fn voice_clone(&self, text: &str, ref_wav: &str, ref_text: Option<&str>, opts: &str) -> Result<(Vec<f32>, i32), String> {
+        match self {
+            TtsEngine::Higgs(e) => e.voice_clone(text, ref_wav, ref_text, opts).map_err(|e| e.localize()),
+            TtsEngine::Drama(e) => {
+                let ref_text = ref_text.filter(|t| !t.trim().is_empty()).ok_or_else(|| t!("render-drama-no-ref-text"))?;
+                let audio = e.speak(text, Path::new(ref_wav), ref_text, &drama_params(opts)).map_err(|err| match err {
+                    drama::DramaError::Cancelled => crate::jobs::CANCELLED.to_string(),
+                    other => other.to_string(),
+                })?;
+                Ok((audio, e.sample_rate() as i32))
+            }
+        }
+    }
+
+    fn cancel(&self) {
+        match self {
+            TtsEngine::Higgs(e) => e.cancel(),
+            TtsEngine::Drama(e) => e.cancel(),
+        }
+    }
+}
+
+/// Параметры Drama 3 из JSON попытки Higgs: seed (его нет у первой попытки — берётся хэш опций, чтобы попытки
+/// различались), `max_new_tokens` Higgs (75 токенов/с с запасом 1.5) -> кадры Drama (21.5/с с запасом 2),
+/// температура Higgs 0.1-0.35 -> 0.8-1.0.
+fn drama_params(opts: &str) -> drama::Params {
+    let v: serde_json::Value = serde_json::from_str(opts).unwrap_or_default();
+    let seed = v.get("seed").and_then(|s| s.as_u64()).unwrap_or_else(|| {
+        opts.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3))
+    });
+    let tokens = v.get("max_new_tokens").and_then(|t| t.as_u64()).unwrap_or(2048) as f64;
+    let max_new = ((tokens * drama::FRAMES_PER_SECOND * 2.0 / (75.0 * 1.5)).ceil() as u32).clamp(64, 2048);
+    let temperature = v.get("temperature").and_then(|t| t.as_f64()).map_or(1.0, |t| (0.7 + t).min(1.0)) as f32;
+    drama::Params { temperature, seed, max_new, ..Default::default() }
 }
 
 /// Ошибка синтеза, после которой лестницу ретраев не продолжают: движок завис или джобу отменили.
@@ -784,7 +854,7 @@ fn build_dub(
     regen_dub: bool,
     progress: &Progress,
 ) -> Result<(PathBuf, Option<Project>), String> {
-    let mut engine: Option<Arc<AudiocppEngine>> = None;
+    let mut engine: Option<Arc<TtsEngine>> = None;
     let first = PassCfg { shorten: crate::fitplan::auto_shorten_on(&paths.models_root), kept: Default::default(),
     };
     let over = match build_dub_pass(proj, paths, total, keep_music, voiceover, regen_dub, &first, &mut engine, progress,
@@ -827,7 +897,7 @@ fn build_dub_pass(
     voiceover: bool,
     regen_dub: bool,
     pass: &PassCfg,
-    engine: &mut Option<Arc<AudiocppEngine>>,
+    engine: &mut Option<Arc<TtsEngine>>,
     progress: &Progress,
 ) -> Result<DubPass, String> {
     let shown = proj;
@@ -1198,6 +1268,8 @@ fn build_dub_pass(
             crate::models::openrouter_tts_voice(&paths.models_root)
         )
     }
+    } else if paths.higgs_quant == crate::models::DRAMA_TTS {
+        format!("drama:{}", crate::models::DRAMA_TTS)
     } else {
         format!(
             "higgs:{}:{}",
@@ -1495,8 +1567,7 @@ fn build_dub_pass(
             // identity-рефа — заранее посчитанный reftext_of. Считаем ТОЛЬКО при
             // синтезе (не тратить ffmpeg-обрезку на закэшированные не-dirty сегменты).
             if engine.is_none() {
-                emit(progress, "tts", &t!("render-loading-higgs"));
-                *engine = Some(load_higgs(paths)?);
+                *engine = Some(load_tts(paths, progress)?);
             }
             let (ref_wav, ref_text): (PathBuf, Option<String>) = match emo_ref_of(s, &sid) {
                 Some(emo) => emo,
@@ -1903,8 +1974,7 @@ fn build_dub_pass(
             emit(progress, "tts", &t!("render-qc-mismatch", count = bad_idx.len()),
             );
             if engine.is_none() {
-                emit(progress, "tts", &t!("render-loading-higgs"));
-                *engine = Some(load_higgs(paths)?);
+                *engine = Some(load_tts(paths, progress)?);
             }
             for &i in &bad_idx {
                 crate::jobs::check_cancelled()?;
