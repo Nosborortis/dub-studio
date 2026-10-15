@@ -666,42 +666,102 @@ impl SupertonicVoices {
         let text = qwentts::stress_marks(&auto_stress(&self.models_root, &self.lang, text)?, true);
         let (seed, _, _) = qwen_params(opts);
         let lang = self.lang.split(['-', '_']).next().unwrap_or("").to_ascii_lowercase();
+        let gap = vec![0f32; (PHRASE_GAP_SECS * self.model.sample_rate() as f32) as usize];
         let mut audio = Vec::new();
         for piece in text_pieces(&text, crate::supertonic::MAX_CHARS) {
+            if !audio.is_empty() {
+                audio.extend_from_slice(&gap);
+            }
             audio.extend(self.model.speak(&piece, &lang, voice, crate::supertonic::DEFAULT_STEPS, crate::supertonic::DEFAULT_SPEED, seed)?);
         }
         Ok((audio, self.model.sample_rate() as i32))
     }
 }
 
-/// Текст кусками не длиннее `max` знаков: по предложениям, слишком длинное предложение — по словам.
+/// Тишина между кусками длинной фразы Supertonic (как в его `call`).
+const PHRASE_GAP_SECS: f32 = 0.3;
+
+/// Текст кусками не длиннее `max` знаков — алгоритм Supertonic `chunk_text`: по предложениям, у слишком длинного
+/// предложения по запятым, у слишком длинной части по словам.
 fn text_pieces(text: &str, max: usize) -> Vec<String> {
-    let mut sentences: Vec<String> = Vec::new();
-    let mut cur = String::new();
-    for c in text.chars() {
-        cur.push(c);
-        if matches!(c, '.' | '!' | '?' | '…') {
-            sentences.push(std::mem::take(&mut cur));
-        }
-    }
-    sentences.push(cur);
-    let mut out: Vec<String> = Vec::new();
-    let mut piece = String::new();
+    let text = text.trim();
     let len = |s: &str| s.chars().count();
-    for s in sentences.iter().map(|s| s.trim()).filter(|s| !s.is_empty()) {
-        let words: Vec<&str> = if len(s) > max { s.split_whitespace().collect() } else { vec![s] };
-        for w in words {
-            if !piece.is_empty() && len(&piece) + 1 + len(w) > max {
-                out.push(std::mem::take(&mut piece));
-            }
-            if !piece.is_empty() {
-                piece.push(' ');
-            }
-            piece.push_str(w);
-        }
+    if len(text) <= max {
+        return vec![text.to_string()];
     }
-    if !piece.is_empty() {
-        out.push(piece);
+    let mut out: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let flush = |current: &mut String, out: &mut Vec<String>| {
+        if !current.trim().is_empty() {
+            out.push(current.trim().to_string());
+        }
+        current.clear();
+    };
+    for sentence in sentences(text) {
+        let sentence = sentence.trim();
+        if sentence.is_empty() {
+            continue;
+        }
+        if len(sentence) > max {
+            flush(&mut current, &mut out);
+            for part in sentence.split(',').map(str::trim).filter(|p| !p.is_empty()) {
+                if len(part) > max {
+                    flush(&mut current, &mut out);
+                    let mut words = String::new();
+                    for word in part.split_whitespace() {
+                        if !words.is_empty() && len(&words) + len(word) + 1 > max {
+                            flush(&mut words, &mut out);
+                        }
+                        if !words.is_empty() {
+                            words.push(' ');
+                        }
+                        words.push_str(word);
+                    }
+                    flush(&mut words, &mut out);
+                } else {
+                    if !current.is_empty() && len(&current) + len(part) + 2 > max {
+                        flush(&mut current, &mut out);
+                    }
+                    if !current.is_empty() {
+                        current.push_str(", ");
+                    }
+                    current.push_str(part);
+                }
+            }
+            continue;
+        }
+        if !current.is_empty() && len(&current) + len(sentence) + 1 > max {
+            flush(&mut current, &mut out);
+        }
+        if !current.is_empty() {
+            current.push(' ');
+        }
+        current.push_str(sentence);
+    }
+    flush(&mut current, &mut out);
+    out
+}
+
+/// Предложения: конец — `.`, `!`, `?` или `…` с пробелом после, кроме сокращений.
+fn sentences(text: &str) -> Vec<&str> {
+    const ABBREVIATIONS: &[&str] = &["Dr.", "Mr.", "Mrs.", "Ms.", "Prof.", "Sr.", "Jr.", "St.", "etc.", "vs.", "i.e.", "e.g.", "т.е.", "т.д.", "т.п.", "др.", "г.", "гг.", "им.", "ул.", "св."];
+    let mut out = Vec::new();
+    let mut start = 0;
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    for (i, &(at, c)) in chars.iter().enumerate() {
+        if !matches!(c, '.' | '!' | '?' | '…') || !chars.get(i + 1).is_some_and(|&(_, n)| n.is_whitespace()) {
+            continue;
+        }
+        let end = at + c.len_utf8();
+        let head = &text[start..end];
+        if c == '.' && ABBREVIATIONS.iter().any(|a| head.ends_with(a) && head[..head.len() - a.len()].chars().last().is_none_or(|p| !p.is_alphanumeric())) {
+            continue;
+        }
+        out.push(head);
+        start = end;
+    }
+    if start < text.len() {
+        out.push(&text[start..]);
     }
     out
 }
@@ -4100,12 +4160,15 @@ mod tests {
     }
 
     #[test]
-    fn supertonic_gets_pieces_within_its_limit_cut_at_sentences_then_words() {
-        assert_eq!(text_pieces("Раз. Два! Три?", 10), vec!["Раз. Два!", "Три?"]);
-        assert_eq!(text_pieces("Короткая фраза.", 300), vec!["Короткая фраза."]);
-        let long = "слово ".repeat(80);
-        let pieces = text_pieces(&long, 300);
-        assert!(pieces.len() == 2 && pieces.iter().all(|p| p.chars().count() <= 300), "{pieces:?}");
+    fn supertonic_gets_pieces_within_its_limit_cut_at_sentences_then_commas_then_words() {
+        assert_eq!(text_pieces("Коротко.", 20), vec!["Коротко."]);
+        assert_eq!(text_pieces("Раз два три. Четыре пять! Шесть семь восемь?", 26), vec!["Раз два три. Четыре пять!", "Шесть семь восемь?"]);
+        assert_eq!(text_pieces("Он пришёл в т.е. другой дом. Вот так.", 30), vec!["Он пришёл в т.е. другой дом.", "Вот так."]);
+        assert_eq!(text_pieces("один два три четыре, пять шесть семь восемь", 22), vec!["один два три четыре", "пять шесть семь восемь"]);
+        let long = "слово ".repeat(40);
+        let cut = text_pieces(&long, 50);
+        assert!(cut.len() > 1 && cut.iter().all(|p| p.chars().count() <= 50), "{cut:?}");
+        assert_eq!(cut.join(" "), long.trim());
     }
 
     #[test]

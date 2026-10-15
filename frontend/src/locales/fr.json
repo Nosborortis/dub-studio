@@ -1355,7 +1355,7 @@
     "batch": "Batch — tarif API réduit de 50 %",
     "batchHint": "Google place le lot en attente (objectif : 24 heures). Annuler la tâche locale suspend les consultations ; le lot distant continue. Reprendre récupère le résultat sans nouvel envoi payant. Usage et coût estimé : project_google_tts_report dans MCP.",
     "standardHint": "Requêtes directes en parallèle selon le paramètre de concurrence du cloud. Usage et coût estimé : project_google_tts_report dans MCP.",
-    "provider_local": "En local · Higgs / Drama / Qwen",
+    "provider_local": "En local · Higgs / Drama / Qwen / Supertonic",
     "provider_openrouter": "Via OpenRouter",
     "provider_google": "Google · directement"
   },

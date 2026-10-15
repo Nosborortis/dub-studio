@@ -1319,7 +1319,7 @@
     "batch": "批处理 — API 费率降低 50%",
     "batchHint": "Google 将批处理加入队列（目标：24 小时）。取消本地任务会暂停轮询，远程批处理继续运行。恢复时读取已有结果，不会重复付费提交。用量和估算费用：MCP 中的 project_google_tts_report。",
     "standardHint": "按云端并发设置发送并行直接请求。用量和估算费用：MCP 中的 project_google_tts_report。",
-    "provider_local": "本地 · Higgs / Drama / Qwen",
+    "provider_local": "本地 · Higgs / Drama / Qwen / Supertonic",
     "provider_openrouter": "通过 OpenRouter",
     "provider_google": "Google · 直连"
   },

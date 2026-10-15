@@ -108,6 +108,16 @@ struct Audio {
     channels: i32,
 }
 
+/// Условие клона, которое библиотека один раз извлекает из эталона: эмбеддинг говорящего и коды кодека.
+#[repr(C)]
+struct VoiceRef {
+    ref_spk_emb: *mut f32,
+    ref_spk_dim: i32,
+    ref_codes: *mut i32,
+    ref_t: i32,
+    num_codebooks: i32,
+}
+
 #[repr(C)]
 struct RawContext {
     _private: [u8; 0],
@@ -123,6 +133,8 @@ struct Api {
     synthesize: unsafe extern "C" fn(*mut RawContext, *const TtsParams, *mut Audio) -> i32,
     audio_free: unsafe extern "C" fn(*mut Audio),
     model_type: unsafe extern "C" fn(*const RawContext) -> *const c_char,
+    extract_voice_ref: unsafe extern "C" fn(*mut RawContext, *const f32, i32, *mut VoiceRef) -> i32,
+    voice_ref_free: unsafe extern "C" fn(*mut VoiceRef),
 }
 
 /// Библиотека загружается один раз на процесс и не выгружается: статический инициализатор ggml второй загрузки
@@ -150,6 +162,8 @@ fn library(dir: &Path) -> Result<Api, QwenError> {
             synthesize: sym!("qt_synthesize"),
             audio_free: sym!("qt_audio_free"),
             model_type: sym!("qt_model_type"),
+            extract_voice_ref: sym!("qt_extract_voice_ref"),
+            voice_ref_free: sym!("qt_voice_ref_free"),
         }
     };
     *loaded = Some((lib, api));
@@ -253,6 +267,8 @@ pub struct QwenEngine {
     api: Api,
     raw: *mut RawContext,
     stop: AtomicBool,
+    /// Условие последнего эталона по хэшу его звука: фразы одного говорящего и повторы берут его готовым.
+    voice: std::sync::Mutex<Option<([u8; 32], VoiceRef)>>,
 }
 
 // qt_synthesize потокобезопасен, а хэндл освобождается только в drop.
@@ -291,7 +307,7 @@ impl QwenEngine {
         if raw.is_null() {
             return Err(QwenError::Load(unsafe { last_error(&api) }));
         }
-        let engine = QwenEngine { api, raw, stop: AtomicBool::new(false) };
+        let engine = QwenEngine { api, raw, stop: AtomicBool::new(false), voice: std::sync::Mutex::new(None) };
         let kind = unsafe { CStr::from_ptr((engine.api.model_type)(engine.raw)) }.to_string_lossy().into_owned();
         let expected = if clone { "base" } else { "custom_voice" };
         if kind != expected {
@@ -319,10 +335,27 @@ impl QwenEngine {
         p.abi_version = ABI_VERSION;
         p.text = text.as_ptr();
         p.speaker = speaker.as_ref().map_or(std::ptr::null(), |s| s.as_ptr());
+        let mut voice = self.voice.lock().unwrap_or_else(|e| e.into_inner());
         if let Some((audio, _)) = say.reference {
-            p.ref_audio_24k = audio.as_ptr();
-            p.ref_n_samples = audio.len() as i32;
-            p.ref_text = ref_text.as_ref().map_or(std::ptr::null(), |t| t.as_ptr());
+            let key: [u8; 32] = *blake3::hash(unsafe { std::slice::from_raw_parts(audio.as_ptr() as *const u8, std::mem::size_of_val(audio)) }).as_bytes();
+            if voice.as_ref().is_none_or(|(k, _)| *k != key) {
+                if let Some((_, mut old)) = voice.take() {
+                    unsafe { (self.api.voice_ref_free)(&mut old) };
+                }
+                let mut r: VoiceRef = unsafe { std::mem::zeroed() };
+                if unsafe { (self.api.extract_voice_ref)(self.raw, audio.as_ptr(), audio.len() as i32, &mut r) } != 0 {
+                    return Err(QwenError::Engine(unsafe { last_error(&self.api) }));
+                }
+                *voice = Some((key, r));
+            }
+            let r = &voice.as_ref().expect("set above").1;
+            p.ref_spk_emb = r.ref_spk_emb;
+            p.ref_spk_dim = r.ref_spk_dim;
+            if let Some(t) = &ref_text {
+                p.ref_codes = r.ref_codes;
+                p.ref_t = r.ref_t;
+                p.ref_text = t.as_ptr();
+            }
         }
         p.lang = lang.as_ref().map_or(std::ptr::null(), |l| l.as_ptr());
         p.seed = (say.seed & i64::MAX as u64) as i64;
@@ -352,6 +385,9 @@ impl QwenEngine {
 
 impl Drop for QwenEngine {
     fn drop(&mut self) {
+        if let Some((_, mut r)) = self.voice.get_mut().unwrap_or_else(|e| e.into_inner()).take() {
+            unsafe { (self.api.voice_ref_free)(&mut r) };
+        }
         unsafe { (self.api.free)(self.raw) };
     }
 }

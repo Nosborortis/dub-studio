@@ -7,4 +7,5 @@ description = "FFI-обвязка над qwen.dll (Qwen3-TTS 1.7B через qwe
 
 [dependencies]
 libloading = "0.9"
+blake3 = "1"
 thiserror = { workspace = true }
