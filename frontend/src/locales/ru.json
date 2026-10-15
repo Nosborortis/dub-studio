@@ -1371,7 +1371,7 @@
     "batch": "Batch — тариф API ниже на 50%",
     "batchHint": "Google ставит пакет в очередь (ориентир: 24 часа). Отмена локальной задачи приостанавливает опрос; пакет в Google продолжает работать. Продолжение получает его результат без повторной оплаты. Расход и расчёт стоимости: project_google_tts_report в MCP.",
     "standardHint": "Параллельные прямые запросы; число потоков задаётся в настройках облака. Расход и расчёт стоимости: project_google_tts_report в MCP.",
-    "provider_local": "Локально · Higgs / Drama",
+    "provider_local": "Локально · Higgs / Drama / Qwen",
     "provider_openrouter": "Через OpenRouter",
     "provider_google": "Google · напрямую"
   },

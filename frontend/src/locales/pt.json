@@ -1353,7 +1353,7 @@
     "batch": "Batch — tarifa da API 50% menor",
     "batchHint": "O Google coloca o lote na fila (meta: 24 horas). Cancelar a tarefa local pausa as consultas; o lote remoto continua. Retomar recupera o resultado sem outro envio pago. Uso e custo estimado: project_google_tts_report no MCP.",
     "standardHint": "Solicitações diretas em paralelo conforme a configuração de concorrência da nuvem. Uso e custo estimado: project_google_tts_report no MCP.",
-    "provider_local": "No computador · Higgs / Drama",
+    "provider_local": "No computador · Higgs / Drama / Qwen",
     "provider_openrouter": "Pelo OpenRouter",
     "provider_google": "Google · direto"
   },
