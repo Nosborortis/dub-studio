@@ -57,11 +57,13 @@ pub mod service;
 mod setup;
 mod shorten;
 mod spa;
+mod stress;
 mod studio_settings;
 mod subalign;
 mod subimport;
 mod subs_text;
 mod subtracks;
+mod supertonic;
 mod takes;
 mod translate;
 mod tts_text;
@@ -912,6 +914,7 @@ fn list_voice_names(dir: &Path) -> Vec<String> {
 async fn voices_list(State(st): State<AppState>) -> Json<Value> {
     let mut voices = list_voice_names(&st.voices_dir);
     voices.extend(qwen_voice_names(&st.models_root));
+    voices.extend(supertonic_voice_names(&st.models_root));
     Json(json!({ "voices": voices }))
 }
 
@@ -923,6 +926,48 @@ fn qwen_voice_names(mroot: &Path) -> Vec<String> {
         Some(_) => qwentts::SPEAKERS.iter().map(|(id, ..)| format!("{}{id}", render::QWEN_VOICE)).collect(),
         None => Vec::new(),
     }
+}
+
+/// Десять голосов Supertonic 3 (`supertonic:<F1..M5>`), когда он выбран движком озвучки.
+fn supertonic_voice_names(mroot: &Path) -> Vec<String> {
+    if models::load_selection(mroot).get("tts").and_then(|v| v.as_str()) != Some(models::SUPERTONIC_TTS) {
+        return Vec::new();
+    }
+    supertonic::VOICES.iter().map(|v| format!("{}{v}", render::SUPERTONIC_VOICE)).collect()
+}
+
+/// Проба голоса Supertonic 3: один раз сказанная фраза, дальше файл из models/supertonic3/samples.
+async fn supertonic_voice_sample(mroot: &Path, voice: &str, req: axum::http::Request<axum::body::Body>) -> Response {
+    if !supertonic::VOICES.contains(&voice) {
+        return (StatusCode::NOT_FOUND, "voice not found").into_response();
+    }
+    if !supertonic::installed(mroot) {
+        return (StatusCode::NOT_FOUND, "Supertonic 3 is not installed").into_response();
+    }
+    let sample = supertonic::dir(mroot).join("samples").join(format!("{voice}.wav"));
+    if !sample.is_file() {
+        let (root, out, voice) = (mroot.to_path_buf(), sample.clone(), voice.to_string());
+        let made = tokio::task::spawn_blocking(move || -> Result<(), String> {
+            static MAKING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+            let _one = MAKING.lock().unwrap_or_else(|e| e.into_inner());
+            if out.is_file() {
+                return Ok(());
+            }
+            let model = supertonic::Model::load(&root, models::local_backend(&root) == "gpu")?;
+            let audio = model.speak("Hello! This is how my voice sounds in your dub.", "en", &voice, supertonic::DEFAULT_STEPS, supertonic::DEFAULT_SPEED, 7)?;
+            if let Some(dir) = out.parent() {
+                std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+            }
+            wavio::write_mono_f32(&out, &audio, model.sample_rate())
+        })
+        .await;
+        match made {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return (StatusCode::SERVICE_UNAVAILABLE, e).into_response(),
+            Err(e) => return join_failure(e),
+        }
+    }
+    serve_file_range(&sample, req, None).await
 }
 
 /// Проба голоса Qwen3-TTS: один раз сказанная фраза, дальше файл из models/qwen3-tts/samples.
@@ -969,6 +1014,9 @@ async fn voice_sample(
 ) -> Response {
     if let Some(speaker) = q.get("name").and_then(|name| name.strip_prefix(render::QWEN_VOICE)) {
         return qwen_voice_sample(&st.models_root, speaker, req).await;
+    }
+    if let Some(voice) = q.get("name").and_then(|name| name.strip_prefix(render::SUPERTONIC_VOICE)) {
+        return supertonic_voice_sample(&st.models_root, voice, req).await;
     }
     let name = sanitize_voice_name(q.get("name").map(|s| s.as_str()).unwrap_or(""));
     if name.is_empty() {

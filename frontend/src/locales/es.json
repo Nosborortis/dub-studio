@@ -825,7 +825,9 @@
     "drama3Hint": "Un segundo motor de voz (Fish Audio), solo para tarjetas gráficas de 24 GB o más · ~21 GB",
     "qwen": "Qwen3-TTS",
     "qwenQ8": "Qwen3-TTS (Q8_0)",
-    "qwenHint": "Un tercer motor de voz ligero: las voces de los actores originales o nueve voces propias para los personajes · ~3 GB de memoria de vídeo"
+    "qwenHint": "Un tercer motor de voz ligero: las voces de los actores originales o nueve voces propias para los personajes · ~3 GB de memoria de vídeo",
+    "supertonic": "Supertonic 3",
+    "supertonicHint": "Un motor de voz rápido: diez voces listas en 31 idiomas, sin clonación; a cada hablante se le asigna una voz según su género · ~0,6 GB"
   },
   "units": {
     "gb": "GB",

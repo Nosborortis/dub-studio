@@ -814,7 +814,9 @@
     "drama3Hint": "A second voice engine (Fish Audio), for 24 GB+ graphics cards only · ~21 GB",
     "qwen": "Qwen3-TTS",
     "qwenQ8": "Qwen3-TTS (Q8_0)",
-    "qwenHint": "A light third voice engine: the original actors' voices or nine ready voices of its own for characters · ~3 GB of video memory"
+    "qwenHint": "A light third voice engine: the original actors' voices or nine ready voices of its own for characters · ~3 GB of video memory",
+    "supertonic": "Supertonic 3",
+    "supertonicHint": "A fast voice engine: ten ready voices in 31 languages, no cloning; speakers get a voice by gender · ~0.6 GB"
   },
   "units": {
     "gb": "GB",

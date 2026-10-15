@@ -803,7 +803,9 @@
     "drama3Hint": "第二个配音引擎（Fish Audio），仅适用于 24 GB 及以上显存的显卡 · 约 21 GB",
     "qwen": "Qwen3-TTS",
     "qwenQ8": "Qwen3-TTS（Q8_0）",
-    "qwenHint": "轻量的第三个配音引擎：使用原演员的声音，或为角色选用模型自带的九种现成声音 · 约 3 GB 显存"
+    "qwenHint": "轻量的第三个配音引擎：使用原演员的声音，或为角色选用模型自带的九种现成声音 · 约 3 GB 显存",
+    "supertonic": "Supertonic 3",
+    "supertonicHint": "快速配音引擎：31 种语言的十个现成声音，不支持克隆；按说话人性别分配声音 · 约 0.6 GB"
   },
   "units": {
     "gb": "GB",

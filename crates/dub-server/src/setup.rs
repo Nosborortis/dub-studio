@@ -530,6 +530,43 @@ const QWEN_CODEC: FileSpec = FileSpec { url: "https://huggingface.co/Serveurpers
 const QWEN_Q4_K_M: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-1.7b-customvoice-Q4_K_M.gguf", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-customvoice-Q4_K_M.gguf", size: 1_182_631_296, sha256: "cc328834a631bc08bf9f43e62fa23f8a1383d9b429864ce6690cfb172077fc4a", extract: Extract::None };
 const QWEN_BASE_Q4_K_M: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-1.7b-base-Q4_K_M.gguf", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-base-Q4_K_M.gguf", size: 1_219_245_248, sha256: "ea393ebaf2167ea23ce9fc18b093822851358a950d7075cd47ab4f6ce23e887d", extract: Extract::None };
 const QWEN_Q8_0: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-1.7b-customvoice-Q8_0.gguf", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-customvoice-Q8_0.gguf", size: 2_042_834_304, sha256: "cab2cff67a0a557310febe558dc83076b28ed790e491867eb2751759f4cd89fa", extract: Extract::None };
+// HF: RUAccent (ruaccent/accentuator, MIT), ревизия закреплена sha коммита.
+const HF_RUACCENT_ACCENT: &str = "https://huggingface.co/ruaccent/accentuator/resolve/b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855/nn/nn_accent/model.onnx";
+const HF_RUACCENT_ACCENT_CONFIG: &str = "https://huggingface.co/ruaccent/accentuator/resolve/b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855/nn/nn_accent/config.json";
+const HF_RUACCENT_ACCENT_VOCAB: &str = "https://huggingface.co/ruaccent/accentuator/resolve/b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855/nn/nn_accent/vocab.txt";
+const HF_RUACCENT_OMOGRAPH: &str = "https://huggingface.co/ruaccent/accentuator/resolve/b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855/nn/nn_omograph/tiny2/model.onnx";
+const HF_RUACCENT_OMOGRAPH_TOKENIZER: &str = "https://huggingface.co/ruaccent/accentuator/resolve/b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855/nn/nn_omograph/tiny2/tokenizer.json";
+const HF_RUACCENT_ACCENTS: &str = "https://huggingface.co/ruaccent/accentuator/resolve/b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855/dictionary/accents.json.gz";
+const HF_RUACCENT_OMOGRAPHS: &str = "https://huggingface.co/ruaccent/accentuator/resolve/b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855/dictionary/omographs.json.gz";
+const HF_RUACCENT_YO_WORDS: &str = "https://huggingface.co/ruaccent/accentuator/resolve/b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855/dictionary/yo_words.json.gz";
+const HF_RUACCENT_YO_HOMOGRAPHS: &str = "https://huggingface.co/ruaccent/accentuator/resolve/b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855/dictionary/yo_homographs.json.gz";
+/// Supertonic 3 int8 (askurios8, weight-only int8 of Supertone/supertonic-3; Open RAIL-M): four ONNX graphs, the text
+/// indexer and the ten preset voices.
+const SUPERTONIC3_FILES: &[FileSpec] = &[
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/LICENSE", dest_rel: "models/supertonic3/LICENSE", size: 15_007, sha256: "0d944a9110fed9a9602d60e0423a272903e7bd21ab060490774efc77c2275e9f", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/onnx/duration_predictor.onnx", dest_rel: "models/supertonic3/onnx/duration_predictor.onnx", size: 3_700_147, sha256: "c3eb91414d5ff8a7a239b7fe9e34e7e2bf8a8140d8375ffb14718b1c639325db", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/onnx/text_encoder.onnx", dest_rel: "models/supertonic3/onnx/text_encoder.onnx", size: 9_734_378, sha256: "67b0975e50689f599a7834255d53a7cfd72a9f028b0f56e0040ba7dc5007d9cf", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/onnx/vector_estimator.onnx", dest_rel: "models/supertonic3/onnx/vector_estimator.onnx", size: 65_769_855, sha256: "f903a5ed046bb92cf1e557393623d7e709b527d338b042cc0bf9bce417185e5a", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/onnx/vocoder.onnx", dest_rel: "models/supertonic3/onnx/vocoder.onnx", size: 25_820_373, sha256: "ab337d1a10ed54c24cb42e0ea9be3733603149517fa0a8f54d07ef816cb766df", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/onnx/tts.json", dest_rel: "models/supertonic3/onnx/tts.json", size: 8_253, sha256: "42078d3aef1cd43ab43021f3c54f47d2d75ceb4e75f627f118890128b06a0d09", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/onnx/unicode_indexer.json", dest_rel: "models/supertonic3/onnx/unicode_indexer.json", size: 277_676, sha256: "9bf7346e43883a81f8645c81224f786d43c5b57f3641f6e7671a7d6c493cb24f", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/voice_styles/F1.json", dest_rel: "models/supertonic3/voice_styles/F1.json", size: 292_046, sha256: "bbdec6ee00231c2c742ad05483df5334cab3b52fda3ba38e6a07059c4563dbc2", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/voice_styles/F2.json", dest_rel: "models/supertonic3/voice_styles/F2.json", size: 292_423, sha256: "7c722c6a72707b1a77f035d67f0d1351ba187738e06f7683e8c72b1df3477fc6", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/voice_styles/F3.json", dest_rel: "models/supertonic3/voice_styles/F3.json", size: 290_794, sha256: "12f6ef2573baa2defa1128069cb59f203e3ab67c92af77b42df8a0e3a2f7c6ab", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/voice_styles/F4.json", dest_rel: "models/supertonic3/voice_styles/F4.json", size: 291_808, sha256: "c2fa764c1225a76dfc3e2c73e8aa4f70d9ee48793860eb34c295fff01c2e032b", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/voice_styles/F5.json", dest_rel: "models/supertonic3/voice_styles/F5.json", size: 291_479, sha256: "45966e73316415626cf41a7d1c6f3b4c70dbc1ba2bee5c1978ef0ce33244fc8d", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/voice_styles/M1.json", dest_rel: "models/supertonic3/voice_styles/M1.json", size: 291_748, sha256: "e35604687f5d23694b8e91593a93eec0e4eca6c0b02bb8ed69139ab2ea6b0a5b", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/voice_styles/M2.json", dest_rel: "models/supertonic3/voice_styles/M2.json", size: 292_055, sha256: "b76cbf62bac707c710cf0ae5aba5e31eea1a6339a9734bfae33ab98499534a50", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/voice_styles/M3.json", dest_rel: "models/supertonic3/voice_styles/M3.json", size: 290_198, sha256: "ea1ac35ccb91b0d7ecad533a2fbd0eec10c91513d8951e3b25fbba99954e159b", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/voice_styles/M4.json", dest_rel: "models/supertonic3/voice_styles/M4.json", size: 291_522, sha256: "ca8eefad4fcd989c9379032ff3e50738adc547eeb5e221b82593a6d7b3bac303", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/voice_styles/M5.json", dest_rel: "models/supertonic3/voice_styles/M5.json", size: 291_469, sha256: "dd22b92740314321f8ae11c5e87f8dd60d060f15dd3a632b5adf77f471f77af2", extract: Extract::None },
+];
+const SUPERTONIC3_SIZE: u64 = 108_241_231;
+const SUPERTONIC3_MARKERS: &[Marker] = &[
+    Marker { rel: "models/supertonic3/onnx/vector_estimator.onnx", expect: 65_769_855 },
+    Marker { rel: "models/supertonic3/onnx/vocoder.onnx", expect: 25_820_373 },
+    Marker { rel: "models/supertonic3/voice_styles/M5.json", expect: 291_469 },
+];
 const QWEN_RU_STRESS: FileSpec = FileSpec { url: "https://huggingface.co/siriusfreak/qwen3-tts-12hz-1.7b-ru-stress-cf/resolve/c16b3af3db3095120efc1ebb73f6522442bcb3b1/lora/adapter.safetensors", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-base-ru-stress-lora.safetensors", size: 34_908_456, sha256: "88a94c0fbe85800d309f94bb9c28d698bf9c86d9494617b6cf4dd996cc13648b", extract: Extract::None };
 const QWEN_BASE_Q8_0: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-1.7b-base-Q8_0.gguf", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-base-Q8_0.gguf", size: 2_079_448_256, sha256: "4b9a33a236908dd9435a42f7a396e38038329d053b704342a6413c08544c4fda", extract: Extract::None };
 #[cfg(windows)]
@@ -754,6 +791,52 @@ pub fn manifest() -> Vec<Component> {
             size: QWEN_RU_STRESS.size,
             files: &[QWEN_RU_STRESS],
             markers: &[Marker { rel: QWEN_RU_STRESS.dest_rel, expect: QWEN_RU_STRESS.size }],
+            external_url: None,
+        },
+        Component {
+            id: "supertonic3",
+            name: t!("setup-comp-supertonic3-name"),
+            purpose: t!("setup-comp-supertonic3-purpose"),
+            requirement: Requirement::Optional,
+            delivery: Delivery::Download,
+            size: SUPERTONIC3_SIZE,
+            files: SUPERTONIC3_FILES,
+            markers: SUPERTONIC3_MARKERS,
+            external_url: None,
+        },
+        Component {
+            id: "ruaccent",
+            name: "RUAccent".into(),
+            purpose: t!("setup-comp-ruaccent-purpose"),
+            requirement: Requirement::Optional,
+            delivery: Delivery::Download,
+            size: 33_942_783,
+            files: &[
+                FileSpec { url: HF_RUACCENT_ACCENT, dest_rel: "models/ruaccent/nn/nn_accent/model.onnx", size: 803_402, sha256: "4e393144e45626f6f1062a0784ef06f921b97321a8e7b87ac2a09a892286500a", extract: Extract::None },
+                FileSpec { url: HF_RUACCENT_ACCENT_CONFIG, dest_rel: "models/ruaccent/nn/nn_accent/config.json", size: 841, sha256: "e377f159a8fc8673e211f100d4a237d5fe3dceb3b6789a5a738bf50bda23be49", extract: Extract::None },
+                FileSpec { url: HF_RUACCENT_ACCENT_VOCAB, dest_rel: "models/ruaccent/nn/nn_accent/vocab.txt", size: 140, sha256: "242882b2f27800e49a6babf46867dabf6dc9b6535b600776a68815fe4d4f4382", extract: Extract::None },
+                FileSpec { url: HF_RUACCENT_OMOGRAPH, dest_rel: "models/ruaccent/nn/nn_omograph/tiny2/model.onnx", size: 10_528_004, sha256: "c28840ab333be5870451a57b28839d3896e3332b791e8be29e75eb1c13338882", extract: Extract::None },
+                FileSpec { url: HF_RUACCENT_OMOGRAPH_TOKENIZER, dest_rel: "models/ruaccent/nn/nn_omograph/tiny2/tokenizer.json", size: 882_532, sha256: "d39943ce113bf88db2556a096c7929080b8c6afedfeefa7e3c3c736ac1eb0090", extract: Extract::None },
+                FileSpec { url: HF_RUACCENT_ACCENTS, dest_rel: "models/ruaccent/dictionary/accents.json.gz", size: 20_954_156, sha256: "aa460ebba90de00fbbf3d41d121961f605b98667e45efb7920f127473b15515e", extract: Extract::None },
+                FileSpec { url: HF_RUACCENT_OMOGRAPHS, dest_rel: "models/ruaccent/dictionary/omographs.json.gz", size: 219_047, sha256: "04a9e81c68d65f65ba493fe0110f99e79087548c2beeec3032e2b66e28706f36", extract: Extract::None },
+                FileSpec { url: HF_RUACCENT_YO_WORDS, dest_rel: "models/ruaccent/dictionary/yo_words.json.gz", size: 548_914, sha256: "a19fa89a964a0691d9fe4ee384783e3934904891843d8f59a1c480d67947a82a", extract: Extract::None },
+                FileSpec { url: HF_RUACCENT_YO_HOMOGRAPHS, dest_rel: "models/ruaccent/dictionary/yo_homographs.json.gz", size: 5_747, sha256: "c4ee777bbbab87f9eac838f370ad92974e079d02b21903e480c54b5f0c8c60d1", extract: Extract::None },
+            ],
+            markers: &[Marker { rel: "models/ruaccent/dictionary/accents.json.gz", expect: 20_954_156 }],
+            external_url: None,
+        },
+        Component {
+            id: "ruaccent-omograph-big",
+            name: t!("setup-comp-ruaccent-omograph-big-name"),
+            purpose: t!("setup-comp-ruaccent-omograph-big-purpose"),
+            requirement: Requirement::Optional,
+            delivery: Delivery::Download,
+            size: 181_553_054 + 3_715_061,
+            files: &[
+                FileSpec { url: "https://huggingface.co/nerualdreming/ruaccent-omograph-int8/resolve/d5c4eb6864d55cfc24ae45530eb4ef96843efb2b/big_poetry/model.onnx", dest_rel: "models/ruaccent/nn/nn_omograph/big_poetry/model.onnx", size: 181_553_054, sha256: "028407ff85d499b56efd25c31c326ecb7bd6496399f52a002b11789a7fc63964", extract: Extract::None },
+                FileSpec { url: "https://huggingface.co/nerualdreming/ruaccent-omograph-int8/resolve/d5c4eb6864d55cfc24ae45530eb4ef96843efb2b/big_poetry/tokenizer.json", dest_rel: "models/ruaccent/nn/nn_omograph/big_poetry/tokenizer.json", size: 3_715_061, sha256: "0f120fc8462d8684194e7fff76bd43a3b8535bb63df158ee7cd37b8ba5c92f03", extract: Extract::None },
+            ],
+            markers: &[Marker { rel: "models/ruaccent/nn/nn_omograph/big_poetry/model.onnx", expect: 181_553_054 }],
             external_url: None,
         },
         // Альтернативный квант ASR: fp32 (точнее, тяжелее int8). Отдельная папка (fp32 приоритетнее int8).
@@ -1243,6 +1326,7 @@ fn vram_estimate(id: &str) -> u64 {
         "qwen3-tts" => gb(2.8),
         "qwen3-tts-q8_0" => gb(3.7),
         "qwen3-tts-ru-stress" => gb(0.1),
+        "supertonic3" => gb(0.6),
         "gemma" => gb(8.5),
         "gemma-q5_0" => gb(9.9),
         "gemma-q6_k" => gb(11.2),

@@ -32,8 +32,8 @@ fn fill_ref_texts(
     ref_texts: &mut std::collections::BTreeMap<String, String>,
 ) {
     for (spk, refp) in refs {
-        // голос модели Qwen3-TTS — не запись: расшифровывать нечего
-        if ref_texts.contains_key(spk) || refp.to_string_lossy().starts_with(QWEN_VOICE) {
+        // голос модели Qwen3-TTS или Supertonic — не запись: расшифровывать нечего
+        if ref_texts.contains_key(spk) || refp.to_string_lossy().starts_with(QWEN_VOICE) || refp.to_string_lossy().starts_with(SUPERTONIC_VOICE) {
             continue;
         }
         if let Ok(rsegs) = asr.transcribe(refp, "auto") {
@@ -629,6 +629,101 @@ fn load_drama(paths: &RenderPaths) -> Result<drama::DramaEngine, String> {
 /// Строк промпта Drama 3 на одну фразу: реф (~22 кадра на секунду) + текст + сгенерированное.
 const DRAMA_MAX_LEN: u32 = 2048;
 
+/// Голос персонажа из десяти голосов Supertonic 3: `supertonic:<F1..M5>` вместо записи; Supertonic не клонирует.
+pub const SUPERTONIC_VOICE: &str = "supertonic:";
+
+/// Ударения и «ё» RUAccent для русской озвучки движком, который их читает; ручные «+» остаются. Без RUAccent текст
+/// уходит как есть.
+fn auto_stress(models_root: &Path, lang: &str, text: &str) -> Result<String, String> {
+    if !crate::stress::is_russian(lang) || !crate::stress::installed(models_root) {
+        return Ok(text.to_string());
+    }
+    crate::stress::shared(models_root)
+        .and_then(|s| s.annotate(text))
+        .map(|s| s.text)
+        .map_err(|e| t!("render-stress-failed", error = e))
+}
+
+/// Часть ключа кэша озвучки от RUAccent: какая сеть омографов расставила ударения.
+fn stress_tag(models_root: &Path, lang: &str) -> String {
+    if crate::stress::is_russian(lang) && crate::stress::installed(models_root) {
+        format!("+ruaccent-{}", crate::stress::omograph_tag(models_root))
+    } else {
+        String::new()
+    }
+}
+
+/// Supertonic 3: десять готовых голосов, читает ударение знаком U+0301 после гласной.
+pub struct SupertonicVoices {
+    model: crate::supertonic::Model,
+    models_root: PathBuf,
+    lang: String,
+}
+
+impl SupertonicVoices {
+    fn speak(&self, text: &str, ref_wav: &str, opts: &str) -> Result<(Vec<f32>, i32), String> {
+        let voice = ref_wav.strip_prefix(SUPERTONIC_VOICE).ok_or_else(|| t!("render-supertonic-no-voice", voice = ref_wav.to_string()))?;
+        let text = qwentts::stress_marks(&auto_stress(&self.models_root, &self.lang, text)?, true);
+        let (seed, _, _) = qwen_params(opts);
+        let lang = self.lang.split(['-', '_']).next().unwrap_or("").to_ascii_lowercase();
+        let mut audio = Vec::new();
+        for piece in text_pieces(&text, crate::supertonic::MAX_CHARS) {
+            audio.extend(self.model.speak(&piece, &lang, voice, crate::supertonic::DEFAULT_STEPS, crate::supertonic::DEFAULT_SPEED, seed)?);
+        }
+        Ok((audio, self.model.sample_rate() as i32))
+    }
+}
+
+/// Текст кусками не длиннее `max` знаков: по предложениям, слишком длинное предложение — по словам.
+fn text_pieces(text: &str, max: usize) -> Vec<String> {
+    let mut sentences: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for c in text.chars() {
+        cur.push(c);
+        if matches!(c, '.' | '!' | '?' | '…') {
+            sentences.push(std::mem::take(&mut cur));
+        }
+    }
+    sentences.push(cur);
+    let mut out: Vec<String> = Vec::new();
+    let mut piece = String::new();
+    let len = |s: &str| s.chars().count();
+    for s in sentences.iter().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        let words: Vec<&str> = if len(s) > max { s.split_whitespace().collect() } else { vec![s] };
+        for w in words {
+            if !piece.is_empty() && len(&piece) + 1 + len(w) > max {
+                out.push(std::mem::take(&mut piece));
+            }
+            if !piece.is_empty() {
+                piece.push(' ');
+            }
+            piece.push_str(w);
+        }
+    }
+    if !piece.is_empty() {
+        out.push(piece);
+    }
+    out
+}
+
+/// Голоса Supertonic говорящим без голоса из пака: по полу, разным говорящим одного пола — разные.
+fn supertonic_cast(genders: &std::collections::HashMap<String, String>) -> std::collections::BTreeMap<String, String> {
+    let (female, male): (Vec<&str>, Vec<&str>) = crate::supertonic::VOICES.iter().partition(|v| v.starts_with('F'));
+    let mut spks: Vec<&String> = genders.keys().collect();
+    spks.sort();
+    let (mut fi, mut mi, mut ai) = (0usize, 0usize, 0usize);
+    spks.into_iter()
+        .map(|spk| {
+            let voice = match genders[spk].as_str() {
+                "female" => { fi += 1; female[(fi - 1) % female.len()] }
+                "male" => { mi += 1; male[(mi - 1) % male.len()] }
+                _ => { ai += 1; crate::supertonic::VOICES[(ai - 1) % crate::supertonic::VOICES.len()] }
+            };
+            (spk.clone(), format!("{SUPERTONIC_VOICE}{voice}"))
+        })
+        .collect()
+}
+
 /// Голос персонажа из девяти голосов Qwen3-TTS: `qwen:<id>` в списке голосов проекта вместо имени записи пака.
 pub const QWEN_VOICE: &str = "qwen:";
 
@@ -672,7 +767,7 @@ impl QwenVoices {
                     media::extract_audio(Path::new(ref_wav), &at_24k, qwentts::SAMPLE_RATE, 1)?;
                 }
                 let (reference, _) = wavio::read_mono_f32(&at_24k)?;
-                let text = qwentts::stress_marks(text, self.stress);
+                let text = if self.stress { qwentts::stress_marks(&auto_stress(&self.models_root, &self.lang, text)?, true) } else { qwentts::stress_marks(text, false) };
                 let say = qwentts::Say { text: &text, lang: &self.lang, speaker: None, reference: Some((&reference, ref_text)), seed, temperature, max_new_tokens };
                 self.engine(true)?.speak(&say)
             }
@@ -733,6 +828,15 @@ fn load_tts(paths: &RenderPaths, lang: &str, progress: &Progress) -> Result<Arc<
             custom: std::sync::Mutex::new(None),
         })));
     }
+    if paths.higgs_quant == crate::models::SUPERTONIC_TTS {
+        if !crate::supertonic::installed(&paths.models_root) {
+            return Err(t!("render-supertonic-missing"));
+        }
+        emit(progress, "tts", &t!("render-loading-supertonic"));
+        let gpu = crate::models::local_backend(&paths.models_root) == "gpu";
+        let model = crate::supertonic::Model::load(&paths.models_root, gpu).map_err(|e| t!("render-supertonic-load-failed", error = e))?;
+        return Ok(Arc::new(TtsEngine::Supertonic(SupertonicVoices { model, models_root: paths.models_root.clone(), lang: lang.to_string() })));
+    }
     if paths.higgs_quant == crate::models::DRAMA_TTS {
         emit(progress, "tts", &t!("render-loading-drama"));
         Ok(Arc::new(TtsEngine::Drama(load_drama(paths)?)))
@@ -747,6 +851,7 @@ pub enum TtsEngine {
     Higgs(AudiocppEngine),
     Drama(drama::DramaEngine),
     Qwen(QwenVoices),
+    Supertonic(SupertonicVoices),
 }
 
 impl TtsEngine {
@@ -756,8 +861,12 @@ impl TtsEngine {
         if !matches!(self, TtsEngine::Qwen(_)) && ref_wav.starts_with(QWEN_VOICE) {
             return Err(t!("render-qwen-voice-other-engine", voice = ref_wav.to_string()));
         }
+        if !matches!(self, TtsEngine::Supertonic(_)) && ref_wav.starts_with(SUPERTONIC_VOICE) {
+            return Err(t!("render-supertonic-voice-other-engine", voice = ref_wav.to_string()));
+        }
         match self {
             TtsEngine::Qwen(voices) => voices.speak(text, ref_wav, ref_text, opts),
+            TtsEngine::Supertonic(voices) => voices.speak(text, ref_wav, opts),
             TtsEngine::Higgs(e) => e.voice_clone(&qwentts::stress_marks(text, false), ref_wav, ref_text, opts).map_err(|e| e.localize()),
             TtsEngine::Drama(e) => {
                 let text = qwentts::stress_marks(text, false);
@@ -777,6 +886,7 @@ impl TtsEngine {
             TtsEngine::Higgs(e) => e.cancel(),
             TtsEngine::Drama(e) => e.cancel(),
             TtsEngine::Qwen(voices) => voices.cancel(),
+            TtsEngine::Supertonic(_) => {}
         }
     }
 }
@@ -1164,7 +1274,7 @@ fn build_dub_pass(
                     clone_slot_spks.insert(spk.clone()); // спикер на клоне — identity-реф ниже
                     continue;
                 }
-                if nm.starts_with(QWEN_VOICE) {
+                if nm.starts_with(QWEN_VOICE) || nm.starts_with(SUPERTONIC_VOICE) {
                     map.insert(spk.clone(), PathBuf::from(nm)); // голос модели Qwen3-TTS: записи нет, имя идёт в синтез
                     continue;
                 }
@@ -1184,6 +1294,19 @@ fn build_dub_pass(
         std::collections::BTreeMap::new()
     };
     let use_pack = !pack_refs.is_empty();
+    // Supertonic не клонирует: без голосов из пака говорящим раздаются его голоса по полу, рефы не строятся.
+    let supertonic_on = paths.higgs_quant == crate::models::SUPERTONIC_TTS;
+    let supertonic_voices = if supertonic_on && !use_pack {
+        let mut spk_ids: Vec<String> = proj.segments.iter().map(|s| s.speaker.clone().unwrap_or_else(|| "0".into())).collect();
+        spk_ids.sort();
+        spk_ids.dedup();
+        let cast = supertonic_cast(&crate::casting::speaker_genders_wd(&paths.work_dir, proj, &spk_ids));
+        let desc: Vec<String> = cast.iter().map(|(k, v)| format!("{k}→{}", &v[SUPERTONIC_VOICE.len()..])).collect();
+        emit(progress, "tts", &t!("render-supertonic-voices", voices = desc.join(", ")));
+        cast
+    } else {
+        std::collections::BTreeMap::new()
+    };
     // Облачный TTS (OpenRouter) вместо локального Higgs: клон-рефы ему не нужны.
     let cloud_tts_on = crate::models::cloud_tts_on(&paths.models_root);
     if mix_ref_noted(ref_from_mix, cloud_tts_on, !use_pack || !clone_slot_spks.is_empty(),
@@ -1194,7 +1317,9 @@ fn build_dub_pass(
     // ref_texts: расшифровка реф-клипа НА СПИКЕРА (Higgs клонирует качественнее с ref_text). Клон-режим —
     // src_text выбранного сегмента; пак-режим — АВТОТРАНСКРИПЦИЯ 12с-клипа (как Higgs build_speaker_reference;
     // пак-.txt = полный 3-мин транскрипт, к 12с не подходит). ASR best-effort: сбой -> None (не хуже прежнего).
-    let (spk_refs, mut ref_texts, alt_refs) = if use_pack {
+    let (spk_refs, mut ref_texts, alt_refs) = if supertonic_on && !use_pack {
+        (std::collections::BTreeMap::new(), std::collections::BTreeMap::new(), std::collections::BTreeMap::new())
+    } else if use_pack {
         if clone_slot_spks.is_empty() {
             (std::collections::BTreeMap::new(), std::collections::BTreeMap::new(), std::collections::BTreeMap::new(),
             )
@@ -1230,6 +1355,9 @@ fn build_dub_pass(
         .unwrap_or_else(|| wd.join("ref.wav"));
     let ref_of = |s: &dub_core::Segment| -> PathBuf {
         let key = s.speaker.as_deref().unwrap_or("0");
+        if let Some(voice) = supertonic_voices.get(key) {
+            return PathBuf::from(voice);
+        }
         if use_pack {
             // клон-слот "-" (#114): спикер вне pack_refs берёт свой identity-реф из вокала (spk_refs).
             return pack_refs
@@ -1282,6 +1410,7 @@ fn build_dub_pass(
         // оверлап чужого спикера -> не чистый эмоц-реф.
         emo_enabled
             && !use_pack
+            && !supertonic_on
             && (s.end - s.start) >= REF_MIN_AFTER_TRIM
             && seg_is_clean(s, s.speaker.as_deref().unwrap_or("0"), &segs)
             && (!qwen_refs || s.end - s.start <= ref_secs)
@@ -1429,7 +1558,13 @@ fn build_dub_pass(
         )
     }
     } else if let Some(quant) = crate::models::qwen_quant(&paths.higgs_quant) {
-        format!("qwen:{quant}{}", if qwen_stress(&paths.models_root, &proj.tgt_lang) { "+ru-stress" } else { "" })
+        if qwen_stress(&paths.models_root, &proj.tgt_lang) {
+            format!("qwen:{quant}+ru-stress{}", stress_tag(&paths.models_root, &proj.tgt_lang))
+        } else {
+            format!("qwen:{quant}")
+        }
+    } else if paths.higgs_quant == crate::models::SUPERTONIC_TTS {
+        format!("{}{}", crate::models::SUPERTONIC_TTS, stress_tag(&paths.models_root, &proj.tgt_lang))
     } else if paths.higgs_quant == crate::models::DRAMA_TTS {
         format!("drama:{}", crate::models::DRAMA_TTS)
     } else {
@@ -3962,6 +4097,26 @@ mod tests {
         let ws: Vec<Value> = words.iter().map(|(w, a, b)| json!({ "word": w, "start": a, "end": b })).collect();
         s.extra.insert("words".into(), Value::Array(ws));
         s
+    }
+
+    #[test]
+    fn supertonic_gets_pieces_within_its_limit_cut_at_sentences_then_words() {
+        assert_eq!(text_pieces("Раз. Два! Три?", 10), vec!["Раз. Два!", "Три?"]);
+        assert_eq!(text_pieces("Короткая фраза.", 300), vec!["Короткая фраза."]);
+        let long = "слово ".repeat(80);
+        let pieces = text_pieces(&long, 300);
+        assert!(pieces.len() == 2 && pieces.iter().all(|p| p.chars().count() <= 300), "{pieces:?}");
+    }
+
+    #[test]
+    fn supertonic_casts_by_gender_and_gives_two_women_two_voices() {
+        let genders: std::collections::HashMap<String, String> =
+            [("0", "female"), ("1", "male"), ("2", "female"), ("3", "")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let cast = supertonic_cast(&genders);
+        assert_eq!(cast["0"], "supertonic:F1");
+        assert_eq!(cast["1"], "supertonic:M1");
+        assert_eq!(cast["2"], "supertonic:F2");
+        assert_eq!(cast["3"], "supertonic:F1");
     }
 
     #[test]

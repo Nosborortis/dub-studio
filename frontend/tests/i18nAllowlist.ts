@@ -3,7 +3,7 @@ import type { Allow } from "./scanHardcoded";
 export const ALLOW: Allow = {
   tokens: new Set<string>([
     "OpenRouter", "GitHub", "Telegram", "Claude Code", "Nerual Dreming", "ArtGeneration.me", "Нейро-Софт",
-    "Parakeet-TDT", "Higgs Audio v3", "Fish Audio Drama 3", "OCR PP-OCR",
+    "Parakeet-TDT", "Higgs Audio v3", "Fish Audio Drama 3", "OCR PP-OCR", "Supertonic 3",
     "YuE2 Studio", "MiniMax Music3 Studio", "ACE-Step Studio", "Dub Studio", "Dungeon Ultimate", "Bulka", "Hugging Face", "HTTP", "HTTPS", "SOCKS5", "SOCKS4", "Whisper", "Montserrat", "GPU", "VRAM", "RAM", "VRAM ·",
     "SPK", "AA", "v", "dB", "px", "px/s", "(Ctrl+Z)", "(Ctrl+Shift+Z)",
     
@@ -20,7 +20,7 @@ export const ALLOW: Allow = {
  * spelled the same in the language. "*" applies to every language.
  */
 export const SAME_AS_EN: Record<"*" | "ru" | "zh" | "es" | "pt" | "fr", string[]> = {
-  "*": ["app.name", "bilingual.pct", "keepOrig.mp4", "keepOrig.mkv", "casting.gender.unknown", "asrVariant.int8", "asrVariant.fp32", "asrVariant.ultra", "asrVariant.ultraInt8", "ttsVariant.drama3", "ttsVariant.qwen", "ttsVariant.qwenQ8", "jobs.atStage", "downloads.speed", "providers.localGemma", "providers.serverUrlPlaceholder", "url.qHeight", "url.tool.version"],
+  "*": ["app.name", "bilingual.pct", "keepOrig.mp4", "keepOrig.mkv", "casting.gender.unknown", "asrVariant.int8", "asrVariant.fp32", "asrVariant.ultra", "asrVariant.ultraInt8", "ttsVariant.drama3", "ttsVariant.qwen", "ttsVariant.qwenQ8", "ttsVariant.supertonic", "jobs.atStage", "downloads.speed", "providers.localGemma", "providers.serverUrlPlaceholder", "url.qHeight", "url.tool.version"],
   ru: [],
   zh: ["units.gb", "units.mb", "units.kb", "units.b"],
   es: [
