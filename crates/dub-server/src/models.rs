@@ -790,23 +790,21 @@ pub fn drama_dll(mroot: &Path) -> PathBuf {
 
 /// Почему Drama 3 на этой машине не пойдёт: None — карта NVIDIA с CUDA 13 не меньше [`DRAMA_MIN_VRAM`], и если модель
 /// не входит в видеопамять целиком (карта меньше [`DRAMA_FULL_VRAM`] или такой лимит в настройках), оперативной
-/// памяти не меньше [`DRAMA_MIN_RAM`]. `DUB_STUDIO_SIMULATE_VRAM_GB` и `DUB_STUDIO_SIMULATE_RAM_GB` подменяют объёмы
-/// для проверки отказа на другой машине.
+/// памяти не меньше [`DRAMA_MIN_RAM`].
 pub fn drama_unavailable(mroot: &Path) -> Option<String> {
     let gpu = crate::hw::gpu_report();
     let card = gpu.summary().unwrap_or_else(|| "-".to_string());
     if !gpu.cuda13_ok {
         return Some(t!("drama-needs-cuda", card = card));
     }
-    let simulated = |var: &str| std::env::var(var).ok().and_then(|v| v.parse::<u64>().ok()).map(|gb| gb << 30);
     let gb = |bytes: u64| format!("{:.0}", bytes as f64 / (1u64 << 30) as f64);
-    let vram = simulated("DUB_STUDIO_SIMULATE_VRAM_GB").unwrap_or_else(crate::hw::total_vram);
+    let vram = crate::hw::total_vram();
     if vram < DRAMA_MIN_VRAM {
         return Some(t!("drama-needs-vram", card = card, gb = gb(vram)));
     }
     let limit = drama_vram_limit_mb(mroot) as u64 * (1 << 20);
     if vram < DRAMA_FULL_VRAM || (limit > 0 && limit < DRAMA_FULL_VRAM) {
-        let ram = simulated("DUB_STUDIO_SIMULATE_RAM_GB").unwrap_or_else(crate::hw::total_ram);
+        let ram = crate::hw::total_ram();
         if ram < DRAMA_MIN_RAM {
             return Some(t!("drama-needs-ram", gb = gb(ram)));
         }

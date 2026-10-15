@@ -1335,7 +1335,8 @@ fn vram_estimate(id: &str) -> u64 {
         "higgs" => gb(5.6),
         "higgs-q6_k" => gb(5.1),
         "higgs-q4_k_m" => gb(4.2),
-        "drama3" => gb(22.6),
+        // наименьшая карта, на которой Drama 3 идёт с экспертами в оперативной памяти; целиком модель занимает 22,6
+        "drama3" => gb(5.0),
         "qwen3-tts" => gb(2.8),
         "qwen3-tts-q8_0" => gb(3.7),
         "qwen3-tts-ru-stress" => gb(0.1),
@@ -3243,6 +3244,17 @@ mod tests {
         let mut comps = models();
         installed_variant_covers_group(&mut comps);
         assert_eq!(required(&comps), ["higgs", "gemma", "higgs-engine"], "nothing downloaded keeps every default");
+    }
+
+    #[test]
+    fn drama_can_be_downloaded_from_a_6_gb_card_and_not_from_a_4_gb_one() {
+        let drama = || vec![ComponentStatus { vram: vram_estimate("drama3"), ..model("drama3", 0.0, Requirement::Optional) }];
+        let mut comps = drama();
+        fit_to_vram(&mut comps, 6 << 30);
+        assert_eq!(comps[0].fits_vram, Some(true), "6 GB card: Drama runs with its experts in RAM");
+        let mut comps = drama();
+        fit_to_vram(&mut comps, 4 << 30);
+        assert_eq!(comps[0].fits_vram, Some(false), "4 GB card: no room for the expert cache");
     }
 
     #[test]
