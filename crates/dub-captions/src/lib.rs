@@ -12,7 +12,7 @@ mod look;
 mod pages;
 mod timing_qc;
 mod types;
-mod word_align;
+pub mod word_align;
 
 pub use burn::{burn, burn_frame};
 pub use types::CaptionsError;
