@@ -183,6 +183,7 @@ pub fn is_selection_key(key: &str) -> bool {
             | "speech_rate_on"  // "1" -> адаптация темпа генерации TTS под длину текста/слота; "0" -> дефолт темп
             | "lead_into_silence" // "1" -> не влезшая фраза начинается раньше, в тишину перед репликой, вместо ускорения
             | "emo_ref_on"      // "1" -> эмоциональный референс сцены (перенос эмоций из оригинального вокала); "0" -> выкл
+            | "drama_vram_gb"   // видеопамять для Drama 3, ГБ; "0" (по умолчанию) — авто, см. drama_vram_limit_mb
             | "auto_shorten"    // "1" (по умолчанию) -> не влезшие в слот фразы рендер сокращает через LLM и озвучивает заново
             // Провайдер перевода и отдельно vision: local (своя Gemma) | server (локальный OpenAI-совместимый
             // сервер: Ollama, LM Studio, vLLM) | openrouter. Значение проверяет select_model.
@@ -216,6 +217,7 @@ pub fn is_selection_value(key: &str, value: &str) -> bool {
     match key {
         "llm_provider" | "vision_provider" => LlmBackend::parse(value).is_some(),
         "tts_provider" => matches!(value, "local" | "openrouter" | "google"),
+        "drama_vram_gb" => value.parse::<u32>().is_ok_and(|gb| gb == 0 || (DRAMA_MIN_LIMIT_GB..=256).contains(&gb)),
         "google_tts_mode" => matches!(value, "standard" | "batch"),
         "google_tts_model" => {
             !value.is_empty()
@@ -761,8 +763,21 @@ pub fn qwen_unavailable() -> Option<String> {
 /// Значение слота `tts` и папка весов Drama 3 (apiplant/drama-q4) в каталоге моделей.
 pub const DRAMA_TTS: &str = "drama3";
 
-/// Видеопамяти нужно Drama 3: карты «24 ГБ» проходят, 20-гиговые — нет.
-pub const DRAMA_MIN_VRAM: u64 = 23 * 1024 * 1024 * 1024;
+/// Видеопамять, в которую Drama 3 входит целиком: карты «24 ГБ» проходят, 20-гиговые — нет. На меньшей карте эксперты
+/// модели (18 ГБ из 21) живут в оперативной памяти, а видеокарта держит кэш нужных сейчас (движок engine-0.1.3+).
+pub const DRAMA_FULL_VRAM: u64 = 23 << 30;
+/// Карта «6 ГБ»: остальной модели нужно около 4,8 ГБ, кэшу экспертов остаётся немного; карта «4 ГБ» не годится.
+pub const DRAMA_MIN_VRAM: u64 = 11 << 29;
+/// Наименьший лимит видеопамяти в настройках, ГБ: меньше — кэшу экспертов рядом с остальной моделью места нет.
+pub const DRAMA_MIN_LIMIT_GB: u32 = 5;
+/// Эксперты в оперативной памяти — 18 ГБ закреплённой памяти: машинам «32 ГБ» хватает, «16 ГБ» — нет.
+pub const DRAMA_MIN_RAM: u64 = 28 << 30;
+
+/// Видеопамять для Drama 3 из настроек (`drama_vram_gb`), МБ; 0 — авто: вся модель, если входит в свободную
+/// видеопамять, иначе свободная без шестнадцатой доли (256 МБ–1 ГБ). Лимит не меньше полной модели держит её целиком.
+pub fn drama_vram_limit_mb(mroot: &Path) -> u32 {
+    pick(&load_selection(mroot), "drama_vram_gb").and_then(|v| v.parse::<u32>().ok()).map_or(0, |gb| gb.saturating_mul(1024))
+}
 
 /// Веса и движок Drama 3 на месте (последний слой весов и DLL).
 pub fn drama_installed(mroot: &Path) -> bool {
@@ -773,17 +788,28 @@ pub fn drama_dll(mroot: &Path) -> PathBuf {
     mroot.join("drama-engine").join(if cfg!(windows) { "drama_engine.dll" } else { "libdrama_engine.so" })
 }
 
-/// Почему Drama 3 на этой машине не пойдёт: None — карта NVIDIA с CUDA 13 и ≥ [`DRAMA_MIN_VRAM`].
-pub fn drama_unavailable() -> Option<String> {
+/// Почему Drama 3 на этой машине не пойдёт: None — карта NVIDIA с CUDA 13 не меньше [`DRAMA_MIN_VRAM`], и если модель
+/// не входит в видеопамять целиком (карта меньше [`DRAMA_FULL_VRAM`] или такой лимит в настройках), оперативной
+/// памяти не меньше [`DRAMA_MIN_RAM`]. `DUB_STUDIO_SIMULATE_VRAM_GB` и `DUB_STUDIO_SIMULATE_RAM_GB` подменяют объёмы
+/// для проверки отказа на другой машине.
+pub fn drama_unavailable(mroot: &Path) -> Option<String> {
     let gpu = crate::hw::gpu_report();
     let card = gpu.summary().unwrap_or_else(|| "-".to_string());
     if !gpu.cuda13_ok {
         return Some(t!("drama-needs-cuda", card = card));
     }
-    let total = crate::hw::total_vram();
-    if total < DRAMA_MIN_VRAM {
-        let gb = format!("{:.0}", total as f64 / (1u64 << 30) as f64);
-        return Some(t!("drama-needs-24gb", card = card, gb = gb));
+    let simulated = |var: &str| std::env::var(var).ok().and_then(|v| v.parse::<u64>().ok()).map(|gb| gb << 30);
+    let gb = |bytes: u64| format!("{:.0}", bytes as f64 / (1u64 << 30) as f64);
+    let vram = simulated("DUB_STUDIO_SIMULATE_VRAM_GB").unwrap_or_else(crate::hw::total_vram);
+    if vram < DRAMA_MIN_VRAM {
+        return Some(t!("drama-needs-vram", card = card, gb = gb(vram)));
+    }
+    let limit = drama_vram_limit_mb(mroot) as u64 * (1 << 20);
+    if vram < DRAMA_FULL_VRAM || (limit > 0 && limit < DRAMA_FULL_VRAM) {
+        let ram = simulated("DUB_STUDIO_SIMULATE_RAM_GB").unwrap_or_else(crate::hw::total_ram);
+        if ram < DRAMA_MIN_RAM {
+            return Some(t!("drama-needs-ram", gb = gb(ram)));
+        }
     }
     None
 }
@@ -1064,6 +1090,33 @@ mod secret_tests {
 
 #[cfg(test)]
 mod provider_tests {
+    #[test]
+    fn drama_runs_below_24_gb_with_its_experts_in_ram_and_is_refused_without_enough_of_either() {
+        let root = scratch("drama-limits");
+        let why = |vram: &str, ram: &str| {
+            std::env::set_var("DUB_STUDIO_SIMULATE_VRAM_GB", vram);
+            std::env::set_var("DUB_STUDIO_SIMULATE_RAM_GB", ram);
+            let why = drama_unavailable(&root);
+            std::env::remove_var("DUB_STUDIO_SIMULATE_VRAM_GB");
+            std::env::remove_var("DUB_STUDIO_SIMULATE_RAM_GB");
+            why
+        };
+        if !crate::hw::gpu_report().cuda13_ok {
+            assert!(why("16", "64").is_some(), "no CUDA 13 card: refused");
+            return;
+        }
+        assert_eq!(why("16", "64"), None, "16 GB card, 64 GB of RAM: the experts go to RAM");
+        assert_eq!(why("24", "8"), None, "24 GB card: the whole model on it, RAM does not matter");
+        assert_eq!(why("6", "64"), None, "6 GB card, 64 GB of RAM: a small expert cache");
+        assert!(why("4", "64").expect("4 GB card: no room for the expert cache").contains('4'));
+        assert!(why("16", "16").expect("16 GB card, 16 GB of RAM: the experts do not fit in RAM").contains("16"));
+        set_selection(&root, "drama_vram_gb", "8").unwrap();
+        assert_eq!(drama_vram_limit_mb(&root), 8192);
+        assert!(why("24", "16").is_some(), "8 GB limit on a 24 GB card puts the experts in RAM: 16 GB of RAM is too little");
+        assert!(is_selection_value("drama_vram_gb", "0") && is_selection_value("drama_vram_gb", "6") && !is_selection_value("drama_vram_gb", "4"));
+        std::fs::remove_dir_all(&root).ok();
+    }
+
     use super::*;
     use dub_llm::net::{ProxyKind, ProxyMode};
     use serde_json::json;

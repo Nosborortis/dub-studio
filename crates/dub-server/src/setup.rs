@@ -209,7 +209,7 @@ mod platform {
 
     // Движок Drama 3 (C ABI форка timoncool/drama-rs, capi), CUDA 13.3, sm 75/80/86/89/90/100/120 без PTX:
     // импортирует cublas64_13.dll (ставит cuda-runtime), cudart слинкован статически.
-    pub const DRAMA_ENGINE: FileSpec = FileSpec { url: "https://github.com/timoncool/drama-rs/releases/download/engine-0.1.2/drama_engine.dll", dest_rel: "models/drama-engine/drama_engine.dll", size: 31_584_256, sha256: "6104b067d22204581ae33bfdd7a295bd40f902d69f7817e98da747a1014d7246", extract: Extract::None };
+    pub const DRAMA_ENGINE: FileSpec = FileSpec { url: "https://github.com/timoncool/drama-rs/releases/download/engine-0.1.3/drama_engine.dll", dest_rel: "models/drama-engine/drama_engine.dll", size: 32_075_264, sha256: "677133f63605d72e3eceb148eb1fd3eee72f0aae02b65750da59bf60d041793f", extract: Extract::None };
 
     // Движок Qwen3-TTS (форк timoncool/qwentts.cpp, ветка studio, ABI 7), CUDA 13, sm 75/80/86/89/90/100/120 без PTX;
     // библиотеки ggml лежат рядом с qwen.dll, cudart и cuBLAS ставит cuda-runtime.
@@ -351,7 +351,7 @@ mod platform {
 
     // Движок Drama 3 (форк timoncool/drama-rs, capi/build-linux-docker.sh: CUDA 13.3, Ubuntu 22.04, sm 75/80/86/89/90/
     // 100/120): RUNPATH $ORIGIN и ../higgs-engine, где libcudart и libcublas ставит cuda-runtime.
-    pub const DRAMA_ENGINE: FileSpec = FileSpec { url: "https://github.com/timoncool/drama-rs/releases/download/engine-0.1.2/libdrama_engine.so", dest_rel: "models/drama-engine/libdrama_engine.so", size: 32_141_376, sha256: "9112c17c09d9b89213c945f41537d2d7d840dba29a5530cee88e41cbe1e8df66", extract: Extract::None };
+    pub const DRAMA_ENGINE: FileSpec = FileSpec { url: "https://github.com/timoncool/drama-rs/releases/download/engine-0.1.3/libdrama_engine.so", dest_rel: "models/drama-engine/libdrama_engine.so", size: 32_642_032, sha256: "b9beb23321fd63025facb2fa1d90087d3dd03069475aa60ad60c3fb3c97892b4", extract: Extract::None };
 
     // Сборки Qwen3-TTS для Linux пока нет: компонент ставит только кодек, движок остаётся недоступным с причиной.
     pub const QWEN_ENGINE: Parts = Parts { size: super::QWEN_CODEC.size, files: &[super::QWEN_CODEC], markers: &[Marker { rel: super::QWEN_CODEC.dest_rel, expect: super::QWEN_CODEC.size }] };
@@ -481,7 +481,7 @@ pub const NVIDIA_DRIVER_URL: &str = "https://www.nvidia.com/Download/index.aspx"
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Fish Audio Drama 3: веса apiplant/drama-q4 закреплённой ревизии и её движок одним компонентом (одно без другого
-/// не работает). Веса — 20 ГБ видеопамяти, поэтому только карты 24 ГБ+ (`models::DRAMA_MIN_VRAM`).
+/// не работает). Целиком — 21 ГБ видеопамяти; на меньшей карте эксперты живут в оперативной памяти (`models::drama_unavailable`).
 const DRAMA3_FILES: &[FileSpec] = &[
     FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/.gitattributes", dest_rel: "models/drama3/.gitattributes", size: 1_570, sha256: "34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930", extract: Extract::None },
     FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/LICENSE", dest_rel: "models/drama3/LICENSE", size: 19_685, sha256: "733a32442087acbda12ecafe8e71eb8ee5890c89b50ce7ac4ea3777faa3c823e", extract: Extract::None },
@@ -2710,7 +2710,7 @@ fn finish(repo_root: &Path, selected: &[&Component]) -> Value {
         let st = component_status(repo_root, c);
         if st.installed {
             for (engine, variant) in crate::models::component_selection(c.id) {
-                if variant == crate::models::DRAMA_TTS && crate::models::drama_unavailable().is_some() {
+                if variant == crate::models::DRAMA_TTS && crate::models::drama_unavailable(&mroot).is_some() {
                     continue;
                 }
                 if let Err(e) = crate::models::set_selection(&mroot, engine, &variant) {

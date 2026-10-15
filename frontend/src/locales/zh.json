@@ -800,12 +800,14 @@
   },
   "ttsVariant": {
     "drama3": "Drama 3",
-    "drama3Hint": "第二个配音引擎（Fish Audio），仅适用于 24 GB 及以上显存的显卡 · 约 21 GB",
+    "drama3Hint": "第二个配音引擎（Fish Audio），适用于 6 GB 及以上显存的显卡；显存低于 24 GB 时需要 32 GB 内存 · 约 21 GB",
     "qwen": "Qwen3-TTS",
     "qwenQ8": "Qwen3-TTS（Q8_0）",
     "qwenHint": "轻量的第三个配音引擎：使用原演员的声音，或为角色选用模型自带的九种现成声音 · 约 3 GB 显存",
     "supertonic": "Supertonic 3",
-    "supertonicHint": "快速配音引擎：31 种语言的十个现成声音，不支持克隆；按说话人性别分配声音 · 约 0.6 GB"
+    "supertonicHint": "快速配音引擎：31 种语言的十个现成声音，不支持克隆；按说话人性别分配声音 · 约 0.6 GB",
+    "dramaVram": "Drama 3 的显存",
+    "dramaVramHint": "“自动”会自行设置：模型能整体放入空闲显存时整体加载，否则其专家（18 GB）放在内存中，显卡缓存当前用到的专家。选择数字可手动指定显存，24 GB 表示整个模型放在显卡上。声音不变，显存越少越慢（RTX 4090 实测）：24 GB 约为实时的 8 倍，12 GB 为 4.7 倍，8 GB 为 3 倍，6 GB 为 2.2 倍。"
   },
   "units": {
     "gb": "GB",

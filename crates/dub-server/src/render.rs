@@ -615,14 +615,14 @@ fn load_higgs(paths: &RenderPaths) -> Result<AudiocppEngine, String> {
 /// Drama 3 только на CUDA и карте 24 ГБ+; не та карта или нет файлов — ошибка с причиной, Higgs её не подменяет.
 /// cuBLAS она находит в models/higgs-engine, который augment_path_for_tools кладёт в PATH на старте.
 fn load_drama(paths: &RenderPaths) -> Result<drama::DramaEngine, String> {
-    if let Some(why) = crate::models::drama_unavailable() {
+    if let Some(why) = crate::models::drama_unavailable(&paths.models_root) {
         return Err(why);
     }
     let dll = crate::models::drama_dll(&paths.models_root);
     if !crate::models::drama_installed(&paths.models_root) {
         return Err(t!("render-drama-missing"));
     }
-    drama::DramaEngine::load(&dll, &[], &paths.higgs_model_root, DRAMA_MAX_LEN)
+    drama::DramaEngine::load_limited(&dll, &[], &paths.higgs_model_root, DRAMA_MAX_LEN, crate::models::drama_vram_limit_mb(&paths.models_root))
         .map_err(|e| t!("render-drama-load-failed", error = e.to_string()))
 }
 

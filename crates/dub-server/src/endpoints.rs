@@ -265,9 +265,9 @@ pub async fn set_opts(State(st): State<AppState>, Json(edit): Json<Value>) -> Re
     .into_response()
 }
 
-/// Drama 3 не выбирается там, где не пойдёт (нет CUDA или карта меньше 24 ГБ): причина — текстом для окна.
-fn drama_refused(slot: &str, value: &str) -> Option<String> {
-    (slot == "tts" && value == crate::models::DRAMA_TTS).then(crate::models::drama_unavailable).flatten()
+/// Drama 3 не выбирается там, где не пойдёт (нет CUDA, мала карта или оперативная память): причина — текстом для окна.
+fn drama_refused(mroot: &std::path::Path, slot: &str, value: &str) -> Option<String> {
+    (slot == "tts" && value == crate::models::DRAMA_TTS).then(|| crate::models::drama_unavailable(mroot)).flatten()
 }
 
 // ─── POST /engine/select ────────────────────────────────────────────────────
@@ -289,7 +289,7 @@ pub async fn select_model(State(st): State<AppState>, Json(body): Json<Value>) -
         if !crate::models::is_selection_value(key, val) {
             return (StatusCode::BAD_REQUEST, format!("invalid value for {key}: {val:?}")).into_response();
         }
-        if let Some(why) = drama_refused(key, val) {
+        if let Some(why) = drama_refused(&st.models_root, key, val) {
             return (StatusCode::CONFLICT, why).into_response();
         }
         if let Err(e) = crate::models::set_selection(&st.models_root, key, val) {
@@ -304,7 +304,7 @@ pub async fn select_model(State(st): State<AppState>, Json(body): Json<Value>) -
     if pairs.is_empty() {
         return (StatusCode::BAD_REQUEST, format!("unknown model component: {id:?}")).into_response();
     }
-    if let Some(why) = pairs.iter().find_map(|(engine, variant)| drama_refused(engine, variant)) {
+    if let Some(why) = pairs.iter().find_map(|(engine, variant)| drama_refused(&st.models_root, engine, variant)) {
         return (StatusCode::CONFLICT, why).into_response();
     }
     for (engine, variant) in pairs {

@@ -179,6 +179,9 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
   const selv = (k: string) => slot(cap?.selection, k) ?? "";
   const hasOrKey = cap?.selection?.or_key_set === true;
   const setSel = (k: string, v: string) => api.setSelection(k, v).then(loadCap).catch(() => {});
+  // Видеопамять Drama 3 из списка: сохранения по очереди, при быстрой смене последним на сервер приходит последнее значение.
+  const [dramaVram, setDramaVram] = useState<string | null>(null);
+  const dramaSaves = useRef<Promise<unknown>>(Promise.resolve());
   // Голоса выбранной облачной TTS-модели (пол/возраст/русский) для дропдауна + предупреждения о русском.
   const ttsPick = picks[TTS_IDS[0]] ?? activeVariantId(TTS_IDS, cap?.selection ?? {});
   const ttsProvider = slot(cap?.selection, "tts_provider") ?? (selv("or_tts_on") === "1" ? "openrouter" : "local");
@@ -409,6 +412,23 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
         ) : (
           <>
             <VariantPicker base={ttsPick === "drama3" ? "Fish Audio Drama 3" : isQwenTts(ttsPick) ? "Qwen3-TTS 1.7B" : ttsPick === "supertonic3" ? "Supertonic 3" : "Higgs Audio v3"} ids={TTS_IDS} i18n={TTS_VARIANT_I18N} />
+            {ttsPick === "drama3" && (
+              <div className="px-2.5 py-2 rounded-lg bg-[var(--color-surface-2)] border border-[var(--color-border)]">
+                <div className="flex items-center gap-2">
+                  <label htmlFor="drama-vram" className="text-[12px] flex-1">{t("ttsVariant.dramaVram")}</label>
+                  <select id="drama-vram" value={dramaVram ?? (selv("drama_vram_gb") || "0")} onChange={(e) => {
+                      const v = e.target.value;
+                      setDramaVram(v);
+                      dramaSaves.current = dramaSaves.current.then(() => api.setSelection("drama_vram_gb", v)).catch((er) => { setErr(er instanceof Error ? er.message : String(er)); setDramaVram(null); loadCap(); });
+                    }}
+                    className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md px-2 py-1 text-[12px] focus:border-[var(--color-accent)] focus:outline-none">
+                    <option value="0">{t("settings.auto")}</option>
+                    {[5, 6, 8, 10, 12, 16, 20, 24].map((gb) => <option key={gb} value={String(gb)}>{gb} {t("units.gb")}</option>)}
+                  </select>
+                </div>
+                <div className="mt-1 text-[10px] leading-snug text-[var(--color-muted)]">{t("ttsVariant.dramaVramHint")}</div>
+              </div>
+            )}
             {ttsPick !== "drama3" && !isQwenTts(ttsPick) && ttsPick !== "supertonic3" && rowOf("higgs-engine")}
             {isQwenTts(ttsPick) && rowOf("qwen3-tts-engine")}
             {isQwenTts(ttsPick) && rowOf("qwen3-tts-ru-stress")}

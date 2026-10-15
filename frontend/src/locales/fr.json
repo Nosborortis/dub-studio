@@ -822,12 +822,14 @@
   },
   "ttsVariant": {
     "drama3": "Drama 3",
-    "drama3Hint": "Un second moteur vocal (Fish Audio), réservé aux cartes graphiques de 24 Go ou plus · ~21 Go",
+    "drama3Hint": "Un second moteur de voix (Fish Audio), pour les cartes graphiques à partir de 6 Go ; sous 24 Go il lui faut 32 Go de mémoire vive · ~21 Go",
     "qwen": "Qwen3-TTS",
     "qwenQ8": "Qwen3-TTS (Q8_0)",
     "qwenHint": "Un troisième moteur de voix léger : les voix des acteurs d'origine ou neuf voix toutes prêtes pour les personnages · ~3 Go de mémoire vidéo",
     "supertonic": "Supertonic 3",
-    "supertonicHint": "Un moteur de voix rapide : dix voix prêtes en 31 langues, sans clonage ; chaque locuteur reçoit une voix selon son genre · ~0,6 Go"
+    "supertonicHint": "Un moteur de voix rapide : dix voix prêtes en 31 langues, sans clonage ; chaque locuteur reçoit une voix selon son genre · ~0,6 Go",
+    "dramaVram": "VRAM pour Drama 3",
+    "dramaVramHint": "Auto se règle tout seul : le modèle entier s'il tient dans la VRAM libre, sinon ses experts (18 Go) restent en mémoire vive et la carte garde un cache de ceux en usage. Un nombre fixe la quantité à la main ; 24 Go garde le modèle entier sur la carte. Le son est le même ; moins de VRAM, c'est plus lent (mesuré sur une RTX 4090) : 24 Go, environ 8× le temps réel ; 12 Go, 4,7× ; 8 Go, 3× ; 6 Go, 2,2×."
   },
   "units": {
     "gb": "Go",

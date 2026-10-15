@@ -89,6 +89,13 @@ pub fn snapshot() -> HardwareSnapshot {
     snap
 }
 
+/// Оперативная память машины, байт (sysinfo).
+pub fn total_ram() -> u64 {
+    let mut sg = sysinfo().lock().unwrap();
+    sg.refresh_memory();
+    sg.total_memory()
+}
+
 /// Видеопамять карты 0, байт (NVML); 0 — карты нет или NVML не ответил.
 pub fn total_vram() -> u64 {
     let mut ng = nvml().lock().unwrap();
