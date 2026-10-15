@@ -739,6 +739,7 @@ render-drama-missing = 已选择 Drama 3，但尚未完整下载：请在“模�
 render-drama-load-failed = 加载 Drama 3：{ $error }
 render-loading-drama = 正在加载 Drama 3
 qwen-needs-cuda = Qwen3-TTS 配音需要支持 CUDA 的 NVIDIA 显卡，但未找到（{ $card }）。请选择 Higgs。
+qwen-no-linux = Qwen3-TTS 配音尚无 Linux 版本。请选择 Higgs 或 Supertonic 3。
 render-qwen-missing = 已选择 Qwen3-TTS，但尚未完整安装：请在“模型”（配音）中下载，或选择 Higgs。
 render-qwen-load-failed = 正在加载 Qwen3-TTS：{ $error }
 render-loading-qwen = 正在加载 Qwen3-TTS

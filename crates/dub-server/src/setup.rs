@@ -211,6 +211,21 @@ mod platform {
     // импортирует cublas64_13.dll (ставит cuda-runtime), cudart слинкован статически.
     pub const DRAMA_ENGINE: FileSpec = FileSpec { url: "https://github.com/timoncool/drama-rs/releases/download/engine-0.1.2/drama_engine.dll", dest_rel: "models/drama-engine/drama_engine.dll", size: 31_584_256, sha256: "6104b067d22204581ae33bfdd7a295bd40f902d69f7817e98da747a1014d7246", extract: Extract::None };
 
+    // Движок Qwen3-TTS (форк timoncool/qwentts.cpp, ветка studio, ABI 7), CUDA 13, sm 75/80/86/89/90/100/120 без PTX;
+    // библиотеки ggml лежат рядом с qwen.dll, cudart и cuBLAS ставит cuda-runtime.
+    pub const QWEN_ENGINE: Parts = Parts {
+        size: 434_153_248,
+        files: &[
+            super::QWEN_CODEC,
+            FileSpec { url: "https://github.com/timoncool/qwentts.cpp/releases/download/engine-0.1.0/qwen.dll", dest_rel: "models/qwen3-tts/qwen.dll", size: 425_984, sha256: "273bf728327071096d762d07ce798f6e26d933a9fba0d997ab8d3f02aee8224a", extract: Extract::None },
+            FileSpec { url: "https://github.com/timoncool/qwentts.cpp/releases/download/engine-0.1.0/ggml.dll", dest_rel: "models/qwen3-tts/ggml.dll", size: 62_976, sha256: "7606ca3960bb9797cdc1e28666eba96092619ad49db6df210f54ce0841fe238c", extract: Extract::None },
+            FileSpec { url: "https://github.com/timoncool/qwentts.cpp/releases/download/engine-0.1.0/ggml-base.dll", dest_rel: "models/qwen3-tts/ggml-base.dll", size: 693_760, sha256: "9c81caefcca1646f67958d8f3c8d84fc59c5009dc922faae6bd7170a50547c41", extract: Extract::None },
+            FileSpec { url: "https://github.com/timoncool/qwentts.cpp/releases/download/engine-0.1.0/ggml-cpu.dll", dest_rel: "models/qwen3-tts/ggml-cpu.dll", size: 1_010_176, sha256: "ecff58f5d620c827d02361562512e4611a01ad7b1251bde13ff3dea97e52c80c", extract: Extract::None },
+            FileSpec { url: "https://github.com/timoncool/qwentts.cpp/releases/download/engine-0.1.0/ggml-cuda.dll", dest_rel: "models/qwen3-tts/ggml-cuda.dll", size: 140_809_728, sha256: "30fe1b38ca87499506313841fda1bf064b09422c3d9bc1506b94ec0063d9d1ce", extract: Extract::None },
+        ],
+        markers: &[Marker { rel: super::QWEN_CODEC.dest_rel, expect: super::QWEN_CODEC.size }, Marker { rel: "models/qwen3-tts/qwen.dll", expect: 425_984 }, Marker { rel: "models/qwen3-tts/ggml-cuda.dll", expect: 140_809_728 }],
+    };
+
     pub const WHISPER_ENGINE: Parts = Parts {
         size: 87_654_143,
         files: &[
@@ -337,6 +352,9 @@ mod platform {
     // Движок Drama 3 (форк timoncool/drama-rs, capi/build-linux-docker.sh: CUDA 13.3, Ubuntu 22.04, sm 75/80/86/89/90/
     // 100/120): RUNPATH $ORIGIN и ../higgs-engine, где libcudart и libcublas ставит cuda-runtime.
     pub const DRAMA_ENGINE: FileSpec = FileSpec { url: "https://github.com/timoncool/drama-rs/releases/download/engine-0.1.2/libdrama_engine.so", dest_rel: "models/drama-engine/libdrama_engine.so", size: 32_141_376, sha256: "9112c17c09d9b89213c945f41537d2d7d840dba29a5530cee88e41cbe1e8df66", extract: Extract::None };
+
+    // Сборки Qwen3-TTS для Linux пока нет: компонент ставит только кодек, движок остаётся недоступным с причиной.
+    pub const QWEN_ENGINE: Parts = Parts { size: super::QWEN_CODEC.size, files: &[super::QWEN_CODEC], markers: &[Marker { rel: super::QWEN_CODEC.dest_rel, expect: super::QWEN_CODEC.size }] };
 
     // Purfview faster-whisper r189.1 для Linux (последняя Linux-сборка не-XXL, CTranslate2 под CUDA 11).
     pub const WHISPER_ENGINE: Parts = Parts {
@@ -524,8 +542,7 @@ const DRAMA3_MARKERS: &[Marker] = &[
 ];
 
 /// Qwen3-TTS 1.7B GGUF (Serveurperso/Qwen3-TTS-GGUF, Apache 2.0): кодек 12 Гц и талкеры CustomVoice и Base каждого кванта.
-/// Пути и SHA — как у Speech Studio, чтобы файлы брались у неё. Библиотека qwen.dll (qwentts.cpp) ещё не выпущена:
-/// маркер движка её требует, так движок без неё не считается установленным.
+/// Пути и SHA — как у Speech Studio, чтобы файлы брались у неё.
 const QWEN_CODEC: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-tokenizer-12hz-Q8_0.gguf", dest_rel: "models/qwen3-tts/qwen-tokenizer-12hz-Q8_0.gguf", size: 291_150_624, sha256: "1883beeed99348fc35e23dd225e9082f93f6f8c109330a33d935baa8acdbfd94", extract: Extract::None };
 const QWEN_Q4_K_M: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-1.7b-customvoice-Q4_K_M.gguf", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-customvoice-Q4_K_M.gguf", size: 1_182_631_296, sha256: "cc328834a631bc08bf9f43e62fa23f8a1383d9b429864ce6690cfb172077fc4a", extract: Extract::None };
 const QWEN_BASE_Q4_K_M: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-1.7b-base-Q4_K_M.gguf", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-base-Q4_K_M.gguf", size: 1_219_245_248, sha256: "ea393ebaf2167ea23ce9fc18b093822851358a950d7075cd47ab4f6ce23e887d", extract: Extract::None };
@@ -569,10 +586,6 @@ const SUPERTONIC3_MARKERS: &[Marker] = &[
 ];
 const QWEN_RU_STRESS: FileSpec = FileSpec { url: "https://huggingface.co/siriusfreak/qwen3-tts-12hz-1.7b-ru-stress-cf/resolve/c16b3af3db3095120efc1ebb73f6522442bcb3b1/lora/adapter.safetensors", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-base-ru-stress-lora.safetensors", size: 34_908_456, sha256: "88a94c0fbe85800d309f94bb9c28d698bf9c86d9494617b6cf4dd996cc13648b", extract: Extract::None };
 const QWEN_BASE_Q8_0: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-1.7b-base-Q8_0.gguf", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-base-Q8_0.gguf", size: 2_079_448_256, sha256: "4b9a33a236908dd9435a42f7a396e38038329d053b704342a6413c08544c4fda", extract: Extract::None };
-#[cfg(windows)]
-const QWEN_LIBRARY: &str = "models/qwen3-tts/qwen.dll";
-#[cfg(not(windows))]
-const QWEN_LIBRARY: &str = "models/qwen3-tts/libqwen.so";
 
 /// Полный список компонентов. Порядок = порядок показа в панели «Первый запуск».
 pub fn manifest() -> Vec<Component> {
@@ -749,9 +762,9 @@ pub fn manifest() -> Vec<Component> {
             purpose: t!("setup-comp-qwen3-tts-engine-purpose"),
             requirement: Requirement::Optional,
             delivery: Delivery::Download,
-            size: QWEN_CODEC.size,
-            files: &[QWEN_CODEC],
-            markers: &[Marker { rel: QWEN_LIBRARY, expect: 0 }, Marker { rel: QWEN_CODEC.dest_rel, expect: QWEN_CODEC.size }],
+            size: platform::QWEN_ENGINE.size,
+            files: platform::QWEN_ENGINE.files,
+            markers: platform::QWEN_ENGINE.markers,
             external_url: None,
         },
         Component {

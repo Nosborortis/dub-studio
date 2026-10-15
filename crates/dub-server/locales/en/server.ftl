@@ -943,6 +943,7 @@ render-drama-missing = Drama 3 is chosen but not fully downloaded: download it i
 render-drama-load-failed = loading Drama 3: { $error }
 render-loading-drama = loading Drama 3
 qwen-needs-cuda = The Qwen3-TTS voice needs an NVIDIA card with CUDA, and none was found ({ $card }). Choose Higgs.
+qwen-no-linux = The Qwen3-TTS voice has no Linux build yet. Choose Higgs or Supertonic 3.
 render-qwen-missing = Qwen3-TTS is chosen but not fully installed: download it in Models (voice), or choose Higgs.
 render-qwen-load-failed = loading Qwen3-TTS: { $error }
 render-loading-qwen = loading Qwen3-TTS

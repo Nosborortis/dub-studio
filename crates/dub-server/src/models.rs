@@ -748,6 +748,9 @@ pub fn qwen_quant(tts: &str) -> Option<&'static str> {
 
 /// Почему Qwen3-TTS на этой машине не пойдёт: его ggml считает на CUDA 13 (cuBLAS из models/higgs-engine).
 pub fn qwen_unavailable() -> Option<String> {
+    if cfg!(not(windows)) {
+        return Some(t!("qwen-no-linux"));
+    }
     let gpu = crate::hw::gpu_report();
     if gpu.cuda13_ok {
         return None;
