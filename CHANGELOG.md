@@ -13,8 +13,17 @@ release notes on GitHub are taken from the release's section.
 - **Russian stress for Qwen3-TTS**: a small add-on for a Russian dub cloned with Qwen3-TTS. A plus before a vowel in a line (з+амок, зам+ок) puts the stress exactly there; the marks stay out of the subtitles and are dropped for the other voices.
 - **Supertonic 3 voice** (int8, about 0.6 GB): a fast fourth voice engine with ten ready voices in 31 languages. It does not clone: each speaker gets a voice by gender, or the one picked in the cast list.
 - **Russian stress by RUAccent**: Russian lines voiced by Qwen3-TTS with the stress add-on or by Supertonic 3 get their stress and the letter ё placed automatically, homographs read by their meaning (зам+ок / з+амок); a plus you put yourself is kept. An optional larger homograph model in int8 gets more of them right.
+- **The translator knows who speaks.** Each line goes to the translation model with its speaker's gender, measured from the pitch of several of their longest lines, so a woman says «я сказала» and a man «я сказал»; for Russian a line in the other gender's first-person form is asked again. A source word left in Latin in a Russian (or other non-Latin) translation is asked again too; names and brands stay.
+- **More checks of a take's sound.** A take where a piece of the line sounds twice, that ends with a click or an extra word, or that is mostly silence is regenerated; for cloud voicing these and a whistle or hiss in its pauses are named in the log (cloud voicing is paid and is not repeated on its own). A dub voice of the other gender than its speaker gets a warning in the log.
+- **Check by recognition compares letters too.** A take is redone only when neither its words nor its letters match the text («на хер» and «нахер» are no longer a mismatch), and also when a word said once in the text is heard twice.
+- **Looped recognition is dropped.** A recognised line that repeats one word over and over, comes right after itself or three times in a video, or holds a word over 25 letters is hidden when no voice is heard on it and marked when one is.
+- **Text for the voice.** Words in capitals are voiced as words, abbreviations stay; leftover markup signs (`_ | ~ ^ \ { } < > # *`) are not voiced. The shown text does not change.
+- **Settings › Quality by stage**: recognition, translation, voicing, take checks and diagnostics; every check above is its own switch, and a sub-check works only while its check is on.
 
 ### Fixed
+
+- **Speaker gender from several lines.** The gender shown in the cast list and used to pick cloud and Supertonic voices is measured on up to five of the speaker's longest lines and taken only when two thirds of them agree, instead of on the single longest one.
+- **No clipped peaks in local voicing.** A take louder than full scale is turned down before it is written instead of having its peaks cut.
 
 - **An agent's command to a closed window fails at once.** A window that closed without saying so kept the agent waiting for its answer until the timeout; the command now fails as the window goes, and the next call reaches another open window or says none is open.
 - **Analysis downloads ffmpeg when it is missing** instead of stopping on every file with "ffprobe not found". A project opened by its link, or a start when the first-run check did not answer, reached the editor without the first-run screen, and nothing fetched the tools afterwards.

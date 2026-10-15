@@ -20,6 +20,8 @@ audiocpp = { path = "../audiocpp" }
 drama = { path = "../drama" }
 qwentts = { path = "../qwentts" }
 hound = "3"
+realfft = "3.5"
+strsim = "0.11"
 axum = { version = "0.8", features = ["multipart"] }
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.7", features = ["cors", "fs"] }

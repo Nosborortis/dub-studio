@@ -25,6 +25,7 @@ mod dll_imports;
 mod downloads;
 mod dub_timing;
 mod endpoints;
+mod checks;
 mod f0;
 mod fitplan;
 mod frame;
@@ -66,6 +67,7 @@ mod subtracks;
 mod supertonic;
 mod takes;
 mod translate;
+mod tts_audit;
 mod tts_text;
 mod tts_trim;
 mod url_import;
@@ -1915,7 +1917,7 @@ async fn get_project(State(st): State<AppState>, AxPath(pid): AxPath<String>) ->
 pub(crate) fn project_response(st: &AppState, dir: &Path, proj: &Project) -> Response {
     let rules = fitplan::rules(&st.models_root, st.opts.max_stretch as f64);
     let mut shown = proj.clone();
-    tts_text::annotate(&mut shown);
+    tts_text::annotate(&mut shown, tts_text::Speak::load(&st.models_root));
     match fitplan::decorate(dir, &shown, &rules) {
         Ok(mut v) => {
             v["source_name"] = source_name(dir, &proj.meta.video).into();
@@ -2467,19 +2469,23 @@ async fn export_lang_enqueue(st: &AppState, pid: &str, args: &Value,
             .map_err(|e| t!("translate-no-llm", error = e))?;
             let client = prov.client();
             // Сегменты: src_text -> Lx (раскладка/стили/тайминг остаются от пользователя).
+            let (checks, genders) = crate::translate::line_checks(&models_root_xl, &dst_for_job, &p);
             let mut segs: Vec<Seg> = p
                 .segments
                 .iter()
-                .map(|s| {
+                .zip(genders)
+                .map(|(s, gender)| {
                     let spk = crate::analyze::speaker_to_i64(s.speaker.as_deref());
                     // Вручную добавленные фразы имеют пустой src_text — их перевод берём из текущего tgt_text
                     // (он на СТАРОМ целевом языке), иначе flat_run их пропустит и они останутся на старом языке.
                     let src = if s.src_text.trim().is_empty() { s.tgt_text.clone() } else { s.src_text.clone() };
-                    Seg::new(src, spk)
+                    let mut seg = Seg::new(src, spk);
+                    seg.gender = gender;
+                    seg
                 })
                 .collect();
             let contract = dub_translate::Contract::for_client(client);
-            let opts = FlatOpts { src: "auto", tgt: &lang_c, spoken, style: &p.audio.translate_style, glossary: &p.glossary, contract: &contract,
+            let opts = FlatOpts { src: "auto", tgt: &lang_c, spoken, style: &p.audio.translate_style, glossary: &p.glossary, contract: &contract, checks,
             };
             flat_run_with(client, &mut segs, &opts, &mut |m: &dub_translate::Note| {
                 progress(json!({ "type": "progress", "stage": "translate", "msg": m.localize() }))
@@ -2503,7 +2509,7 @@ async fn export_lang_enqueue(st: &AppState, pid: &str, args: &Value,
             // очищаем tgt -> рендер покажет исходный text (лучше, чем титр на старом языке рядом с новыми сегментами).
             if !p.captions.titles.is_empty() {
                 let mut tsegs: Vec<Seg> = p.captions.titles.iter().map(|ti| Seg::new(ti.text.clone(), 0)).collect();
-                let topts = FlatOpts { src: "auto", tgt: &lang_c, spoken: false, style: &p.audio.translate_style, glossary: &[], contract: &contract,
+                let topts = FlatOpts { src: "auto", tgt: &lang_c, spoken: false, style: &p.audio.translate_style, glossary: &[], contract: &contract, checks: dub_translate::TextChecks::default(),
                 };
                 let done = flat_run_with(client, &mut tsegs, &topts, &mut |m: &dub_translate::Note| {
                     progress(json!({ "type": "progress", "stage": "translate", "msg": m.localize() }))
@@ -2617,17 +2623,20 @@ async fn retranslate_enqueue(st: &AppState, pid: &str, args: &Value,
             (s.id.clone(), text.clone())
         };
         let inputs: Vec<(String, String)> = p.segments.iter().map(input).collect();
+        let (checks, genders) = crate::translate::line_checks(&models_root_xl, &dir_for_job, &p);
         let mut segs: Vec<Seg> = p
             .segments
             .iter()
             .zip(&inputs)
-            .map(|(s, (_, text))| {
-                Seg::new(text.clone(), crate::analyze::speaker_to_i64(s.speaker.as_deref()),
-                )
+            .zip(genders)
+            .map(|((s, (_, text)), gender)| {
+                let mut seg = Seg::new(text.clone(), crate::analyze::speaker_to_i64(s.speaker.as_deref()));
+                seg.gender = gender;
+                seg
             })
             .collect();
         let contract = dub_translate::Contract::for_client(client);
-        let opts = FlatOpts { src: "auto", tgt: &lang_c, spoken, style: &p.audio.translate_style, glossary: &p.glossary, contract: &contract,
+        let opts = FlatOpts { src: "auto", tgt: &lang_c, spoken, style: &p.audio.translate_style, glossary: &p.glossary, contract: &contract, checks,
         };
         flat_run_with(client, &mut segs, &opts, &mut |m: &dub_translate::Note| {
             progress(json!({ "type": "progress", "stage": "translate", "msg": m.localize() }))
@@ -2645,7 +2654,7 @@ async fn retranslate_enqueue(st: &AppState, pid: &str, args: &Value,
         let mut title_tgts: Vec<String> = Vec::new();
         if !titles.is_empty() {
             let mut tsegs: Vec<Seg> = titles.iter().map(|text| Seg::new(text.clone(), 0)).collect();
-            let topts = FlatOpts { src: "auto", tgt: &lang_c, spoken: false, style: &p.audio.translate_style, glossary: &[], contract: &contract,
+            let topts = FlatOpts { src: "auto", tgt: &lang_c, spoken: false, style: &p.audio.translate_style, glossary: &[], contract: &contract, checks: dub_translate::TextChecks::default(),
             };
             flat_run_with(client, &mut tsegs, &topts, &mut |m: &dub_translate::Note| {
                 progress(json!({ "type": "progress", "stage": "translate", "msg": m.localize() }))

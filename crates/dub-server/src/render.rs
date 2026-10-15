@@ -564,7 +564,7 @@ fn voice_clone_guarded(
     let cancelled = loop {
         let left = deadline.saturating_duration_since(std::time::Instant::now());
         match rx.recv_timeout(left.min(Duration::from_millis(200))) {
-            Ok(r) => return r,
+            Ok(r) => return r.map(within_full_scale),
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 return Err(t!("render-synth-thread-ended"));
             }
@@ -1065,13 +1065,86 @@ fn synth_defect(samples: &[f32], sr: i32, tgt_chars: usize) -> Option<&'static s
     None
 }
 
-/// The window's name of a synthesis defect `synth_defect` reports.
+/// Дефект синтеза дубля текста `text`: признаки `synth_defect`, затем включённые признаки `tts_audit`.
+fn take_defect(samples: &[f32], sr: i32, text: &str, judge: crate::tts_audit::Judge) -> Option<&'static str> {
+    let chars = text.chars().filter(|c| c.is_alphanumeric()).count();
+    synth_defect(samples, sr, chars).or_else(|| {
+        if !judge.any() || sr <= 0 {
+            return None;
+        }
+        crate::tts_audit::defect(&crate::tts_audit::audit(samples, sr as u32), text, judge)
+    })
+}
+
+/// Клип с пиком выше полной шкалы — тише до 0,99, а не со срезанными пиками при записи в PCM16: громкость
+/// реплики потом всё равно выравнивается.
+fn within_full_scale((mut samples, sr): (Vec<f32>, i32)) -> (Vec<f32>, i32) {
+    let peak = samples.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+    if peak > 1.0 {
+        let k = 0.99 / peak;
+        samples.iter_mut().for_each(|v| *v *= k);
+    }
+    (samples, sr)
+}
+
+/// Брак облачного дубля — в журнал: облачный синтез платный и сам не повторяется, реплику перегенерирует
+/// пользователь.
+fn note_cloud_defect(raw: &Path, line: usize, text: &str, judge: crate::tts_audit::Judge, progress: &Progress) -> Result<(), String> {
+    if !judge.any() {
+        return Ok(());
+    }
+    let (x, sr) = wavio::read_mono_f32(raw)?;
+    if let Some(kind) = take_defect(&x, sr as i32, text, judge) {
+        emit(progress, "tts", &t!("render-cloud-defect", line = line, defect = defect_name(kind)));
+    }
+    Ok(())
+}
+
+/// Озвученных реплик спикера, по которым меряется пол его голоса в дубляже (самые длинные).
+const VOICE_GENDER_PROBES: usize = 5;
+
+/// Пол голоса дубляжа против пола говорящего в оригинале: медиана F0 самых длинных озвученных реплик
+/// каждого спикера. Расхождение — в журнал (голос каталога с неверным полом, клон с чужого рефа).
+fn check_voice_gender(work_dir: &Path, proj: &Project, voiced: &[(String, PathBuf, f64)], progress: &Progress) -> Result<(), String> {
+    let mut spks: Vec<String> = voiced.iter().map(|v| v.0.clone()).collect();
+    spks.sort();
+    spks.dedup();
+    if spks.is_empty() {
+        return Ok(());
+    }
+    let want = crate::casting::speaker_genders_wd(work_dir, proj, &spks);
+    for spk in &spks {
+        let Some(want) = want.get(spk) else { continue };
+        let mut lines: Vec<&(String, PathBuf, f64)> = voiced.iter().filter(|v| &v.0 == spk).collect();
+        lines.sort_by(|a, b| b.2.total_cmp(&a.2));
+        let mut f0s: Vec<f64> = Vec::new();
+        for (_, path, _) in lines.into_iter().take(VOICE_GENDER_PROBES) {
+            let (x, sr) = wavio::read_mono_f32(path)?;
+            f0s.extend(crate::f0::median_f0(&x, sr));
+        }
+        if f0s.is_empty() {
+            continue;
+        }
+        f0s.sort_by(f64::total_cmp);
+        let name = |g: &str| if g == "male" { t!("render-gender-male") } else { t!("render-gender-female") };
+        if let Some(got) = crate::casting::gender_label(f0s[f0s.len() / 2]).filter(|g| g != want) {
+            emit(progress, "tts", &t!("render-voice-gender", speaker = spk.clone(), want = name(want), got = name(got)));
+        }
+    }
+    Ok(())
+}
+
 fn defect_name(kind: &str) -> String {
     match kind {
         "runaway" => t!("render-defect-runaway"),
         "cutoff" => t!("render-defect-cutoff"),
         "silence" => t!("render-defect-silence"),
         "hum" => t!("render-defect-hum"),
+        "repeat" => t!("render-defect-repeat"),
+        "end_burst" => t!("render-defect-end-burst"),
+        "padding" => t!("render-defect-padding"),
+        "whistle" => t!("render-defect-whistle"),
+        "hiss" => t!("render-defect-hiss"),
         other => other.to_string(),
     }
 }
@@ -1117,6 +1190,54 @@ fn qc_similarity(expected: &str, heard: &str) -> f64 {
     let bs: std::collections::HashSet<&str> = b.iter().map(|s| s.as_str()).collect();
     let hit = a.iter().filter(|w| bs.contains(w.as_str())).count();
     hit as f64 / a.len().max(b.len()) as f64
+}
+
+/// Сходство букв ожидаемого и услышанного без пробелов и знаков: «на хер» и «нахер», «Гос-споди» и
+/// «Господи» близки, хотя слова не совпали.
+fn qc_letter_similarity(expected: &str, heard: &str) -> f64 {
+    let letters = |s: &str| -> String {
+        s.chars().filter(|c| c.is_alphabetic()).flat_map(char::to_lowercase).map(|c| if c == 'ё' { 'е' } else { c }).collect()
+    };
+    let (a, b) = (letters(expected), letters(heard));
+    if a.is_empty() || b.is_empty() {
+        return 0.0;
+    }
+    strsim::normalized_levenshtein(&a, &b)
+}
+
+/// Слово текста (от 3 букв), которое в тексте одно, услышано больше раза, и всего услышано больше слов:
+/// модель повторила кусок. Протяжные междометия («э-э-э», «мм») не считаются.
+fn qc_heard_repeat(expected: &str, heard: &str) -> bool {
+    let words = |s: &str| -> Vec<String> {
+        s.to_lowercase()
+            .replace('ё', "е")
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .map(str::to_string)
+            .collect()
+    };
+    let drawn = |w: &str| w.chars().all(|c| "аоуэиыеяюaeiouм".contains(c));
+    let stems = |ws: &[String]| -> std::collections::HashMap<String, usize> {
+        let mut m = std::collections::HashMap::new();
+        for w in ws.iter().filter(|w| w.chars().count() >= 3 && !drawn(w)) {
+            *m.entry(w.chars().take(4).collect::<String>()).or_insert(0) += 1;
+        }
+        m
+    };
+    let (a, b) = (words(expected), words(heard));
+    if b.len() <= a.len() {
+        return false;
+    }
+    let (ta, hb) = (stems(&a), stems(&b));
+    hb.iter().any(|(w, &n)| n > 1 && ta.get(w) == Some(&1))
+}
+
+/// Брак по сверке распознаванием: слова не сошлись (и буквы тоже, если сверка по буквам включена) или
+/// услышан лишний повтор слова.
+fn qc_mismatch(expected: &str, heard: &str, letters: bool, repeat: bool) -> bool {
+    let words_off = qc_similarity(expected, heard) < 0.35;
+    let letters_off = !letters || qc_letter_similarity(expected, heard) < 0.5;
+    (words_off && letters_off) || (repeat && qc_heard_repeat(expected, heard))
 }
 
 /// Текст i-й фразы пакета распознавания; None — фраза не распознана, причина добавлена в `failed`.
@@ -1222,7 +1343,7 @@ fn build_dub_pass(
     progress: &Progress,
 ) -> Result<DubPass, String> {
     let shown = proj;
-    let tts_view = crate::tts_text::synthesis_view(proj, progress);
+    let tts_view = crate::tts_text::synthesis_view(proj, crate::tts_text::Speak::load(&paths.models_root), progress);
     let proj = &tts_view;
     let wd = &paths.work_dir;
     // Сегменты с непустым tgt (как в питоне: только строки с текстом синтезируются). Несём индекс в
@@ -1595,6 +1716,14 @@ fn build_dub_pass(
         .and_then(|v| v.as_str())
         .map(|v| v != "0")
         .unwrap_or(true);
+    let checks_sel = crate::models::load_selection(&paths.models_root);
+    let judge = crate::tts_audit::Judge {
+        repeat: crate::checks::on(&checks_sel, "qc_repeat"),
+        end: crate::checks::on(&checks_sel, "qc_end"),
+        silence: crate::checks::on(&checks_sel, "qc_silence"),
+        cloud: false,
+    };
+    let cloud_judge = crate::tts_audit::Judge { cloud: crate::checks::on(&checks_sel, "qc_cloud"), ..judge };
     // Ключ синтеза каждого сегмента: совпал с записанным в seg_ckpt.json и файл на месте -> озвучка
     // переиспользуется (продолжение после сбоя, отката правки, смены голоса туда-обратно).
     let engine_tag = if cloud_tts_on {
@@ -1758,9 +1887,11 @@ fn build_dub_pass(
             let mut ok = 0usize;
             for (&idx, &good) in job_segs.iter().zip(&done.ok) {
                 if good {
-                    ckpts.set(&sid_of(segs[idx].0, segs[idx].1), &keys[idx])?;
+                    let (fi, s) = segs[idx];
+                    ckpts.set(&sid_of(fi, s), &keys[idx])?;
                     batch_new.insert(idx);
                     ok += 1;
+                    note_cloud_defect(&wd.join(format!("seg_{}.wav", sid_of(fi, s))), fi, s.tgt_text.trim(), cloud_judge, progress)?;
                 }
             }
             emit(progress, "tts", &t!("render-cloud-tts-ready", count = ok),
@@ -1783,6 +1914,8 @@ fn build_dub_pass(
     let prior_timing = crate::dub_timing::DubTiming::load(wd)?;
     // Дубль истории, озвученный в этом проходе, для каждой записи qc_list.
     let mut qc_takes: Vec<Option<u32>> = Vec::new();
+    // Озвученные в этом проходе реплики по спикерам: (спикер, файл, длительность) — для сверки пола голоса.
+    let mut voiced_lines: Vec<(String, PathBuf, f64)> = Vec::new();
     for (idx, &(fi, s)) in segs.iter().enumerate() {
         crate::jobs::check_cancelled()?;
         // Кэш-файл сегмента — ПО ЕГО ID, не по индексу fi. Кэш переиспользуется между рендерами (не-dirty
@@ -1909,6 +2042,7 @@ fn build_dub_pass(
                 ) {
                 Ok(wav) => {
                     dub_core::atomic::write(&raw, &wav).map_err(|e| t!("render-write-cloud-segment", line = fi, error = e.to_string()))?;
+                    note_cloud_defect(&raw, fi, tgt, cloud_judge, progress)?;
                 }
                 Err(e) => {
                     emit(progress, "tts", &t!("render-cloud-tts-failed", line = fi, error = e.to_string()),
@@ -2034,7 +2168,7 @@ fn build_dub_pass(
                         continue;
                     }
                 };
-                match synth_defect(&samples, sr, tgt_chars) {
+                match take_defect(&samples, sr, tgt, judge) {
                     None => break (samples, sr), // дефектов не видно — берём
                     Some(kind) => {
                         let rng = hum_range_db(&samples, sr);
@@ -2058,8 +2192,11 @@ fn build_dub_pass(
                                 break (Vec::new(), sr);
                             }
                         }
-                        retried = true;
-                        total_retries += 1;
+                        // Признаки tts_audit — брак отдельной фразы, а не сбой движка: в счёт обрыва рендера не идут.
+                        if !crate::tts_audit::is_take_sign(kind) {
+                            retried = true;
+                            total_retries += 1;
+                        }
                         let via = if attempt >= 3 { t!("render-retry-alt-ref") } else { t!("render-retry-temperature") };
                         emit(progress, "tts", &t!("render-defect-regenerating", line = fi, defect = defect_name(kind), via = via, attempt = attempt + 1, attempts = MAX_TTS_ATTEMPTS));
                     }
@@ -2143,8 +2280,7 @@ fn build_dub_pass(
                 match voice_clone_guarded(eng, tgt, &ref_wav_mt.to_string_lossy(), rt_mt, &opts, vc_to,
                 ) {
                     Ok((samples, sr)) => {
-                        if synth_defect(&samples, sr, tgt.chars().filter(|c| c.is_alphanumeric()).count(),
-                        ).is_none() {
+                        if take_defect(&samples, sr, tgt, judge).is_none() {
                             let wav = AudiocppEngine::encode_wav(&samples, sr, 1);
                             dub_core::atomic::write(&take_path, &wav)?;
                             let td = media::duration(&take_path)?;
@@ -2264,6 +2400,9 @@ fn build_dub_pass(
         // язык, ASR-QC счёл бы его браком и пересинтезировал обратно в артефакт.
         // Higgs-QC (ASR-сверка + пересинтез) — только для локального движка; облачный TTS артефактов-гула
         // не даёт, а его валидация покрытия идёт отдельным гейтом.
+        if synthesized {
+            voiced_lines.push((s.speaker.clone().unwrap_or_else(|| "0".into()), raw.clone(), raw_dur));
+        }
         if !cloud_tts_on && need_synth && !kept_original && !s.tgt_text.trim().is_empty() {
             qc_list.push((
                 fi,
@@ -2301,12 +2440,14 @@ fn build_dub_pass(
         );
     }
 
+    if crate::checks::on(&checks_sel, "qc_voice_gender") {
+        check_voice_gender(&paths.work_dir, proj, &voiced_lines, progress)?;
+    }
+
     // ── QC: ASR-верификация синтеза (выполняется только если qc_asr="1" в настройках) ──
-    let run_qc_asr = crate::models::load_selection(&paths.models_root)
-        .get("qc_asr")
-        .and_then(|v| v.as_str())
-        .map(|v| v == "1")
-        .unwrap_or(false);
+    let run_qc_asr = crate::checks::on(&checks_sel, "qc_asr");
+    let qc_letters = crate::checks::on(&checks_sel, "qc_asr_letters");
+    let qc_repeat = crate::checks::on(&checks_sel, "qc_asr_repeat");
     if run_qc_asr && !qc_list.is_empty() {
         emit(progress, "tts", &t!("render-qc-start", count = qc_list.len()),
         );
@@ -2327,9 +2468,8 @@ fn build_dub_pass(
             // ложные капризы ASR на коротких гасит префикс-режим qc_similarity (0.5 на пустом ASR).
             let Some(h) = heard_text(&heard, i, &mut unheard) else { continue;
             };
-            let sim = qc_similarity(&q.3, h);
-            qc_note(q.0, qc_takes[i], sim)?;
-            if sim < 0.35 {
+            qc_note(q.0, qc_takes[i], qc_similarity(&q.3, h))?;
+            if qc_mismatch(&q.3, h, qc_letters, qc_repeat) {
                 bad_idx.push(i);
             }
         }
@@ -2350,7 +2490,6 @@ fn build_dub_pass(
                 let main_rw = ref_of(s);
                 let main_rt = reftext_of(s);
                 let alt = alt_refs.get(spk);
-                let tgt_chars = tgtq.chars().filter(|c| c.is_alphanumeric()).count();
                 // до 3 свежих попыток (низкая temperature по ENGINES_FINDINGS §1.3 + кап токенов §1.1):
                 // альт-реф 0.3 → альт-реф 0.15+RAS1 → основной 0.10 с новым seed
                 let e_dur = (s.end - s.start).max(0.6);
@@ -2375,7 +2514,7 @@ fn build_dub_pass(
                         Err(e) if synth_abort(&e) => return Err(e), // движок завис или отмена — обрыв, не гоняем параллельно
                         Err(_) => continue,
                     };
-                    if synth_defect(&smp, r, tgt_chars).is_some() {
+                    if take_defect(&smp, r, tgtq, judge).is_some() {
                         continue;
                     }
                     let wav = AudiocppEngine::encode_wav(&smp, r, 1);
@@ -2425,9 +2564,8 @@ fn build_dub_pass(
             for (j, &i) in bad_idx.iter().enumerate() {
                 let Some(h) = heard_text(&heard2, j, &mut unheard2) else { continue;
                 };
-                let sim = qc_similarity(&qc_list[i].3, h);
-                qc_note(qc_list[i].0, qc_takes[i], sim)?;
-                if sim < 0.35 {
+                qc_note(qc_list[i].0, qc_takes[i], qc_similarity(&qc_list[i].3, h))?;
+                if qc_mismatch(&qc_list[i].3, h, qc_letters, qc_repeat) {
                     // Отключён сброс на оригинальное аудио. Сгенерированный TTS-звук ВСЕГДА остаётся
                     // на таймлайне, даже если QC (сверка через ASR) не подтвердил совпадение текста.
                     still += 1;
@@ -3973,7 +4111,7 @@ mod tests {
             seg("s1", 2.5, 3.0, "[музыка]"),
             seg("s2", 4.0, 5.0, "Всё"),
         ];
-        let view = crate::tts_text::synthesis_view(&shown, &|_| {});
+        let view = crate::tts_text::synthesis_view(&shown, crate::tts_text::Speak { caps: true, symbols: true }, &|_| {});
         assert_ne!(view.segments[0].tgt_text, shown.segments[0].tgt_text, "текст для синтеза очищен");
         let segs: Vec<(usize, &Segment)> =
             view.segments.iter().enumerate().filter(|(_, s)| !s.tgt_text.trim().is_empty()).collect();

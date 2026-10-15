@@ -10,8 +10,8 @@ use dub_core::GlossaryEntry;
 use dub_llm::{strip_think, ChatClient, Message, Sampling};
 use regex::Regex;
 
-use crate::contract::{label, rule as contract_rule, Answer, Contract, Format, LineCheck};
-use crate::seg::Seg;
+use crate::contract::{label, rule as contract_rule, Answer, Contract, Format, LineCheck, TextChecks};
+use crate::seg::{Gender, Seg};
 use crate::{LineFailure, Note, TranslateError};
 
 const CHUNK: usize = 40;
@@ -120,25 +120,45 @@ fn nonempty_idxs_and_nspk(segs: &[Seg]) -> (Vec<usize>, usize) {
 }
 
 /// Нумерованный блок "1. текст\n2. текст…" для пакета индексов (общий для run/rewrite; номера — label формата).
-/// С мягким лимитом длины (#107): после номера «(≤NN)» из бюджета символов сегмента (темп голоса × длит., Seg::budget), у
-/// сегментов без таймингов лимита нет. Лимит вычищается из ответа защитно (strip_budget_marker при разборе).
-fn numbered_block(texts: &[String], budgets: &[Option<usize>], chunk: &[usize], fmt: Format) -> String {
+/// После номера — скобка `line_head`: пол говорящего и мягкий лимит длины (#107) из бюджета символов сегмента
+/// (темп голоса × длит., Seg::budget). Скобка вычищается из ответа защитно (strip_budget_marker при разборе).
+fn numbered_block(texts: &[String], budgets: &[Option<usize>], genders: &[Option<Gender>], chunk: &[usize], fmt: Format) -> String {
     chunk
         .iter()
         .enumerate()
-        .map(|(j, &gi)| match budgets[gi] {
-            Some(lim) => format!("{}. (\u{2264}{lim}) {}", label(fmt, j + 1, chunk.len()), texts[gi]),
+        .map(|(j, &gi)| match line_head(budgets[gi], genders.get(gi).copied().flatten()) {
+            Some(head) => format!("{}. {head} {}", label(fmt, j + 1, chunk.len()), texts[gi]),
             None => format!("{}. {}", label(fmt, j + 1, chunk.len()), texts[gi]),
         })
         .collect::<Vec<_>>()
         .join("\n")
 }
 
-/// Вычистить ведущий маркер лимита «(≤NN)» из перевода (если модель его протащила). Устойчиво (#116,
-/// находка [14]): пробелы после «(» и перед числом, варианты ≤/<=/=<.
+/// Скобка после номера строки: «(female, ≤45)», «(≤45)», «(male)»; None — ни пола, ни лимита.
+pub(crate) fn line_head(budget: Option<usize>, gender: Option<Gender>) -> Option<String> {
+    match (gender, budget) {
+        (Some(g), Some(lim)) => Some(format!("({}, \u{2264}{lim})", g.word())),
+        (Some(g), None) => Some(format!("({})", g.word())),
+        (None, Some(lim)) => Some(format!("(\u{2264}{lim})")),
+        (None, None) => None,
+    }
+}
+
+/// Правило для промпта, когда у строк есть пол говорящего.
+pub(crate) const GENDER_RULE: &str = " A word male or female in that parenthesis is the speaker's gender: use it for \
+the grammatical gender of what the speaker says about themselves (I, me, my), and do NOT copy it into your output.";
+
+pub(crate) fn gender_rule(genders: &[Option<Gender>]) -> &'static str {
+    if genders.iter().any(Option::is_some) { GENDER_RULE } else { "" }
+}
+
+/// Вычистить ведущую скобку `line_head` — «(≤NN)», «(female, ≤NN)», «(male)» — из перевода (если модель её
+/// протащила). Устойчиво (#116, находка [14]): пробелы после «(» и перед числом, варианты ≤/<=/=<.
 pub(crate) fn strip_budget_marker(s: &str) -> String {
-    let re = Regex::new(r"^\s*\(\s*(?:\u{2264}|<=|=<)\s*\d+\s*\)\s*").unwrap();
-    re.replace(s, "").into_owned()
+    static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+        Regex::new(r"^\s*\(\s*(?:(?:male|female)(?:\s*,\s*(?:\u{2264}|<=|=<)\s*\d+)?|(?:\u{2264}|<=|=<)\s*\d+)\s*\)\s*").unwrap()
+    });
+    RE.replace(s, "").into_owned()
 }
 
 /// Доп-инструкция стиля перевода (#112): отдельное предложение в конце инструкционной части sysmsg. Пусто,
@@ -165,6 +185,8 @@ pub struct FlatOpts<'a> {
     pub glossary: &'a [GlossaryEntry],
     /// Формат ответа джобы (общий для всех её проходов).
     pub contract: &'a Contract,
+    /// Включённые пользователем проверки строк.
+    pub checks: TextChecks,
 }
 
 /// Пакеты плоского прохода: общий для run/rewrite цикл спросить -> проверить -> переспросить.
@@ -173,12 +195,15 @@ struct Flat<'a> {
     contract: &'a Contract,
     texts: Vec<String>,
     budgets: Vec<Option<usize>>,
+    /// Пол говорящего каждой строки (подсказка переводчику и проверка рода).
+    genders: Vec<Option<Gender>>,
     tgt_code: &'a str,
     tgt_name: String,
     glossary: Vec<GlossaryEntry>,
     /// Авто-пары повторяющихся имён: подсказка и term-lock, не проверка.
     names: Vec<(String, String)>,
     rewrite: bool,
+    checks: TextChecks,
 }
 
 impl Flat<'_> {
@@ -195,7 +220,7 @@ impl Flat<'_> {
             let texts: Vec<&str> = idx.iter().map(|&i| self.texts[i].as_str()).collect();
             let gloss_block = if self.rewrite { String::new() } else { crate::gloss::block(&self.glossary, &texts) };
             let messages = |fmt: Format| {
-                let numbered = numbered_block(&self.texts, &self.budgets, idx, fmt);
+                let numbered = numbered_block(&self.texts, &self.budgets, &self.genders, idx, fmt);
                 vec![
                     Message::system(system(fmt)),
                     Message::user_text(format!("{gloss_block}{numbered}\n\n{}", contract_rule(fmt, &self.tgt_name))),
@@ -210,8 +235,16 @@ impl Flat<'_> {
             Ok(answer)
         };
         let check = |i: usize, line: Option<&str>, cut: bool| {
-            LineCheck { src: &self.texts[i], budget: self.budgets[i], tgt_lang: self.tgt_code, glossary: &self.glossary, rewrite: self.rewrite }
-                .check(line, cut)
+            LineCheck {
+                src: &self.texts[i],
+                budget: self.budgets[i],
+                tgt_lang: self.tgt_code,
+                glossary: &self.glossary,
+                rewrite: self.rewrite,
+                gender: self.genders[i].filter(|_| self.checks.gender),
+                latin: self.checks.latin,
+            }
+            .check(line, cut)
         };
         let chunks: Vec<Vec<usize>> = idxs.chunks(CHUNK).map(<[usize]>::to_vec).collect();
         crate::batch::drive(chunks, &mut ask, &check, &|i| i + 1, &mut |m: &Note| (log_cell.borrow_mut())(m))
@@ -229,7 +262,7 @@ pub fn run(
     style: &str,
 ) -> Result<(), TranslateError> {
     let contract = Contract::for_client(llm);
-    run_with(llm, segs, &FlatOpts { src, tgt, spoken, style, glossary: &[], contract: &contract }, &mut |m: &Note| eprintln!("[translate] {m}"))
+    run_with(llm, segs, &FlatOpts { src, tgt, spoken, style, glossary: &[], contract: &contract, checks: TextChecks::default() }, &mut |m: &Note| eprintln!("[translate] {m}"))
 }
 
 /// run с глоссарием и журналом. style (#112) — доп-инструкция стиля, вставляется в инструкционную часть.
@@ -263,6 +296,8 @@ pub fn run_with(llm: &ChatClient, segs: &mut [Seg], o: &FlatOpts, log: &mut dyn 
     };
     let gloss_rule = if glossary.is_empty() { "" } else { crate::gloss::RULE };
     let names_c = crate::gloss::names_clause(&names);
+    let genders: Vec<Option<Gender>> = segs.iter().map(|s| s.gender).collect();
+    let g_rule = gender_rule(&genders);
     // Инструкция одна на все пакеты (KV-кэш llama-server); стиль (#112) и глоссарий — ПЕРЕД форматом ответа,
     // он остаётся финальным и приоритетным.
     let system = |fmt: Format| {
@@ -273,7 +308,7 @@ pub fn run_with(llm: &ChatClient, segs: &mut [Seg], o: &FlatOpts, log: &mut dyn 
              SAME LENGTH as its source so it fits the dub timing. After each number, a parenthesis like \
              (\u{2264}45) gives a soft character limit for that line — stay within it: if it doesn't fit, drop \
              filler words and repetitions, keep the meaning, invent nothing. Do NOT copy the (\u{2264}NN) marker \
-             into your output.{extra}{style_c}{names_c}{gloss_rule} {} No reasoning, no English, no notes.",
+             into your output.{g_rule}{extra}{style_c}{names_c}{gloss_rule} {} No reasoning, no English, no notes.",
             contract_rule(fmt, &tgt_name)
         )
     };
@@ -283,11 +318,13 @@ pub fn run_with(llm: &ChatClient, segs: &mut [Seg], o: &FlatOpts, log: &mut dyn 
         contract: o.contract,
         texts: segs.iter().map(|s| s.text.trim().to_string()).collect(),
         budgets: segs.iter().map(|s| s.budget(o.tgt)).collect(),
+        genders,
         tgt_code: o.tgt,
         tgt_name: tgt_name.clone(),
         glossary,
         names,
         rewrite: false,
+        checks: o.checks,
     };
     let out = flat.run(&idxs, &system, &sampling, log)?;
     let last_failure: Option<LineFailure> = out.failed.last().and_then(|f| f.1.clone());
@@ -321,6 +358,8 @@ pub fn rewrite(
         s.tgt = String::new();
     }
     let (idxs, nspk) = nonempty_idxs_and_nspk(segs);
+    let genders: Vec<Option<Gender>> = segs.iter().map(|s| s.gender).collect();
+    let g_rule = gender_rule(&genders);
     let extra = if spoken {
         " Spell out all numbers, dates, times and symbols as full words."
     } else {
@@ -341,7 +380,7 @@ pub fn rewrite(
              NOT translate the source. Keep the SAME number of lines and make each new line roughly the SAME LENGTH as \
              its source line so it fits the dub timing. After each number, a parenthesis like (\u{2264}45) gives a soft \
              character limit for that line — stay within it, invent nothing, and do NOT copy the (\u{2264}NN) marker into \
-             your output.{extra}{style_c} Output natural spoken {tgt_name}. {} No notes, no source text.",
+             your output.{g_rule}{extra}{style_c} Output natural spoken {tgt_name}. {} No notes, no source text.",
             contract_rule(fmt, &tgt_name)
         )
     };
@@ -352,11 +391,13 @@ pub fn rewrite(
         contract: &contract,
         texts: segs.iter().map(|s| s.text.trim().to_string()).collect(),
         budgets: segs.iter().map(|s| s.budget(tgt)).collect(),
+        genders,
         tgt_code: tgt,
         tgt_name: tgt_name.clone(),
         glossary: Vec::new(),
         names: Vec::new(),
         rewrite: true,
+        checks: TextChecks::default(),
     };
     let out = flat.run(&idxs, &system, &sampling, &mut |m: &Note| eprintln!("[remix] {m}"))?;
     for &gi in &idxs {
@@ -414,6 +455,11 @@ mod tests {
         assert_eq!(strip_budget_marker("( ≤ 45) Привет"), "Привет");
         assert_eq!(strip_budget_marker("(=< 30) Текст"), "Текст");
         assert_eq!(strip_budget_marker("Обычный текст"), "Обычный текст");
+        assert_eq!(strip_budget_marker("(female, ≤45) Я пришла"), "Я пришла");
+        assert_eq!(strip_budget_marker("(male) Я пришёл"), "Я пришёл");
+        assert_eq!(strip_budget_marker("(мужчина) Я пришёл"), "(мужчина) Я пришёл");
+        assert_eq!(line_head(Some(45), Some(Gender::Female)).as_deref(), Some("(female, ≤45)"));
+        assert_eq!(line_head(None, None), None);
         // цифры/скобки внутри перевода не трогаем
         assert_eq!(strip_budget_marker("В 2024 (год) было"), "В 2024 (год) было");
     }
@@ -421,7 +467,7 @@ mod tests {
     #[test]
     fn numbered_block_has_budget_when_timed() {
         let texts = vec!["hello world".to_string(), "no timing".to_string()];
-        let block = numbered_block(&texts, &[Some(42), None], &[0, 1], Format::Json);
+        let block = numbered_block(&texts, &[Some(42), None], &[], &[0, 1], Format::Json);
         assert_eq!(block, "1. (≤42) hello world\n2. no timing");
     }
 
@@ -448,7 +494,7 @@ mod tests {
         let mut s = segs(&["Welcome to Hogwarts", "I am fine"]);
         let glossary = vec![GlossaryEntry { term: "Hogwarts".into(), translation: "Хогвартс".into(), lang: "ru".into(), ..GlossaryEntry::default() }];
         let mut log = Vec::new();
-        run_with(&llm, &mut s, &FlatOpts { src: "en", tgt: "ru", spoken: true, style: "", glossary: &glossary, contract: &Contract::for_client(&llm) }, &mut |m: &Note| log.push(m.to_string())).unwrap();
+        run_with(&llm, &mut s, &FlatOpts { src: "en", tgt: "ru", spoken: true, style: "", glossary: &glossary, contract: &Contract::for_client(&llm), checks: TextChecks::default() }, &mut |m: &Note| log.push(m.to_string())).unwrap();
         assert_eq!(s[0].tgt, "Добро пожаловать в Хогвартс");
         assert_eq!(s[1].tgt, "У меня всё хорошо");
         let first = body_json(&server.request(0));
@@ -466,7 +512,7 @@ mod tests {
         let server = serve(vec![reply(r#"{"1":"Привет","2":"Bye"}"#), reply(r#"{"1":"Bye"}"#)]);
         let llm = ChatClient::new(server.base()).unwrap();
         let mut s = segs(&["Hello", "Bye"]);
-        run_with(&llm, &mut s, &FlatOpts { src: "en", tgt: "ru", spoken: false, style: "", glossary: &[], contract: &Contract::for_client(&llm) }, &mut |_: &Note| {}).unwrap();
+        run_with(&llm, &mut s, &FlatOpts { src: "en", tgt: "ru", spoken: false, style: "", glossary: &[], contract: &Contract::for_client(&llm), checks: TextChecks::default() }, &mut |_: &Note| {}).unwrap();
         assert_eq!(s[0].tgt, "Привет");
         assert_eq!(s[1].tgt, "Bye");
         assert_eq!(server.count(), 2);
@@ -485,7 +531,7 @@ mod tests {
         }));
         let mut s = segs(&["I saw Harry", "Then Harry left", "Harry is back"]);
         let mut log = Vec::new();
-        run_with(&llm, &mut s, &FlatOpts { src: "en", tgt: "ru", spoken: false, style: "", glossary: &[], contract: &Contract::for_client(&llm) }, &mut |m: &Note| log.push(m.to_string())).unwrap();
+        run_with(&llm, &mut s, &FlatOpts { src: "en", tgt: "ru", spoken: false, style: "", glossary: &[], contract: &Contract::for_client(&llm), checks: TextChecks::default() }, &mut |m: &Note| log.push(m.to_string())).unwrap();
         assert_eq!(s[2].tgt, "Гарри вернулся");
         assert!(log.iter().any(|l| l.contains("automatic name glossary is skipped")), "{log:?}");
     }
@@ -512,7 +558,7 @@ mod tests {
         ]);
         let llm = ChatClient::new(server.base()).unwrap();
         let mut s = segs(&["You know Harry", "You saw Harry", "You and Harry again"]);
-        run_with(&llm, &mut s, &FlatOpts { src: "en", tgt: "ru", spoken: false, style: "", glossary: &[], contract: &Contract::for_client(&llm) }, &mut |_: &Note| {}).unwrap();
+        run_with(&llm, &mut s, &FlatOpts { src: "en", tgt: "ru", spoken: false, style: "", glossary: &[], contract: &Contract::for_client(&llm), checks: TextChecks::default() }, &mut |_: &Note| {}).unwrap();
         assert_eq!(server.count(), 2, "one name asked, one batch, no retries");
         assert_eq!(body_json(&server.request(0))["messages"][1]["content"], "Harry");
         let batch = body_json(&server.request(1));
@@ -526,13 +572,13 @@ mod tests {
         let server = serve(vec![Reply::json(401, r#"{"error":"invalid key"}"#)]);
         let llm = ChatClient::new(server.base()).unwrap();
         let mut s = segs(&["one line", "two lines", "three lines"]);
-        let err = run_with(&llm, &mut s, &FlatOpts { src: "en", tgt: "ru", spoken: false, style: "", glossary: &[], contract: &Contract::for_client(&llm) }, &mut |_: &Note| {}).unwrap_err();
+        let err = run_with(&llm, &mut s, &FlatOpts { src: "en", tgt: "ru", spoken: false, style: "", glossary: &[], contract: &Contract::for_client(&llm), checks: TextChecks::default() }, &mut |_: &Note| {}).unwrap_err();
         assert!(err.to_string().contains("401") && err.to_string().contains("invalid key"), "{err}");
         assert_eq!(server.count(), 1);
 
         let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
         let llm = ChatClient::new(format!("http://127.0.0.1:{port}")).unwrap().with_retries(0);
-        let err = run_with(&llm, &mut s, &FlatOpts { src: "en", tgt: "ru", spoken: false, style: "", glossary: &[], contract: &Contract::for_client(&llm) }, &mut |_: &Note| {}).unwrap_err();
+        let err = run_with(&llm, &mut s, &FlatOpts { src: "en", tgt: "ru", spoken: false, style: "", glossary: &[], contract: &Contract::for_client(&llm), checks: TextChecks::default() }, &mut |_: &Note| {}).unwrap_err();
         assert!(err.to_string().contains("chat failed"), "{err}");
     }
 
@@ -541,7 +587,7 @@ mod tests {
         let server = serve(vec![reply(r#"{"1":"one line"}"#), reply(r#"{"1":"one line"}"#)]);
         let llm = ChatClient::new(server.base()).unwrap();
         let mut s = segs(&["one line"]);
-        let err = run_with(&llm, &mut s, &FlatOpts { src: "en", tgt: "ru", spoken: false, style: "", glossary: &[], contract: &Contract::for_client(&llm) }, &mut |_: &Note| {}).unwrap_err();
+        let err = run_with(&llm, &mut s, &FlatOpts { src: "en", tgt: "ru", spoken: false, style: "", glossary: &[], contract: &Contract::for_client(&llm), checks: TextChecks::default() }, &mut |_: &Note| {}).unwrap_err();
         assert!(matches!(&err, TranslateError::Empty { lines: 1, last: Some(LineFailure::Rejected(crate::Reject::Echo)) }), "{err}");
     }
 }

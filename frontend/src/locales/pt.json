@@ -205,7 +205,7 @@
       "cloud": "Nuvem",
       "cloudHint": "Chave do OpenRouter e pedidos em paralelo",
       "quality": "Qualidade",
-      "qualityHint": "Verificações de voz, tomadas e diagnóstico",
+      "qualityHint": "Reconhecimento, tradução, locução e verificações",
       "network": "Rede",
       "networkHint": "Proxy para baixar modelos e para a nuvem",
       "interface": "Idioma e sons",
@@ -237,7 +237,10 @@
     "modelsDir": "Modelos e configurações",
     "copyPath": "Copiar caminho",
     "copied": "Copiado",
-    "pathsFailed": "Não foi possível obter a pasta de dados: {{error}}"
+    "pathsFailed": "Não foi possível obter a pasta de dados: {{error}}",
+    "recognitionGroup": "Reconhecimento",
+    "translationGroup": "Tradução",
+    "takesGroup": "Verificação de tomadas"
   },
   "projects": {
     "title": "Todos os projetos",
@@ -881,9 +884,9 @@
   },
   "qc": {
     "asr": {
-      "tip": "Verifica automaticamente o texto reconhecido com o Whisper ASR para descartar silêncio e defeitos",
-      "label": "Verificação de texto por ASR (QC)",
-      "hint": "verificação automática da dublagem por ASR (desativar acelera a síntese)"
+      "tip": "Após a síntese, cada tomada é reconhecida pelo motor de reconhecimento escolhido; a que não bate com o texto é dita de novo. Só síntese local.",
+      "label": "Verificação por reconhecimento",
+      "hint": "a locução é reconhecida e comparada ao texto; divergência é ressintetizada (mais lento)"
     },
     "duration": {
       "tip": "Ajusta a velocidade e controla a duração do áudio para caber no intervalo da legenda",
@@ -919,6 +922,91 @@
       "tip": "Se uma fala dublada precisar de mais aceleração do que o render aplica (até ×4 com o ritmo de fala dinâmico), o modelo de tradução a reescreve mais curta uma vez e só essa fala é dublada de novo",
       "label": "Encurtar falas que não cabem",
       "hint": "reescrever mais curta a tradução das falas que não cabem e dublá-las de novo"
+    },
+    "asrRepeats": {
+      "tip": "O reconhecimento às vezes entra em loop sobre música e silêncio. Essa linha sem voz no seu trecho é ocultada da dublagem e das legendas (volta no editor); com voz só é marcada no registro.",
+      "label": "Descartar reconhecimento em loop",
+      "hint": "linhas em loop sem voz são ocultadas; com voz, marcadas"
+    },
+    "asrRepeatInside": {
+      "tip": "Regra do filtro de dados da NVIDIA NeMo: “the the the the the”.",
+      "label": "Repetição dentro da linha",
+      "hint": "linha de cinco ou mais palavras com no máximo 40% diferentes"
+    },
+    "asrRepeatLines": {
+      "tip": "Falas curtas (“Sim.”, “O quê?”) não são julgadas: as pessoas repetem mesmo. Desligue para músicas com refrão.",
+      "label": "A mesma linha de novo",
+      "hint": "linha de três ou mais palavras logo após ela mesma ou três vezes no vídeo"
+    },
+    "asrLongWords": {
+      "tip": "Desligue para alemão com palavras compostas longas.",
+      "label": "Palavras com mais de 25 letras",
+      "hint": "lixo do reconhecimento grudado"
+    },
+    "trGender": {
+      "tip": "O gênero vem da altura da voz de várias falas mais longas; uma medida incerta não dá dica. Serve a idiomas com gênero gramatical (“cansado / cansada”).",
+      "label": "Gênero do falante para o tradutor",
+      "hint": "o tradutor sabe se um homem ou uma mulher diz a linha"
+    },
+    "trGenderCheck": {
+      "tip": "Se o falante fala de si no outro gênero, a linha é pedida de novo. Se continuar errada após todas as tentativas, fica com uma nota no registro.",
+      "label": "Verificar formas “я сказал / сказала”",
+      "hint": "uma linha na forma do outro gênero é pedida de novo (russo)"
+    },
+    "trLatin": {
+      "tip": "Nomes e marcas (com maiúscula no original: Google, iPhone, Wi-Fi), números e termos “não traduzir” ficam. A voz lê com sotaque uma palavra inglesa esquecida.",
+      "label": "Não deixar palavras em inglês",
+      "hint": "para idiomas não latinos: uma palavra original deixada em latim é pedida de novo"
+    },
+    "ttsCaps": {
+      "tip": "Um modelo de voz pode soletrar uma palavra em maiúsculas. Linha toda em maiúsculas: cada palavra exceto as curtas sem vogal; linha normal: palavras de cinco letras ou mais. O texto mostrado não muda.",
+      "label": "Ler maiúsculas como palavras",
+      "hint": "palavras em maiúsculas são ditas em letras normais; siglas (EUA, FBI) ficam"
+    },
+    "ttsSymbols": {
+      "tip": "Restos da marcação das legendas não são lidos em voz alta. O texto mostrado não muda.",
+      "label": "Tirar sinais de marcação",
+      "hint": "_ | ~ ^ \\ { } < > # * não são ditos"
+    },
+    "audio": {
+      "tip": "O som de cada tomada é verificado logo após a síntese, frações de segundo por linha. Tomada descontrolada, corte, silêncio e zumbido são sempre verificados; aqui ficam sinais extras.",
+      "label": "Verificação do som da tomada",
+      "hint": "um defeito no som gera a tomada de novo; na voz na nuvem vai ao registro"
+    },
+    "audioRepeat": {
+      "tip": "Busca por semelhança espectral. Um texto cujas palavras se repetem não é julgado pelo som.",
+      "label": "Um trecho repetido",
+      "hint": "um trecho da frase soa duas vezes, mas o texto não repete"
+    },
+    "audioEnd": {
+      "tip": "O modelo às vezes acrescenta uma palavra ou termina a tomada com um estalo em escala total.",
+      "label": "Estalo ou palavra a mais no fim",
+      "hint": "o fim da tomada é mais alto que quase toda a frase"
+    },
+    "audioCloud": {
+      "tip": "Falhas conhecidas dos modelos na nuvem. A síntese na nuvem é paga e não se repete sozinha: gere a fala de novo no editor.",
+      "label": "Assobio e chiado da voz na nuvem",
+      "hint": "assobio, chiado nas pausas — só nuvem, ao registro"
+    },
+    "asrLetters": {
+      "tip": "Só é divergência se palavras e letras não batem: menos ressínteses inúteis pela escrita do reconhecedor.",
+      "label": "Comparar letras",
+      "hint": "diferenças de escrita não contam: compara-se sem espaços nem sinais"
+    },
+    "asrRepeat": {
+      "tip": "Interjeições arrastadas (“é-é”, “mm”) não contam.",
+      "label": "Palavra repetida a mais",
+      "hint": "uma palavra que está uma vez no texto é ouvida duas vezes — divergência"
+    },
+    "voiceGender": {
+      "tip": "A altura de várias falas dubladas de um falante é comparada ao gênero dele no original. Pega uma voz de catálogo com gênero errado e um clone de amostra alheia.",
+      "label": "Gênero da voz da dublagem",
+      "hint": "uma voz de dublagem de outro gênero que o falante gera um aviso no registro"
+    },
+    "audioSilence": {
+      "tip": "O modelo às vezes dá um trecho curto ou outras palavras e silêncio no lugar da fala. Visto com Drama 3; nunca disparou em 726 tomadas do Higgs.",
+      "label": "Quase só silêncio",
+      "hint": "tomada de três segundos ou mais com fala em menos de um terço"
     }
   },
   "manual": {

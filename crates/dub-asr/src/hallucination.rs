@@ -141,6 +141,12 @@ pub enum HallucinationKind {
     /// Фраза из списка целиком. Среди них и обычные реплики диалога («come on», «thank you»,
     /// «watch out»): Whisper пишет их в тишине, но люди их и правда говорят.
     KnownPhrase,
+    /// Строка зациклена внутри: разных слов не больше 0,4 при пяти и больше словах (критерий NeMo SDP).
+    Looped,
+    /// Слово длиннее 25 букв — слипшийся мусор распознавания.
+    LongWord,
+    /// Та же строка от трёх слов сразу после себя или три раза и больше в ролике.
+    RepeatedLine,
 }
 
 impl HallucinationKind {
@@ -158,8 +164,67 @@ impl HallucinationKind {
             HallucinationKind::SubtitleWord => "subtitle_word",
             HallucinationKind::Shouted => "shouted",
             HallucinationKind::KnownPhrase => "known_phrase",
+            HallucinationKind::Looped => "looped",
+            HallucinationKind::LongWord => "long_word",
+            HallucinationKind::RepeatedLine => "repeated_line",
         }
     }
+}
+
+/// Признаки зацикливания распознавания, которые включаются по отдельности.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LoopRules {
+    /// Повтор внутри строки.
+    pub inside: bool,
+    /// Повтор строки подряд или по ролику.
+    pub lines: bool,
+    /// Слово длиннее 25 букв.
+    pub long_words: bool,
+}
+
+const LOOP_MIN_WORDS: usize = 5;
+const LOOP_MAX_DISTINCT: f64 = 0.4;
+const LONG_WORD_LETTERS: usize = 25;
+const REPEATED_LINE_MIN_WORDS: usize = 3;
+const REPEATED_LINE_TIMES: usize = 3;
+
+/// Признак зацикливания самой строки; None — нет.
+pub fn loop_kind(text: &str, rules: LoopRules) -> Option<HallucinationKind> {
+    let words: Vec<String> = normalised(text).split(' ').filter(|w| !w.is_empty()).map(str::to_string).collect();
+    if rules.inside && words.len() >= LOOP_MIN_WORDS {
+        let distinct = words.iter().collect::<std::collections::HashSet<_>>().len();
+        if distinct as f64 / words.len() as f64 <= LOOP_MAX_DISTINCT {
+            return Some(HallucinationKind::Looped);
+        }
+    }
+    if rules.long_words && text.split(|c: char| !c.is_alphabetic()).any(|w| w.chars().count() > LONG_WORD_LETTERS) {
+        return Some(HallucinationKind::LongWord);
+    }
+    None
+}
+
+/// Какие строки повторяют строку перед собой или звучат три раза и больше; строки короче трёх слов не
+/// судятся — короткие реплики («Да.», «Что?») в речи повторяются по-настоящему.
+pub fn repeated_lines(texts: &[&str]) -> Vec<bool> {
+    let keys: Vec<Option<String>> = texts
+        .iter()
+        .map(|t| {
+            let n = normalised(t);
+            (n.split(' ').filter(|w| !w.is_empty()).count() >= REPEATED_LINE_MIN_WORDS).then_some(n)
+        })
+        .collect();
+    let mut times: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for k in keys.iter().flatten() {
+        *times.entry(k.as_str()).or_insert(0) += 1;
+    }
+    keys.iter()
+        .enumerate()
+        .map(|(i, k)| {
+            k.as_ref().is_some_and(|k| {
+                times[k.as_str()] >= REPEATED_LINE_TIMES || (i > 0 && keys[i - 1].as_deref() == Some(k.as_str()))
+            })
+        })
+        .collect()
 }
 
 /// Почему распознанный сегмент — заполнение паузы, а не сказанные слова; None — обычная реплика.

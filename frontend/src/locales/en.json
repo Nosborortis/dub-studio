@@ -236,7 +236,7 @@
       "cloud": "Cloud",
       "cloudHint": "OpenRouter key and parallel requests",
       "quality": "Quality",
-      "qualityHint": "Voice checks, takes and diagnostics",
+      "qualityHint": "Recognition, translation, voicing and checks",
       "network": "Network",
       "networkHint": "Proxy for model downloads and the cloud",
       "interface": "Language & sounds",
@@ -268,7 +268,10 @@
     "modelsDir": "Models and settings",
     "copyPath": "Copy path",
     "copied": "Copied",
-    "pathsFailed": "Couldn't get the data folder: {{error}}"
+    "pathsFailed": "Couldn't get the data folder: {{error}}",
+    "recognitionGroup": "Recognition",
+    "translationGroup": "Translation",
+    "takesGroup": "Take checks"
   },
   "projects": {
     "title": "All projects",
@@ -870,9 +873,9 @@
   },
   "qc": {
     "asr": {
-      "tip": "Automatically check the recognized text with Whisper ASR to cut out silence and defects",
-      "label": "ASR text check (QC)",
-      "hint": "auto-check the voiceover via ASR (turning it off speeds up synthesis)"
+      "tip": "After synthesis each take is recognised by the chosen recognition engine; one that does not match the text is voiced again. Local synthesis only.",
+      "label": "Check by recognition",
+      "hint": "the voicing is recognised and compared with the text; a mismatch is resynthesised (slower)"
     },
     "duration": {
       "tip": "Fit the speed and control the audio timing to the subtitle slot",
@@ -908,6 +911,91 @@
       "tip": "If a voiced line needs more speed-up than the render applies (up to ×4 with the dynamic speech rate), the translation model rewrites it shorter once and only that line is voiced again",
       "label": "Shorten lines that don't fit",
       "hint": "rewrite the translation of lines that don't fit their slot and voice them again"
+    },
+    "asrRepeats": {
+      "tip": "Recognition sometimes loops over music and silence. Such a line with no voice on its span is hidden from the dub and the subtitles (bring it back in the editor); with a voice it is only marked in the log.",
+      "label": "Drop looped recognition",
+      "hint": "looped lines without a voice are hidden, with a voice they are marked"
+    },
+    "asrRepeatInside": {
+      "tip": "The NVIDIA NeMo data filter rule: “the the the the the”.",
+      "label": "A repeat inside a line",
+      "hint": "a line of five or more words with at most 40% different words"
+    },
+    "asrRepeatLines": {
+      "tip": "Short lines (“Yes.”, “What?”) are not judged: people really repeat them. Turn off for songs with a chorus.",
+      "label": "The same line again",
+      "hint": "a line of three or more words right after itself or three times in a video"
+    },
+    "asrLongWords": {
+      "tip": "Turn off for German with long compound words.",
+      "label": "Words over 25 letters",
+      "hint": "recognition garbage stuck together"
+    },
+    "trGender": {
+      "tip": "The speaker’s gender comes from the pitch of several of their longest lines; an unsure measure gives no hint. It matters for languages with grammatical gender (Russian “я сказал / сказала”, French “prêt / prête”).",
+      "label": "Speaker gender for the translator",
+      "hint": "the translator knows whether a man or a woman says the line"
+    },
+    "trGenderCheck": {
+      "tip": "When the speaker speaks of themselves in the other gender, the line is asked again. If it stays wrong after every attempt, it is kept with a note in the log.",
+      "label": "Check “I said” forms",
+      "hint": "a line in the other gender’s form is asked again (Russian)"
+    },
+    "trLatin": {
+      "tip": "Names and brands (capitalised in the source: Google, iPhone, Wi-Fi), numbers and “keep” glossary terms stay. The voice model reads a left English word with an accent.",
+      "label": "Leave no English words",
+      "hint": "for non-Latin languages: a source word left in Latin is asked again"
+    },
+    "ttsCaps": {
+      "tip": "A voice model may spell a word in capitals letter by letter. A line all in capitals: every word except short ones without vowels; a normal line: words of five letters or more. The shown text does not change.",
+      "label": "Read capitals as words",
+      "hint": "words in capitals are voiced in plain letters, abbreviations (USA, FBI) stay"
+    },
+    "ttsSymbols": {
+      "tip": "Leftovers of subtitle markup are not read aloud. The shown text does not change.",
+      "label": "Drop markup signs",
+      "hint": "_ | ~ ^ \\ { } < > # * are not voiced"
+    },
+    "audio": {
+      "tip": "Each take’s sound is checked right after synthesis, a fraction of a second per line. A runaway take, a cut-off, silence and hum are always checked; these are extra signs.",
+      "label": "Take sound check",
+      "hint": "a defect in the sound regenerates the take; for cloud voicing it goes to the log"
+    },
+    "audioRepeat": {
+      "tip": "Found by spectral similarity. A text whose words repeat themselves is not judged by the sound.",
+      "label": "A repeated piece",
+      "hint": "a piece of the line sounds twice though the text has no repeat"
+    },
+    "audioEnd": {
+      "tip": "The model sometimes adds an extra word or ends the take with a full-scale click.",
+      "label": "A click or an extra word at the end",
+      "hint": "the end of the take is louder than almost the whole line"
+    },
+    "audioCloud": {
+      "tip": "Known faults of cloud models. Cloud synthesis is paid and is not repeated on its own: regenerate the line in the editor.",
+      "label": "Cloud whistle and hiss",
+      "hint": "a whistle, hiss in the pauses — cloud only, to the log"
+    },
+    "asrLetters": {
+      "tip": "A take is a mismatch only when both the words and the letters differ: fewer needless resyntheses over the recogniser’s spelling.",
+      "label": "Compare letters",
+      "hint": "spelling differences are not a mismatch: compared without spaces and signs"
+    },
+    "asrRepeat": {
+      "tip": "Drawn-out interjections (“uh-uh”, “mm”) do not count.",
+      "label": "An extra repeated word",
+      "hint": "a word said once in the text is heard twice — a mismatch"
+    },
+    "voiceGender": {
+      "tip": "The pitch of several voiced lines of a speaker is compared with their gender in the original. Catches a catalogue voice with a wrong gender and a clone from someone else’s sample.",
+      "label": "Dub voice gender",
+      "hint": "a dub voice of the other gender than the speaker gives a warning in the log"
+    },
+    "audioSilence": {
+      "tip": "The model sometimes gives a short scrap or other words and silence instead of the line. Found with Drama 3; never fired on 726 Higgs takes.",
+      "label": "Mostly silence",
+      "hint": "a take of three seconds or more with speech under a third of it"
     }
   },
   "manual": {

@@ -1221,7 +1221,13 @@ pub fn run(args: &AnalyzeArgs, paths: &AnalyzePaths, progress: &Progress) -> Res
         let turns: &[dub_asr::Turn] = diar.as_ref().map(|d| d.turns.as_slice()).unwrap_or(&[]);
         let evidence = crate::asr_filter::VoiceEvidence::build(clean, turns, &vocals16)
             .map_err(|e| t!("analyze-hallucination-filter", error = e.to_string()))?;
-        let report = crate::asr_filter::apply(&mut segments, rules, &evidence);
+        let sel = crate::models::load_selection(&paths.models_root);
+        let loops = dub_asr::LoopRules {
+            inside: crate::checks::on(&sel, "asr_repeat_inside"),
+            lines: crate::checks::on(&sel, "asr_repeat_lines"),
+            long_words: crate::checks::on(&sel, "asr_long_words"),
+        };
+        let report = crate::asr_filter::apply(&mut segments, rules, loops, &evidence);
         if !report.hidden.is_empty() {
             emit(progress, "asr", &t!(
                 "analyze-hidden-hallucinations",

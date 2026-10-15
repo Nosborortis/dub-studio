@@ -16,7 +16,7 @@ mod segment;
 mod speaker_global;
 mod whisper;
 mod window;
-pub use hallucination::{hallucination_kind, is_hallucination, HallucinationKind, HallucinationRules};
+pub use hallucination::{hallucination_kind, is_hallucination, loop_kind, repeated_lines, HallucinationKind, HallucinationRules, LoopRules};
 pub use known_speakers::SpeakerMatchError;
 pub use reconcile::{speaker_for_overlap, DiarIndex};
 pub use speaker_global::{

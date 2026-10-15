@@ -20,6 +20,22 @@ pub struct TtsText {
     pub skip: Option<&'static str>,
 }
 
+/// Правки текста для синтеза, которые включает пользователь.
+#[derive(Debug, Clone, Copy)]
+pub struct Speak {
+    /// Слова капсом — обычными буквами (модель читает капс по буквам), кроме аббревиатур.
+    pub caps: bool,
+    /// Служебные знаки, оставшиеся после разметки, — убрать.
+    pub symbols: bool,
+}
+
+impl Speak {
+    pub fn load(models_root: &std::path::Path) -> Self {
+        let sel = crate::models::load_selection(models_root);
+        Speak { caps: crate::checks::on(&sel, "tts_caps"), symbols: crate::checks::on(&sel, "tts_symbols") }
+    }
+}
+
 static HTML_TAG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"</?[A-Za-z][^<>]{0,200}>").expect("html tag"));
 static ASS_OVERRIDE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{\\[^{}]*\}").expect("ass override"));
 static ASS_BREAK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\\[Nn]").expect("ass break"));
@@ -29,6 +45,33 @@ static NOTES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[♪♫♬♩][^�
 static ASTERISK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\*([^*\n]{1,40})\*").expect("asterisk"));
 static SPEAKER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?m)^\s*(?:([\p{Lu}][\p{Lu}\d .'#-]{1,30}):\s+|[-–—]\s+)").expect("speaker label"));
+static STRAY_MARKS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[_|~^\\{}<>#*]+").expect("stray marks"));
+static WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\p{L}+").expect("word"));
+
+const VOWELS: &str = "aeiouyаеёиоуыэюяіїє";
+
+fn is_caps(w: &str) -> bool {
+    w.chars().count() >= 2 && w.chars().all(|c| !c.is_lowercase()) && w.chars().any(char::is_uppercase)
+}
+
+/// Слова капсом обычными буквами. Строка капсом целиком (крик или субтитры капсом) — каждое слово, кроме
+/// коротких без гласных (ФБР, МВД); в обычной строке — слова от 5 букв, короче — аббревиатуры (США, НАТО).
+fn ease_caps(t: &str) -> String {
+    let letters = t.chars().filter(|c| c.is_alphabetic()).count();
+    let upper = t.chars().filter(|c| c.is_uppercase()).count();
+    let shouting = WORD.find_iter(t).filter(|m| is_caps(m.as_str())).count() >= 2 && upper * 5 >= letters * 4;
+    WORD.replace_all(t, |c: &regex::Captures| {
+        let w = &c[0];
+        let n = w.chars().count();
+        let abbreviation = if shouting {
+            n <= 3 && !w.chars().flat_map(char::to_lowercase).any(|ch| VOWELS.contains(ch))
+        } else {
+            n < 5
+        };
+        if is_caps(w) && !abbreviation { w.to_lowercase() } else { w.to_string() }
+    })
+    .into_owned()
+}
 
 /// Основы слов (от 4 букв), которыми субтитры помечают неречевые звуки: английский и языки интерфейса.
 const SOUND_STEMS: &[&str] = &[
@@ -127,7 +170,7 @@ fn normalize_quotes(s: &str) -> String {
 
 /// Текст для синтеза. `src` — исходная реплика: петля, которую сказал сам говорящий («no, no, no»),
 /// озвучивается как сказана; схлопывается только петля перевода.
-pub fn tts_text(tgt: &str, src: &str, lang: &str, glossary: &[GlossaryEntry]) -> TtsText {
+pub fn tts_text(tgt: &str, src: &str, lang: &str, glossary: &[GlossaryEntry], speak: Speak) -> TtsText {
     let original_has_words = has_words(tgt);
     let t = ASS_OVERRIDE.replace_all(tgt, "");
     let t = ASS_BREAK.replace_all(&t, "\n").replace("\\h", " ");
@@ -149,7 +192,14 @@ pub fn tts_text(tgt: &str, src: &str, lang: &str, glossary: &[GlossaryEntry]) ->
     if loops_in(&t) && !loops_in(src) {
         t = collapse_loops(&t);
     }
-    let t = normalize_quotes(&apply_pronunciation(&t, glossary, lang));
+    let mut t = apply_pronunciation(&t, glossary, lang);
+    if speak.caps {
+        t = ease_caps(&t);
+    }
+    if speak.symbols {
+        t = STRAY_MARKS.replace_all(&t, " ").split_whitespace().collect::<Vec<_>>().join(" ");
+    }
+    let t = normalize_quotes(&t);
     let t = t.trim().trim_start_matches([',', ';', ':']).trim().to_string();
     if has_words(&t) {
         return TtsText { text: t, skip: None };
@@ -164,7 +214,7 @@ fn loops_in(s: &str) -> bool {
 
 /// Показ в окне и в project_get: `tts_skip` у фраз, которые не озвучиваются, и `tts_text` у фраз, чей текст
 /// для синтеза отличается от показанного. Не хранится — считается при чтении.
-pub fn annotate(proj: &mut Project) {
+pub fn annotate(proj: &mut Project, speak: Speak) {
     let glossary = dub_core::glossary::for_target(&proj.glossary, &proj.tgt_lang);
     let lang = proj.tgt_lang.clone();
     for s in &mut proj.segments {
@@ -173,7 +223,7 @@ pub fn annotate(proj: &mut Project) {
         if s.tgt_text.trim().is_empty() {
             continue;
         }
-        let t = tts_text(&s.tgt_text, &s.src_text, &lang, &glossary);
+        let t = tts_text(&s.tgt_text, &s.src_text, &lang, &glossary, speak);
         match t.skip {
             Some(reason) => {
                 s.extra.insert("tts_skip".into(), Value::String(reason.into()));
@@ -188,7 +238,7 @@ pub fn annotate(proj: &mut Project) {
 
 /// Проект для синтеза: tgt_text каждой фразы — текст для синтеза; фразы без слов после чистки — с пустым
 /// текстом (синтез их пропускает) и extra.tts_skip. Отсчёт — строкой в журнал.
-pub fn synthesis_view(proj: &Project, progress: &crate::analyze::Progress) -> Project {
+pub fn synthesis_view(proj: &Project, speak: Speak, progress: &crate::analyze::Progress) -> Project {
     let mut view = proj.clone();
     let glossary = dub_core::glossary::for_target(&proj.glossary, &proj.tgt_lang);
     let mut skipped: Vec<String> = Vec::new();
@@ -197,7 +247,7 @@ pub fn synthesis_view(proj: &Project, progress: &crate::analyze::Progress) -> Pr
         if keep_original || s.tgt_text.trim().is_empty() {
             continue;
         }
-        let t = tts_text(&s.tgt_text, &s.src_text, &proj.tgt_lang, &glossary);
+        let t = tts_text(&s.tgt_text, &s.src_text, &proj.tgt_lang, &glossary, speak);
         if let Some(reason) = t.skip {
             skipped.push(format!("{} «{}»", s.id, s.tgt_text.trim().chars().take(40).collect::<String>()));
             s.extra.insert("tts_skip".into(), Value::String(reason.into()));
@@ -217,8 +267,30 @@ pub fn synthesis_view(proj: &Project, progress: &crate::analyze::Progress) -> Pr
 mod tests {
     use super::*;
 
+    const ALL: Speak = Speak { caps: true, symbols: true };
+    const NONE: Speak = Speak { caps: false, symbols: false };
+
+    fn ru(t: &str, speak: Speak) -> String {
+        tts_text(t, "", "ru", &[], speak).text
+    }
+
+    #[test]
+    fn shouted_words_are_said_as_words_and_abbreviations_stay() {
+        assert_eq!(ru("Это было ПОТРЯСАЮЩЕ", ALL), "Это было потрясающе");
+        assert_eq!(ru("Агенты ФБР и НАТО уже здесь", ALL), "Агенты ФБР и НАТО уже здесь");
+        assert_eq!(ru("Я СКАЗАЛ НЕТ!", ALL), "Я сказал нет!");
+        assert_eq!(ru("ФБР, ОТКРЫВАЙТЕ!", ALL), "ФБР, открывайте!");
+        assert_eq!(ru("Это было ПОТРЯСАЮЩЕ", NONE), "Это было ПОТРЯСАЮЩЕ");
+    }
+
+    #[test]
+    fn stray_marks_are_not_read() {
+        assert_eq!(ru("Привет_мир | ну ~ да ^ #1", ALL), "Привет мир ну да 1");
+        assert_eq!(ru("Привет_мир", NONE), "Привет_мир");
+    }
+
     fn clean(t: &str) -> TtsText {
-        tts_text(t, "", "en", &[])
+        tts_text(t, "", "en", &[], ALL)
     }
 
     #[test]
@@ -229,20 +301,20 @@ mod tests {
         assert_eq!(clean("I was (quite honestly) tired").text, "I was (quite honestly) tired", "a remark in brackets is speech");
         assert_eq!(clean("*sigh* Again?").text, "Again?");
         assert_eq!(clean("♪ la la la ♪ Next").text, "Next");
-        assert_eq!(tts_text("[МУЗЫКА] Привет", "", "ru", &[]).text, "Привет");
-        assert_eq!(tts_text("(смеётся) Ну да", "", "ru", &[]).text, "Ну да");
-        assert_eq!(tts_text("(risas) Vale", "", "es", &[]).text, "Vale");
-        assert_eq!(tts_text("(soupire) Bon", "", "fr", &[]).text, "Bon");
-        assert_eq!(tts_text("(risos) Tá", "", "pt", &[]).text, "Tá");
-        assert_eq!(tts_text("（笑）你好", "", "zh", &[]).text, "你好");
-        assert_eq!(tts_text("【音乐】你好", "", "zh", &[]).text, "你好");
+        assert_eq!(tts_text("[МУЗЫКА] Привет", "", "ru", &[], ALL).text, "Привет");
+        assert_eq!(tts_text("(смеётся) Ну да", "", "ru", &[], ALL).text, "Ну да");
+        assert_eq!(tts_text("(risas) Vale", "", "es", &[], ALL).text, "Vale");
+        assert_eq!(tts_text("(soupire) Bon", "", "fr", &[], ALL).text, "Bon");
+        assert_eq!(tts_text("(risos) Tá", "", "pt", &[], ALL).text, "Tá");
+        assert_eq!(tts_text("（笑）你好", "", "zh", &[], ALL).text, "你好");
+        assert_eq!(tts_text("【音乐】你好", "", "zh", &[], ALL).text, "你好");
     }
 
     #[test]
     fn speaker_labels_and_markup_are_not_read_aloud() {
         assert_eq!(clean("JOHN: Get down!").text, "Get down!");
         assert_eq!(clean("- Where? - Here.").text, "Where? - Here.");
-        assert_eq!(tts_text("— Куда?\\N— Сюда.", "", "ru", &[]).text, "Куда? Сюда.");
+        assert_eq!(tts_text("— Куда?\\N— Сюда.", "", "ru", &[], ALL).text, "Куда? Сюда.");
         assert_eq!(clean("<i>Hello</i> {\\an8}world").text, "Hello world");
         assert_eq!(clean("Look: here").text, "Look: here", "a colon in speech stays");
         assert_eq!(clean("OK: let's go").text, "OK: let's go", "two capitals are a word, not a name");
@@ -261,17 +333,17 @@ mod tests {
     #[test]
     fn a_loop_of_the_translation_is_said_once_but_the_speakers_own_is_kept() {
         assert_eq!(clean("Thanks for watching! Thanks for watching! Thanks for watching!").text, "Thanks for watching!");
-        assert_eq!(tts_text("нет, нет, нет, нет!", "no", "ru", &[]).text, "нет!");
-        assert_eq!(tts_text("нет, нет, нет!", "no, no, no!", "ru", &[]).text, "нет, нет, нет!");
-        assert_eq!(tts_text("谢谢谢谢谢谢", "", "zh", &[]).text, "谢谢谢谢谢谢", "no word breaks: left as is");
+        assert_eq!(tts_text("нет, нет, нет, нет!", "no", "ru", &[], ALL).text, "нет!");
+        assert_eq!(tts_text("нет, нет, нет!", "no, no, no!", "ru", &[], ALL).text, "нет, нет, нет!");
+        assert_eq!(tts_text("谢谢谢谢谢谢", "", "zh", &[], ALL).text, "谢谢谢谢谢谢", "no word breaks: left as is");
     }
 
     #[test]
     fn spaces_quotes_and_pronunciation_are_normalized() {
         assert_eq!(clean("  «Hi»,   “you”  ").text, "\"Hi\", \"you\"");
         let e = GlossaryEntry { term: "Nvidia".into(), keep: true, pronunciation: "Энвидиа".into(), lang: "ru".into(), ..GlossaryEntry::default() };
-        assert_eq!(tts_text("Карта Nvidia", "", "ru", std::slice::from_ref(&e)).text, "Карта Энвидиа");
-        assert_eq!(tts_text("Tarjeta Nvidia", "", "es", &[e]).text, "Tarjeta Nvidia");
+        assert_eq!(tts_text("Карта Nvidia", "", "ru", std::slice::from_ref(&e), ALL).text, "Карта Энвидиа");
+        assert_eq!(tts_text("Tarjeta Nvidia", "", "es", &[e], ALL).text, "Tarjeta Nvidia");
     }
 
     #[test]
@@ -279,7 +351,7 @@ mod tests {
         assert_eq!(clean("[music]"), TtsText { text: String::new(), skip: Some(SKIP_SOUND_ONLY) });
         assert_eq!(clean("♪ ♪").skip, Some(SKIP_NO_WORDS));
         assert_eq!(clean("..."), TtsText { text: String::new(), skip: Some(SKIP_NO_WORDS) });
-        assert_eq!(tts_text("(вздыхает)", "", "ru", &[]).skip, Some(SKIP_SOUND_ONLY));
+        assert_eq!(tts_text("(вздыхает)", "", "ru", &[], ALL).skip, Some(SKIP_SOUND_ONLY));
     }
 
     #[test]
@@ -289,12 +361,12 @@ mod tests {
         p.segments = vec![seg("s0", "[музыка]"), seg("s1", "(смеётся) Привет"), seg("s2", "Привет")];
         let seen = std::sync::Mutex::new(Vec::new());
         let progress = |v: Value| seen.lock().unwrap().push(v["msg"].as_str().unwrap_or_default().to_string());
-        let view = synthesis_view(&p, &progress);
+        let view = synthesis_view(&p, ALL, &progress);
         assert_eq!(view.segments[0].tgt_text, "");
         assert_eq!(view.segments[1].tgt_text, "Привет");
         assert_eq!(p.segments[1].tgt_text, "(смеётся) Привет", "the shown text is untouched");
         assert!(seen.lock().unwrap()[0].contains("s0"));
-        annotate(&mut p);
+        annotate(&mut p, ALL);
         assert_eq!(p.segments[0].extra["tts_skip"], SKIP_SOUND_ONLY);
         assert_eq!(p.segments[1].extra["tts_text"], "Привет");
         assert!(!p.segments[2].extra.contains_key("tts_text"));

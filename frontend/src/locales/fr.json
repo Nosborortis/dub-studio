@@ -205,7 +205,7 @@
       "cloud": "Services cloud",
       "cloudHint": "Clé OpenRouter et requêtes parallèles",
       "quality": "Qualité",
-      "qualityHint": "Vérifications de la voix, prises et diagnostic",
+      "qualityHint": "Reconnaissance, traduction, voix et contrôles",
       "network": "Réseau",
       "networkHint": "Proxy pour le téléchargement des modèles et le cloud",
       "interface": "Langue et sons",
@@ -237,7 +237,10 @@
     "modelsDir": "Modèles et paramètres",
     "copyPath": "Copier le chemin",
     "copied": "Copié",
-    "pathsFailed": "Impossible d'obtenir le dossier de données : {{error}}"
+    "pathsFailed": "Impossible d'obtenir le dossier de données : {{error}}",
+    "recognitionGroup": "Reconnaissance",
+    "translationGroup": "Traduction",
+    "takesGroup": "Contrôle des prises"
   },
   "projects": {
     "title": "Tous les projets",
@@ -881,9 +884,9 @@
   },
   "qc": {
     "asr": {
-      "tip": "Vérifie automatiquement le texte reconnu avec Whisper ASR pour écarter silences et défauts",
-      "label": "Vérification du texte par ASR (QC)",
-      "hint": "contrôle automatique du doublage par ASR (le désactiver accélère la synthèse)"
+      "tip": "Après la synthèse, chaque prise est reconnue par le moteur de reconnaissance choisi ; celle qui ne correspond pas au texte est redite. Synthèse locale seulement.",
+      "label": "Contrôle par reconnaissance",
+      "hint": "la voix est reconnue et comparée au texte ; un écart est resynthétisé (plus lent)"
     },
     "duration": {
       "tip": "Ajuste de la vitesse et contrôle de la durée audio selon la plage du sous-titre",
@@ -919,6 +922,91 @@
       "tip": "Si une réplique doublée demande plus d'accélération que le rendu n'en applique (jusqu'à ×4 avec le débit de parole dynamique), le modèle de traduction la réécrit plus court une fois et seule cette réplique est redoublée",
       "label": "Raccourcir les répliques qui ne tiennent pas",
       "hint": "réécrire plus court la traduction des répliques qui ne tiennent pas et les redoubler"
+    },
+    "asrRepeats": {
+      "tip": "La reconnaissance boucle parfois sur la musique et le silence. Une telle ligne sans voix sur son intervalle est masquée du doublage et des sous-titres (à rétablir dans l’éditeur) ; avec voix elle est seulement signalée dans le journal.",
+      "label": "Écarter la reconnaissance en boucle",
+      "hint": "les lignes en boucle sans voix sont masquées, avec voix elles sont signalées"
+    },
+    "asrRepeatInside": {
+      "tip": "Règle du filtre de données NVIDIA NeMo : « the the the the the ».",
+      "label": "Répétition dans la ligne",
+      "hint": "ligne de cinq mots ou plus avec au plus 40 % de mots différents"
+    },
+    "asrRepeatLines": {
+      "tip": "Les répliques courtes (« Oui. », « Quoi ? ») ne sont pas jugées : on les répète vraiment. À couper pour les chansons avec refrain.",
+      "label": "La même ligne encore",
+      "hint": "ligne de trois mots ou plus juste après elle-même ou trois fois dans la vidéo"
+    },
+    "asrLongWords": {
+      "tip": "À couper pour l’allemand aux longs mots composés.",
+      "label": "Mots de plus de 25 lettres",
+      "hint": "déchets de reconnaissance collés"
+    },
+    "trGender": {
+      "tip": "Le genre vient de la hauteur de voix de plusieurs de ses plus longues répliques ; une mesure incertaine ne donne pas d’indice. Utile aux langues à genre grammatical (« prêt / prête »).",
+      "label": "Genre du locuteur pour le traducteur",
+      "hint": "le traducteur sait si un homme ou une femme dit la ligne"
+    },
+    "trGenderCheck": {
+      "tip": "Si le locuteur parle de lui-même à l’autre genre, la ligne est redemandée. Si elle reste fausse après tous les essais, elle est gardée avec une note dans le journal.",
+      "label": "Vérifier les formes « я сказал / сказала »",
+      "hint": "une ligne à la forme de l’autre genre est redemandée (russe)"
+    },
+    "trLatin": {
+      "tip": "Noms et marques (avec majuscule dans la source : Google, iPhone, Wi-Fi), nombres et termes « ne pas traduire » restent. La voix lit avec un accent un mot anglais oublié.",
+      "label": "Ne laisser aucun mot anglais",
+      "hint": "pour les langues non latines : un mot source laissé en latin est redemandé"
+    },
+    "ttsCaps": {
+      "tip": "Un modèle de voix peut épeler un mot en majuscules. Ligne entière en majuscules : chaque mot sauf les courts sans voyelle ; ligne normale : mots de cinq lettres ou plus. Le texte affiché ne change pas.",
+      "label": "Lire les majuscules comme des mots",
+      "hint": "les mots en majuscules sont dits en lettres normales, les sigles (USA, FBI) restent"
+    },
+    "ttsSymbols": {
+      "tip": "Les restes du balisage des sous-titres ne sont pas lus. Le texte affiché ne change pas.",
+      "label": "Retirer les signes de balisage",
+      "hint": "_ | ~ ^ \\ { } < > # * ne sont pas dits"
+    },
+    "audio": {
+      "tip": "Le son de chaque prise est contrôlé juste après la synthèse, une fraction de seconde par ligne. Emballement, coupure, silence et bourdonnement sont toujours contrôlés ; ce sont des signes en plus.",
+      "label": "Contrôle du son de la prise",
+      "hint": "un défaut de son régénère la prise ; pour la voix cloud il va au journal"
+    },
+    "audioRepeat": {
+      "tip": "Recherche par similarité spectrale. Un texte dont les mots se répètent n’est pas jugé au son.",
+      "label": "Un passage répété",
+      "hint": "un passage de la phrase sonne deux fois sans répétition dans le texte"
+    },
+    "audioEnd": {
+      "tip": "Le modèle ajoute parfois un mot ou finit la prise par un clic à pleine échelle.",
+      "label": "Clic ou mot en trop à la fin",
+      "hint": "la fin de la prise est plus forte que presque toute la phrase"
+    },
+    "audioCloud": {
+      "tip": "Défauts connus des modèles cloud. La synthèse cloud est payante et ne se relance pas seule : régénérez la réplique dans l’éditeur.",
+      "label": "Sifflement et souffle de la voix cloud",
+      "hint": "sifflement, souffle dans les pauses — cloud seulement, au journal"
+    },
+    "asrLetters": {
+      "tip": "Une prise n’est en écart que si les mots et les lettres diffèrent : moins de resynthèses inutiles dues à l’écriture du reconnaisseur.",
+      "label": "Comparer les lettres",
+      "hint": "les écarts d’écriture ne comptent pas : comparaison sans espaces ni signes"
+    },
+    "asrRepeat": {
+      "tip": "Les interjections allongées (« euh-euh », « mm ») ne comptent pas.",
+      "label": "Mot répété en trop",
+      "hint": "un mot présent une fois dans le texte est entendu deux fois — écart"
+    },
+    "voiceGender": {
+      "tip": "La hauteur de plusieurs répliques doublées d’un locuteur est comparée à son genre dans l’original. Repère une voix de catalogue au mauvais genre et un clone d’un échantillon étranger.",
+      "label": "Genre de la voix du doublage",
+      "hint": "une voix de doublage de l’autre genre que le locuteur donne un avertissement au journal"
+    },
+    "audioSilence": {
+      "tip": "Le modèle donne parfois un bout de phrase ou d’autres mots et du silence au lieu de la réplique. Vu avec Drama 3 ; jamais déclenché sur 726 prises Higgs.",
+      "label": "Presque que du silence",
+      "hint": "prise de trois secondes ou plus avec de la voix sur moins d’un tiers"
     }
   },
   "manual": {

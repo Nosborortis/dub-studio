@@ -4,7 +4,7 @@
 //! `extra.hidden` исключает её из озвучки и субтитров, пользователь возвращает её в редакторе;
 //! `extra.asr_flag`, `extra.asr_reason` и `extra.asr_evidence` объясняют решение.
 
-use dub_asr::{hallucination_kind, HallucinationRules};
+use dub_asr::{hallucination_kind, HallucinationKind, HallucinationRules, LoopRules};
 use dub_core::Segment;
 use serde_json::Value;
 use std::path::Path;
@@ -109,12 +109,20 @@ pub struct Report {
 }
 
 /// Пометить реплики-галлюцинации: `extra.asr_flag = "hallucination"`, `extra.asr_reason` (wordless |
-/// numeric | bracketed | credit | subtitle_word | shouted | known_phrase), `extra.asr_evidence` (vocals |
-/// diarization | mix); скрытым — ещё `extra.hidden = true`.
-pub fn apply(segs: &mut [Segment], rules: HallucinationRules, evidence: &VoiceEvidence) -> Report {
+/// numeric | bracketed | credit | subtitle_word | shouted | known_phrase | looped | long_word |
+/// repeated_line), `extra.asr_evidence` (vocals | diarization | mix); скрытым — ещё `extra.hidden = true`.
+pub fn apply(segs: &mut [Segment], rules: HallucinationRules, loops: LoopRules, evidence: &VoiceEvidence) -> Report {
+    let repeated = if loops.lines {
+        dub_asr::repeated_lines(&segs.iter().map(|s| s.src_text.as_str()).collect::<Vec<_>>())
+    } else {
+        vec![false; segs.len()]
+    };
     let mut report = Report::default();
-    for s in segs.iter_mut() {
-        let Some(kind) = hallucination_kind(&s.src_text, rules) else { continue };
+    for (s, repeated) in segs.iter_mut().zip(repeated) {
+        let kind = hallucination_kind(&s.src_text, rules)
+            .or_else(|| dub_asr::loop_kind(&s.src_text, loops))
+            .or(repeated.then_some(HallucinationKind::RepeatedLine));
+        let Some(kind) = kind else { continue };
         s.extra.insert("asr_flag".into(), Value::String("hallucination".into()));
         s.extra.insert("asr_reason".into(), Value::String(kind.as_str().into()));
         s.extra.insert("asr_evidence".into(), Value::String(evidence.name().into()));
@@ -145,11 +153,37 @@ mod tests {
         Segment { id: "s".into(), start, end, src_text: text.into(), ..Default::default() }
     }
 
+    const ALL_LOOPS: LoopRules = LoopRules { inside: true, lines: true, long_words: true };
+
+    #[test]
+    fn looped_lines_in_silence_go_and_with_voice_are_only_marked() {
+        let ev = VoiceEvidence::Vocals(vec![(0.0, 3.0)]);
+        let mut segs = vec![
+            seg(0.5, 2.5, "We are going to go to the store today"),
+            seg(10.0, 12.0, "We are going to go to the store today"),
+            seg(20.0, 22.0, "the the the the the the"),
+            seg(25.0, 27.0, "We are going to go to the store today"),
+            seg(30.0, 31.0, "Да. Да."),
+            seg(40.0, 41.0, "Да. Да."),
+        ];
+        let r = apply(&mut segs, HallucinationRules::CaseAware, ALL_LOOPS, &ev);
+        assert!(!is_hidden(&segs[0]), "said with voice");
+        assert_eq!(segs[0].extra["asr_reason"], "repeated_line");
+        assert!(is_hidden(&segs[1]) && is_hidden(&segs[2]));
+        assert_eq!(segs[2].extra["asr_reason"], "looped");
+        assert!(is_hidden(&segs[3]));
+        assert!(!segs[4].extra.contains_key("asr_flag") && !segs[5].extra.contains_key("asr_flag"), "short lines repeat in speech");
+        assert_eq!(r.hidden.len(), 3);
+        let mut off = vec![seg(20.0, 22.0, "the the the the the the")];
+        apply(&mut off, HallucinationRules::CaseAware, LoopRules::default(), &ev);
+        assert!(!is_hidden(&off[0]), "switched off");
+    }
+
     #[test]
     fn a_credit_over_silence_is_hidden() {
         let mut segs = vec![seg(0.0, 2.0, "Мы уходим завтра."), seg(10.0, 12.0, "Субтитры сделал DimaTorzok")];
         let ev = VoiceEvidence::Vocals(vec![(0.0, 2.1)]);
-        let r = apply(&mut segs, HallucinationRules::Whisper, &ev);
+        let r = apply(&mut segs, HallucinationRules::Whisper, ALL_LOOPS, &ev);
         assert_eq!(r.hidden, vec!["Субтитры сделал DimaTorzok".to_string()]);
         assert!(!is_hidden(&segs[0]));
         assert!(!segs[0].extra.contains_key("asr_flag"));
@@ -163,7 +197,7 @@ mod tests {
     fn a_real_thank_you_for_watching_with_voice_stays() {
         let mut segs = vec![seg(30.0, 31.5, "Спасибо за просмотр!")];
         let ev = VoiceEvidence::Vocals(vec![(29.9, 31.6)]);
-        let r = apply(&mut segs, HallucinationRules::CaseAware, &ev);
+        let r = apply(&mut segs, HallucinationRules::CaseAware, ALL_LOOPS, &ev);
         assert_eq!(r.voiced.len(), 1, "голос есть — реплика остаётся");
         assert!(!is_hidden(&segs[0]));
         assert_eq!(segs[0].extra["asr_flag"], "hallucination");
@@ -173,7 +207,7 @@ mod tests {
     fn diarization_turns_count_as_voice() {
         let mut segs = vec![seg(5.0, 6.0, "Thanks for watching!")];
         let ev = VoiceEvidence::Turns(vec![(4.8, 6.2)]);
-        apply(&mut segs, HallucinationRules::CaseAware, &ev);
+        apply(&mut segs, HallucinationRules::CaseAware, ALL_LOOPS, &ev);
         assert!(!is_hidden(&segs[0]));
         assert_eq!(segs[0].extra["asr_evidence"], "diarization");
     }
@@ -183,7 +217,7 @@ mod tests {
         // Режим субтитров без сепарации: на интервалах звучит что-то (голос или музыка).
         let ev = VoiceEvidence::Mix(vec![(0.0, 20.0)]);
         let mut segs = vec![seg(2.0, 3.0, "Watch out!"), seg(8.0, 10.0, "Subtitles by the Amara.org community")];
-        let r = apply(&mut segs, HallucinationRules::Whisper, &ev);
+        let r = apply(&mut segs, HallucinationRules::Whisper, ALL_LOOPS, &ev);
         assert!(!is_hidden(&segs[0]), "«Watch out!» со звуком — обычная реплика");
         assert_eq!(segs[0].extra["asr_reason"], "known_phrase");
         assert!(is_hidden(&segs[1]), "титр субтитровщика скрывается и поверх музыки");
@@ -196,7 +230,7 @@ mod tests {
     fn over_the_raw_mix_numbers_and_a_request_for_subtitles_with_sound_stay() {
         let ev = VoiceEvidence::Mix(vec![(0.0, 20.0)]);
         let mut segs = vec![seg(2.0, 3.0, " 300."), seg(5.0, 6.5, "Включите субтитры"), seg(8.0, 9.0, "Mach die Untertitel an")];
-        let r = apply(&mut segs, HallucinationRules::Whisper, &ev);
+        let r = apply(&mut segs, HallucinationRules::Whisper, ALL_LOOPS, &ev);
         assert!(segs.iter().all(|s| !is_hidden(s)), "реплики со звуком остаются в субтитрах");
         assert_eq!(segs[0].extra["asr_reason"], "numeric");
         assert_eq!(segs[1].extra["asr_reason"], "subtitle_word");
@@ -208,7 +242,7 @@ mod tests {
     fn over_the_raw_mix_numbers_in_silence_are_hidden() {
         let ev = VoiceEvidence::Mix(vec![(0.0, 5.0)]);
         let mut segs = vec![seg(12.0, 12.8, " 1.")];
-        let r = apply(&mut segs, HallucinationRules::Whisper, &ev);
+        let r = apply(&mut segs, HallucinationRules::Whisper, ALL_LOOPS, &ev);
         assert!(is_hidden(&segs[0]));
         assert_eq!(r.hidden, vec!["1.".to_string()]);
     }
@@ -217,14 +251,14 @@ mod tests {
     fn over_the_raw_mix_a_phrase_in_silence_is_hidden() {
         let ev = VoiceEvidence::Mix(vec![(0.0, 5.0)]);
         let mut segs = vec![seg(12.0, 13.5, "Thanks for watching!")];
-        apply(&mut segs, HallucinationRules::CaseAware, &ev);
+        apply(&mut segs, HallucinationRules::CaseAware, ALL_LOOPS, &ev);
         assert!(is_hidden(&segs[0]));
     }
 
     #[test]
     fn parakeet_shouting_is_speech() {
         let mut segs = vec![seg(1.0, 2.0, "NASA!")];
-        let r = apply(&mut segs, HallucinationRules::CaseAware, &VoiceEvidence::Mix(Vec::new()));
+        let r = apply(&mut segs, HallucinationRules::CaseAware, ALL_LOOPS, &VoiceEvidence::Mix(Vec::new()));
         assert!(r.hidden.is_empty() && r.voiced.is_empty());
         assert!(!segs[0].extra.contains_key("asr_flag"));
     }

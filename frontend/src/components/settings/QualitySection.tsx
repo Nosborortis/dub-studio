@@ -1,32 +1,71 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AudioLines, Captions, Clock, Mic2, Rewind, Scissors, Sparkles, Star, Timer } from "lucide-react";
+import { AudioLines, AudioWaveform, Captions, CaseUpper, Clock, CloudAlert, Ear, Hash, Languages, Mic2, Repeat, Repeat2, Rewind,
+  Scissors, Sparkles, SpellCheck, Star, Timer, VenusAndMars, VolumeX, WholeWord, type LucideIcon } from "lucide-react";
 import { api } from "../../lib/api";
 import SettingSwitch from "./SettingSwitch";
 import { useChanged } from "../editorBridge";
 import { SETTINGS_CHANGED } from "../../lib/mcpBridge";
 
-// Тумблеры качества — слоты active.json. defaultOn: слот, которого ещё нет в файле, считается включённым.
-const VOICE = [
-  { key: "qc_asr", icon: Captions, labelKey: "qc.asr.label", hintKey: "qc.asr.hint", tipKey: "qc.asr.tip", defaultOn: false },
-  { key: "qc_duration", icon: Clock, labelKey: "qc.duration.label", hintKey: "qc.duration.hint", tipKey: "qc.duration.tip", defaultOn: true },
-  { key: "multitake", icon: Star, labelKey: "qc.multitake.label", hintKey: "qc.multitake.hint", tipKey: "qc.multitake.tip", defaultOn: false },
-  { key: "speech_rate_on", icon: Sparkles, labelKey: "qc.speechRate.label", hintKey: "qc.speechRate.hint", tipKey: "qc.speechRate.tip", defaultOn: true },
-  { key: "lead_into_silence", icon: Rewind, labelKey: "qc.leadIntoSilence.label", hintKey: "qc.leadIntoSilence.hint", tipKey: "qc.leadIntoSilence.tip", defaultOn: false },
-  { key: "auto_shorten", icon: Scissors, labelKey: "qc.autoShorten.label", hintKey: "qc.autoShorten.hint", tipKey: "qc.autoShorten.tip", defaultOn: true },
-  { key: "emo_ref_on", icon: Mic2, labelKey: "qc.emoRef.label", hintKey: "qc.emoRef.hint", tipKey: "qc.emoRef.tip", defaultOn: true },
-  { key: "breath_on", icon: AudioLines, labelKey: "qc.breath.label", hintKey: "qc.breath.hint", tipKey: "qc.breath.tip", defaultOn: false },
-] as const;
+// Тумблеры качества — слоты active.json, по стадиям конвейера. defaultOn: слот, которого ещё нет в файле, считается
+// включённым. parent: подпункт действует, только пока включён его пункт (так же решает сервер, checks.rs).
+type Row = { key: string; icon: LucideIcon; label: string; defaultOn: boolean; parent?: string };
 
-const DIAGNOSTICS = [
-  { key: "bench", icon: Timer, labelKey: "settings.bench", hintKey: "settings.benchHint", tipKey: "settings.benchHint", defaultOn: false },
-] as const;
+const row = (key: string, icon: LucideIcon, label: string, defaultOn: boolean, parent?: string): Row => ({ key, icon, label, defaultOn, parent });
 
-type Row = (typeof VOICE)[number] | (typeof DIAGNOSTICS)[number];
+const RECOGNITION: Row[] = [
+  row("asr_repeats", Repeat, "qc.asrRepeats", true),
+  row("asr_repeat_inside", Repeat2, "qc.asrRepeatInside", true, "asr_repeats"),
+  row("asr_repeat_lines", Repeat, "qc.asrRepeatLines", true, "asr_repeats"),
+  row("asr_long_words", WholeWord, "qc.asrLongWords", true, "asr_repeats"),
+];
+
+const TRANSLATION: Row[] = [
+  row("tr_gender", VenusAndMars, "qc.trGender", true),
+  row("tr_gender_check", SpellCheck, "qc.trGenderCheck", true, "tr_gender"),
+  row("tr_latin", Languages, "qc.trLatin", true),
+];
+
+const VOICE: Row[] = [
+  row("speech_rate_on", Sparkles, "qc.speechRate", true),
+  row("qc_duration", Clock, "qc.duration", true),
+  row("lead_into_silence", Rewind, "qc.leadIntoSilence", false),
+  row("auto_shorten", Scissors, "qc.autoShorten", true),
+  row("emo_ref_on", Mic2, "qc.emoRef", true),
+  row("breath_on", AudioLines, "qc.breath", false),
+  row("multitake", Star, "qc.multitake", false),
+  row("tts_caps", CaseUpper, "qc.ttsCaps", true),
+  row("tts_symbols", Hash, "qc.ttsSymbols", true),
+];
+
+const TAKES: Row[] = [
+  row("qc_audio", AudioWaveform, "qc.audio", true),
+  row("qc_repeat", Repeat2, "qc.audioRepeat", true, "qc_audio"),
+  row("qc_end", AudioWaveform, "qc.audioEnd", true, "qc_audio"),
+  row("qc_silence", VolumeX, "qc.audioSilence", true, "qc_audio"),
+  row("qc_cloud", CloudAlert, "qc.audioCloud", true, "qc_audio"),
+  row("qc_asr", Captions, "qc.asr", false),
+  row("qc_asr_letters", SpellCheck, "qc.asrLetters", true, "qc_asr"),
+  row("qc_asr_repeat", Ear, "qc.asrRepeat", true, "qc_asr"),
+  row("qc_voice_gender", VenusAndMars, "qc.voiceGender", true),
+];
+
+const DIAGNOSTICS: Row[] = [row("bench", Timer, "settings.bench", false)];
+
+const ALL = [...RECOGNITION, ...TRANSLATION, ...VOICE, ...TAKES, ...DIAGNOSTICS];
 
 type Selection = Record<string, unknown>;
 
-const isOn = (sel: Selection, row: Row) => (row.defaultOn ? sel[row.key] !== "0" : sel[row.key] === "1");
+const ownOn = (sel: Selection, r: Row) => (r.defaultOn ? sel[r.key] !== "0" : sel[r.key] === "1");
+
+const isOn = (sel: Selection, r: Row): boolean => {
+  const parent = r.parent ? ALL.find((p) => p.key === r.parent) : undefined;
+  return ownOn(sel, r) && (!parent || isOn(sel, parent));
+};
+
+const texts = (t: (k: string) => string, r: Row) =>
+  r.key === "bench" ? { label: t("settings.bench"), hint: t("settings.benchHint"), tip: t("settings.benchHint") }
+    : { label: t(`${r.label}.label`), hint: t(`${r.label}.hint`), tip: t(`${r.label}.tip`) };
 
 export default function QualitySection() {
   const { t } = useTranslation();
@@ -42,13 +81,13 @@ export default function QualitySection() {
       .catch((e: unknown) => setError(t("prefs.loadFailed", { error: e instanceof Error ? e.message : String(e) })));
   }, [t, reread]);
 
-  const toggle = async (row: Row) => {
+  const toggle = async (r: Row) => {
     if (!sel || saving) return;
-    const next = isOn(sel, row) ? "0" : "1";
-    setSaving(row.key);
+    const next = ownOn(sel, r) ? "0" : "1";
+    setSaving(r.key);
     setError(null);
     try {
-      setSel(await api.setSelection(row.key, next));
+      setSel(await api.setSelection(r.key, next));
     } catch (e) {
       setError(t("prefs.saveFailed", { error: e instanceof Error ? e.message : String(e) }));
     } finally {
@@ -56,15 +95,23 @@ export default function QualitySection() {
     }
   };
 
-  const group = (title: string, rows: readonly Row[]) => (
-    <section className="mb-5">
+  const group = (part: string, title: string, rows: readonly Row[]) => (
+    <section className="mb-5" data-settings-part={part}>
       <h4 className="text-[11px] uppercase tracking-[0.14em] text-[var(--color-muted)] mb-2">{title}</h4>
       <div className="rounded-lg border border-[var(--color-border)] divide-y divide-[var(--color-border)] bg-[var(--color-surface-2)]/40">
-        {rows.map((row) => (
-          <SettingSwitch key={row.key} icon={row.icon} label={t(row.labelKey)} hint={t(row.hintKey)} tip={t(row.tipKey)}
-            on={sel ? isOn(sel, row) : row.defaultOn} busy={saving === row.key} disabled={!sel || saving !== null}
-            onToggle={() => { void toggle(row); }} />
-        ))}
+        {rows.map((r) => {
+          const parent = r.parent ? ALL.find((p) => p.key === r.parent) : undefined;
+          const parentOff = !!(sel && parent && !isOn(sel, parent));
+          const { label, hint, tip } = texts(t, r);
+          return (
+            <div key={r.key} className={parent ? "pl-6" : undefined}>
+              <SettingSwitch icon={r.icon} label={label} hint={hint} tip={tip}
+                on={sel ? ownOn(sel, r) && !parentOff : r.defaultOn} busy={saving === r.key}
+                disabled={!sel || saving !== null || parentOff}
+                onToggle={() => { void toggle(r); }} />
+            </div>
+          );
+        })}
       </div>
     </section>
   );
@@ -72,8 +119,11 @@ export default function QualitySection() {
   return (
     <div className="max-w-2xl">
       {error && <p role="alert" className="mb-3 mono text-[11px] text-[var(--color-warn)] break-words">{error}</p>}
-      {group(t("prefs.voiceGroup"), VOICE)}
-      {group(t("prefs.diagnostics"), DIAGNOSTICS)}
+      {group("recognition", t("prefs.recognitionGroup"), RECOGNITION)}
+      {group("translation", t("prefs.translationGroup"), TRANSLATION)}
+      {group("voice", t("prefs.voiceGroup"), VOICE)}
+      {group("takes", t("prefs.takesGroup"), TAKES)}
+      {group("diagnostics", t("prefs.diagnostics"), DIAGNOSTICS)}
     </div>
   );
 }

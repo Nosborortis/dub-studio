@@ -848,7 +848,7 @@ const GENDER_F0_MAX: f64 = 400.0;
 
 /// Ярлык пола по F0 для UI-карточки: "male"/"female" ТОЛЬКО при уверенном замере. Серая зона у порогов
 /// или F0 вне валидного диапазона -> None (пол неизвестен, не гадаем).
-fn gender_label(f0: f64) -> Option<&'static str> {
+pub(crate) fn gender_label(f0: f64) -> Option<&'static str> {
     if !(GENDER_F0_MIN..=GENDER_F0_MAX).contains(&f0) {
         return None; // вне человеческого диапазона -> шумный замер
     }
@@ -867,9 +867,17 @@ fn speaker_genders(paths: &AnalyzePaths, proj: &Project, speakers: &[String]) ->
     speaker_genders_wd(&paths.work_dir, proj, speakers)
 }
 
-/// Пол каждого спикера по медиане F0 (Гц) на длиннейшей реплике из чистого вокала. Версия по work_dir —
-/// вызывается из render (RenderPaths) для автокастинга облачных голосов. Нет вокала/шумный замер -> спикер
-/// без пола (в out не попадает), матчер тогда возьмёт ротацию по всем голосам.
+/// Реплик спикера, по которым голосуется пол: самая длинная и следующие не короче `GENDER_PROBE_MIN_SECS`.
+const GENDER_PROBES: usize = 5;
+const GENDER_PROBE_MIN_SECS: f64 = 1.0;
+/// Пол спикера — когда за него не меньше этой доли проголосовавших секунд; иначе неизвестен.
+const GENDER_MAJORITY: f64 = 2.0 / 3.0;
+
+/// Пол каждого спикера по медиане F0 нескольких длинных реплик из чистого вокала, голосованием по
+/// секундам. Версия по work_dir — вызывается из render (RenderPaths) для автокастинга облачных голосов и из
+/// перевода. Нет вокала / голоса разошлись / шумный замер -> спикер без пола (в out не попадает), матчер
+/// тогда возьмёт ротацию по всем голосам.
+
 pub fn speaker_genders_wd(work_dir: &Path, proj: &Project, speakers: &[String]) -> HashMap<String, String> {
     let mut out = HashMap::new();
     let vocals = {
@@ -884,26 +892,23 @@ pub fn speaker_genders_wd(work_dir: &Path, proj: &Project, speakers: &[String]) 
         }
     };
     for spk in speakers {
-        // длиннейшая реплика спикера — устойчивый замер F0.
-        let cand = proj
-            .segments
-            .iter()
-            .filter(|s| s.speaker.as_deref().unwrap_or("0") == spk)
-            .max_by(|a, b| (a.end - a.start).partial_cmp(&(b.end - b.start)).unwrap_or(std::cmp::Ordering::Equal));
-        let Some(seg) = cand else { continue };
-        let tmp = work_dir.join(format!("casting_f0_{}.wav", sanitize(spk)));
-        let end = seg.end.min(seg.start + 30.0).max(seg.start + 0.05);
-        if crate::media::trim(&vocals, &tmp, seg.start, end, 16_000).is_err() {
-            continue;
-        }
-        if let Ok((mono, sr)) = crate::wavio::read_mono_f32(&tmp) {
-            if let Some(f) = crate::f0::median_f0(&mono, sr) {
-                if let Some(g) = gender_label(f) {
-                    out.insert(spk.clone(), g.to_string());
-                }
+        let mut lines: Vec<&Segment> = proj.segments.iter().filter(|s| s.speaker.as_deref().unwrap_or("0") == spk).collect();
+        lines.sort_by(|a, b| (b.end - b.start).total_cmp(&(a.end - a.start)));
+        let mut votes: HashMap<&'static str, f64> = HashMap::new();
+        for (k, seg) in lines.iter().take(GENDER_PROBES).enumerate() {
+            let secs = (seg.end - seg.start).min(30.0);
+            if k > 0 && secs < GENDER_PROBE_MIN_SECS {
+                break;
+            }
+            let Ok((mono, sr)) = crate::wavio::read_span_mono_f32(&vocals, seg.start, seg.start + secs.max(0.05)) else { break };
+            if let Some(g) = crate::f0::median_f0(&mono, sr).and_then(gender_label) {
+                *votes.entry(g).or_insert(0.0) += secs;
             }
         }
-        let _ = std::fs::remove_file(&tmp);
+        let all: f64 = votes.values().sum();
+        if let Some((g, _)) = votes.into_iter().find(|&(_, s)| s >= all * GENDER_MAJORITY) {
+            out.insert(spk.clone(), g.to_string());
+        }
     }
     out
 }
