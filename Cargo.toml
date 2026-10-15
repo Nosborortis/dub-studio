@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/audiocpp",
     "crates/drama",
+    "crates/qwentts",
     "crates/dub-asr",
     "crates/dub-core",
     "crates/dub-llm",

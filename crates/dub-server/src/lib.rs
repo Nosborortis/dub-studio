@@ -910,7 +910,54 @@ fn list_voice_names(dir: &Path) -> Vec<String> {
 
 /// GET /voices — список голосов из каталога (пак + записи с микрофона).
 async fn voices_list(State(st): State<AppState>) -> Json<Value> {
-    Json(json!({ "voices": list_voice_names(&st.voices_dir) }))
+    let mut voices = list_voice_names(&st.voices_dir);
+    voices.extend(qwen_voice_names(&st.models_root));
+    Json(json!({ "voices": voices }))
+}
+
+/// Девять голосов Qwen3-TTS (`qwen:<id>`), когда он выбран движком озвучки: их дают персонажам, как записи пака.
+fn qwen_voice_names(mroot: &Path) -> Vec<String> {
+    let selection = models::load_selection(mroot);
+    let chosen = selection.get("tts").and_then(|v| v.as_str()).and_then(models::qwen_quant);
+    match chosen {
+        Some(_) => qwentts::SPEAKERS.iter().map(|(id, ..)| format!("{}{id}", render::QWEN_VOICE)).collect(),
+        None => Vec::new(),
+    }
+}
+
+/// Проба голоса Qwen3-TTS: один раз сказанная фраза, дальше файл из models/qwen3-tts/samples.
+async fn qwen_voice_sample(mroot: &Path, speaker: &str, req: axum::http::Request<axum::body::Body>) -> Response {
+    let Some(quant) = models::load_selection(mroot).get("tts").and_then(|v| v.as_str()).and_then(models::qwen_quant) else {
+        return (StatusCode::NOT_FOUND, "Qwen3-TTS is not the chosen voice engine").into_response();
+    };
+    if !qwentts::SPEAKERS.iter().any(|(id, ..)| *id == speaker) {
+        return (StatusCode::NOT_FOUND, "voice not found").into_response();
+    }
+    let sample = qwentts::dir(mroot).join("samples").join(format!("{speaker}.wav"));
+    if !sample.is_file() {
+        let (root, out, speaker) = (mroot.to_path_buf(), sample.clone(), speaker.to_string());
+        let made = tokio::task::spawn_blocking(move || -> Result<(), String> {
+            static MAKING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+            let _one = MAKING.lock().unwrap_or_else(|e| e.into_inner());
+            if out.is_file() {
+                return Ok(());
+            }
+            let engine = qwentts::QwenEngine::load(&root, quant, false).map_err(|e| e.to_string())?;
+            let say = qwentts::Say { text: "Hello! This is how my voice sounds in your dub.", lang: "en", speaker: Some(&speaker), reference: None, seed: 7, temperature: 0.7, max_new_tokens: 0 };
+            let audio = engine.speak(&say).map_err(|e| e.to_string())?;
+            if let Some(dir) = out.parent() {
+                std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+            }
+            wavio::write_mono_f32(&out, &audio, qwentts::SAMPLE_RATE)
+        })
+        .await;
+        match made {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return (StatusCode::SERVICE_UNAVAILABLE, e).into_response(),
+            Err(e) => return join_failure(e),
+        }
+    }
+    serve_file_range(&sample, req, None).await
 }
 
 /// GET /voices/sample?name=<name> — отдать аудио-сэмпл голоса (voices/<name>.wav|.mp3) с Range для <audio>
@@ -920,6 +967,9 @@ async fn voice_sample(
     axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>,
     req: axum::http::Request<axum::body::Body>,
 ) -> Response {
+    if let Some(speaker) = q.get("name").and_then(|name| name.strip_prefix(render::QWEN_VOICE)) {
+        return qwen_voice_sample(&st.models_root, speaker, req).await;
+    }
     let name = sanitize_voice_name(q.get("name").map(|s| s.as_str()).unwrap_or(""));
     if name.is_empty() {
         return (StatusCode::BAD_REQUEST, "no name").into_response();

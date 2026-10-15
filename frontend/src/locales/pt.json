@@ -822,7 +822,10 @@
   },
   "ttsVariant": {
     "drama3": "Drama 3",
-    "drama3Hint": "Um segundo motor de voz (Fish Audio), só para placas de vídeo de 24 GB ou mais · ~21 GB"
+    "drama3Hint": "Um segundo motor de voz (Fish Audio), só para placas de vídeo de 24 GB ou mais · ~21 GB",
+    "qwen": "Qwen3-TTS",
+    "qwenQ8": "Qwen3-TTS (Q8_0)",
+    "qwenHint": "Um terceiro motor de voz leve: as vozes dos atores originais ou nove vozes prontas para os personagens · ~3 GB de memória de vídeo"
   },
   "units": {
     "gb": "GB",

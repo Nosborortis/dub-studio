@@ -800,7 +800,10 @@
   },
   "ttsVariant": {
     "drama3": "Drama 3",
-    "drama3Hint": "第二个配音引擎（Fish Audio），仅适用于 24 GB 及以上显存的显卡 · 约 21 GB"
+    "drama3Hint": "第二个配音引擎（Fish Audio），仅适用于 24 GB 及以上显存的显卡 · 约 21 GB",
+    "qwen": "Qwen3-TTS",
+    "qwenQ8": "Qwen3-TTS（Q8_0）",
+    "qwenHint": "轻量的第三个配音引擎：使用原演员的声音，或为角色选用模型自带的九种现成声音 · 约 3 GB 显存"
   },
   "units": {
     "gb": "GB",

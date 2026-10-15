@@ -129,6 +129,8 @@ pub fn component_selection(id: &str) -> Vec<(&'static str, String)> {
         "higgs-q6_k" => vec![("tts", "q6_k".into())],
         "higgs-q4_k_m" => vec![("tts", "q4_k_m".into())],
         "drama3" => vec![("tts", DRAMA_TTS.into())],
+        "qwen3-tts" => vec![("tts", "qwen3-tts".into())],
+        "qwen3-tts-q8_0" => vec![("tts", "qwen3-tts-q8_0".into())],
         "parakeet" => vec![("asr_engine", "parakeet".into()), ("asr", "int8".into())],
         "parakeet-fp32" => vec![("asr_engine", "parakeet".into()), ("asr", "fp32".into())],
         "parakeet-ultra" => vec![("asr_engine", "parakeet".into()), ("asr", "ultra".into())],
@@ -708,6 +710,9 @@ pub fn resolve_tts(mroot: &Path, sel: &Value) -> (PathBuf, String) {
     if pick(sel, "tts") == Some(DRAMA_TTS) {
         return (mroot.join(DRAMA_TTS), DRAMA_TTS.to_string());
     }
+    if let Some(choice) = pick(sel, "tts").filter(|choice| qwen_quant(choice).is_some()) {
+        return (qwentts::dir(mroot), choice.to_string());
+    }
     let has = |q: &str| {
         mroot.join(format!("higgs-{q}")).join(format!("{q}.gguf")).is_file()
     };
@@ -723,6 +728,24 @@ pub fn resolve_tts(mroot: &Path, sel: &Value) -> (PathBuf, String) {
         }
     }
     ret("q8_0") // дефолт-fallback (может ещё не быть скачан)
+}
+
+/// Квант Qwen3-TTS по значению слота `tts` (`qwen3-tts` — Q4_K_M, `qwen3-tts-q8_0`); None — выбран не Qwen.
+pub fn qwen_quant(tts: &str) -> Option<&'static str> {
+    match tts {
+        "qwen3-tts" => Some("Q4_K_M"),
+        "qwen3-tts-q8_0" => Some("Q8_0"),
+        _ => None,
+    }
+}
+
+/// Почему Qwen3-TTS на этой машине не пойдёт: его ggml считает на CUDA 13 (cuBLAS из models/higgs-engine).
+pub fn qwen_unavailable() -> Option<String> {
+    let gpu = crate::hw::gpu_report();
+    if gpu.cuda13_ok {
+        return None;
+    }
+    Some(t!("qwen-needs-cuda", card = gpu.summary().unwrap_or_else(|| "-".to_string())))
 }
 
 /// Значение слота `tts` и папка весов Drama 3 (apiplant/drama-q4) в каталоге моделей.

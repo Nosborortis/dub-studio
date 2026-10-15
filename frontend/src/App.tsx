@@ -106,6 +106,7 @@ function LanguageSwitcher() {
 // резолвится при генерации.
 const VARIANT_SLOT: Record<string, [string, string]> = {
   higgs: ["tts", "q8_0"], "higgs-q6_k": ["tts", "q6_k"], "higgs-q4_k_m": ["tts", "q4_k_m"], drama3: ["tts", "drama3"],
+  "qwen3-tts": ["tts", "qwen3-tts"], "qwen3-tts-q8_0": ["tts", "qwen3-tts-q8_0"],
   parakeet: ["asr", "int8"], "parakeet-fp32": ["asr", "fp32"], "parakeet-ultra": ["asr", "ultra"],
   "parakeet-ultra-int8": ["asr", "ultra-int8"],
   gemma: ["mt", "q4_0"], "gemma-q5_0": ["mt", "q5_0"], "gemma-q6_k": ["mt", "q6_k"], "gemma-q8_0": ["mt", "q8_0"],
@@ -118,10 +119,15 @@ const VARIANT_SLOT: Record<string, [string, string]> = {
 const activeVariantId = (ids: string[], sel: Selection): string | undefined =>
   ids.find((id) => { const m = VARIANT_SLOT[id]; return !!m && sel[m[0]] === m[1]; });
 
-type VariantI18n = Record<string, { label: "asrVariant.int8" | "asrVariant.fp32" | "asrVariant.ultra" | "asrVariant.ultraInt8" | "ttsVariant.drama3"; hint: "asrVariant.int8Hint" | "asrVariant.fp32Hint" | "asrVariant.ultraHint" | "asrVariant.ultraInt8Hint" | "ttsVariant.drama3Hint" }>;
+type VariantI18n = Record<string, { label: "asrVariant.int8" | "asrVariant.fp32" | "asrVariant.ultra" | "asrVariant.ultraInt8" | "ttsVariant.drama3" | "ttsVariant.qwen" | "ttsVariant.qwenQ8"; hint: "asrVariant.int8Hint" | "asrVariant.fp32Hint" | "asrVariant.ultraHint" | "asrVariant.ultraInt8Hint" | "ttsVariant.drama3Hint" | "ttsVariant.qwenHint" }>;
 // Drama 3 — второй движок озвучки в том же слоте tts, что и кванты Higgs: выбирается из того же списка.
-const TTS_IDS = ["higgs", "higgs-q6_k", "higgs-q4_k_m", "drama3"];
-const TTS_VARIANT_I18N: VariantI18n = { drama3: { label: "ttsVariant.drama3", hint: "ttsVariant.drama3Hint" } };
+const TTS_IDS = ["higgs", "higgs-q6_k", "higgs-q4_k_m", "drama3", "qwen3-tts", "qwen3-tts-q8_0"];
+const TTS_VARIANT_I18N: VariantI18n = {
+  drama3: { label: "ttsVariant.drama3", hint: "ttsVariant.drama3Hint" },
+  "qwen3-tts": { label: "ttsVariant.qwen", hint: "ttsVariant.qwenHint" },
+  "qwen3-tts-q8_0": { label: "ttsVariant.qwenQ8", hint: "ttsVariant.qwenHint" },
+};
+const isQwenTts = (v: string | undefined) => v === "qwen3-tts" || v === "qwen3-tts-q8_0";
 // Варианты Parakeet: int8 и fp32 — базовая модель NVIDIA, Ultra — её дообученная Moondream версия.
 const ASR_VARIANT_I18N: VariantI18n = {
   parakeet: { label: "asrVariant.int8", hint: "asrVariant.int8Hint" },
@@ -401,8 +407,9 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
           </div>
         ) : (
           <>
-            <VariantPicker base={ttsPick === "drama3" ? "Fish Audio Drama 3" : "Higgs Audio v3"} ids={TTS_IDS} i18n={TTS_VARIANT_I18N} />
-            {ttsPick !== "drama3" && rowOf("higgs-engine")}
+            <VariantPicker base={ttsPick === "drama3" ? "Fish Audio Drama 3" : isQwenTts(ttsPick) ? "Qwen3-TTS 1.7B" : "Higgs Audio v3"} ids={TTS_IDS} i18n={TTS_VARIANT_I18N} />
+            {ttsPick !== "drama3" && !isQwenTts(ttsPick) && rowOf("higgs-engine")}
+            {isQwenTts(ttsPick) && rowOf("qwen3-tts-engine")}
           </>
         )}
       </Group>
@@ -774,7 +781,10 @@ function resolveTrStyle(choice: string, custom: string): string {
   return choice === "custom" ? custom.trim() : (TR_STYLE_PRESETS[choice] ?? "");
 }
 // Красивое имя голоса для списка: срезаем префиксы RU_Male_/RU_Female_ и подчёркивания (значение — полное имя).
-const prettyVoice = (n: string) => n.replace(/^[A-Z]{2}_(Female|Male)_/i, "").replace(/_/g, " ");
+// "qwen:uncle_fu" — один из голосов модели Qwen3-TTS: имя голоса и движок, у которого он есть.
+const prettyVoice = (n: string) => n.startsWith("qwen:")
+  ? `${n.slice(5).split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")} · Qwen3-TTS`
+  : n.replace(/^[A-Z]{2}_(Female|Male)_/i, "").replace(/_/g, " ");
 
 // Динамический список слотов голосов одного пола (#114): строки [селект голоса][▶ сэмпл][× удалить] + «+ добавить».
 // Порядок строк = приоритет спикеров. Значение слота — полное имя файла без расширения (как в GET /voices).
@@ -3661,7 +3671,7 @@ function Editor() {
               const pick = (cur: string, on: (v: string) => void) => (
                 <div className="flex items-center gap-1.5 min-w-0 flex-1">
                   <Combobox value={cur} onChange={on}
-                    options={voiceList.map((v) => ({ value: v, label: v }))}
+                    options={voiceList.map((v) => ({ value: v, label: prettyVoice(v) }))}
                     placeholder={voiceList.length ? t("voice.search") : t("voice.packMissing")}
                     noResults={t("voice.noMatch")} allowClear className="flex-1 min-w-0" />
                   <button type="button" disabled={!cur} onClick={() => toggleVoicePreview(cur)} title={t("voice.preview")}
@@ -4786,7 +4796,7 @@ export default function App() {
     const parts = [c.device, `ASR ${asrLabel}`];
     if (c.models?.llm) parts.push(`MT+vision ${base(c.models.llm)}`);
     const ttsQuant = sel.tts || c.tts_quant;
-    if (c.models?.tts) parts.push(sel.tts === "drama3" ? "TTS Fish Audio Drama 3 q4" : `TTS ${c.models.tts}${ttsQuant ? ` ${ttsQuant}` : ""}`);
+    if (c.models?.tts) parts.push(sel.tts === "drama3" ? "TTS Fish Audio Drama 3 q4" : isQwenTts(sel.tts) ? `TTS Qwen3-TTS 1.7B ${sel.tts === "qwen3-tts" ? "Q4_K_M" : "Q8_0"}` : `TTS ${c.models.tts}${ttsQuant ? ` ${ttsQuant}` : ""}`);
     parts.push("sep BSRoformer", "diar Nemotron 3", "OCR PP-OCR");   // фикс-движки пайплайна
     setCap(parts.join(" · "));
   }).catch(() => setCapOffline(true)); }, []);

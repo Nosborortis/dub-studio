@@ -1525,6 +1525,7 @@ dependencies = [
  "mime_guess",
  "nvml-wrapper",
  "percent-encoding",
+ "qwentts",
  "regex",
  "reqwest 0.13.5",
  "rfd 0.17.2",
@@ -4414,6 +4415,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001"
 dependencies = [
  "proc-macro2",
+]
+
+[[package]]
+name = "qwentts"
+version = "2.0.0"
+dependencies = [
+ "libloading 0.9.0",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

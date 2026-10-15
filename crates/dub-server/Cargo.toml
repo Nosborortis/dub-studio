@@ -18,6 +18,7 @@ dub-faces = { path = "../dub-faces" }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 audiocpp = { path = "../audiocpp" }
 drama = { path = "../drama" }
+qwentts = { path = "../qwentts" }
 hound = "3"
 axum = { version = "0.8", features = ["multipart"] }
 tower = { version = "0.5", features = ["util"] }

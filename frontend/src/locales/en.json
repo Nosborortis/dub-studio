@@ -811,7 +811,10 @@
   },
   "ttsVariant": {
     "drama3": "Drama 3",
-    "drama3Hint": "A second voice engine (Fish Audio), for 24 GB+ graphics cards only · ~21 GB"
+    "drama3Hint": "A second voice engine (Fish Audio), for 24 GB+ graphics cards only · ~21 GB",
+    "qwen": "Qwen3-TTS",
+    "qwenQ8": "Qwen3-TTS (Q8_0)",
+    "qwenHint": "A light third voice engine: the original actors' voices or nine ready voices of its own for characters · ~3 GB of video memory"
   },
   "units": {
     "gb": "GB",

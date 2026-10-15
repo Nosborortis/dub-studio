@@ -32,7 +32,8 @@ fn fill_ref_texts(
     ref_texts: &mut std::collections::BTreeMap<String, String>,
 ) {
     for (spk, refp) in refs {
-        if ref_texts.contains_key(spk) {
+        // голос модели Qwen3-TTS — не запись: расшифровывать нечего
+        if ref_texts.contains_key(spk) || refp.to_string_lossy().starts_with(QWEN_VOICE) {
             continue;
         }
         if let Ok(rsegs) = asr.transcribe(refp, "auto") {
@@ -628,8 +629,94 @@ fn load_drama(paths: &RenderPaths) -> Result<drama::DramaEngine, String> {
 /// Строк промпта Drama 3 на одну фразу: реф (~22 кадра на секунду) + текст + сгенерированное.
 const DRAMA_MAX_LEN: u32 = 2048;
 
+/// Голос персонажа из девяти голосов Qwen3-TTS: `qwen:<id>` в списке голосов проекта вместо имени записи пака.
+pub const QWEN_VOICE: &str = "qwen:";
+
+/// Qwen3-TTS: талкер Base клонирует эталон, CustomVoice говорит голосами модели. Каждый грузится при первой фразе,
+/// которой он нужен, и остаётся до конца рендера.
+pub struct QwenVoices {
+    models_root: PathBuf,
+    quant: &'static str,
+    lang: String,
+    base: std::sync::Mutex<Option<Arc<qwentts::QwenEngine>>>,
+    custom: std::sync::Mutex<Option<Arc<qwentts::QwenEngine>>>,
+}
+
+impl QwenVoices {
+    fn engine(&self, clone: bool) -> Result<Arc<qwentts::QwenEngine>, String> {
+        let mut slot = if clone { &self.base } else { &self.custom }.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(engine) = slot.as_ref() {
+            return Ok(engine.clone());
+        }
+        let engine = Arc::new(
+            qwentts::QwenEngine::load(&self.models_root, self.quant, clone).map_err(|e| t!("render-qwen-load-failed", error = e.to_string()))?,
+        );
+        *slot = Some(engine.clone());
+        Ok(engine)
+    }
+
+    /// Фраза голосом модели (`ref_wav` = `qwen:<id>`) или клоном эталона; эталон приводится к моно 24 кГц рядом с ним.
+    fn speak(&self, text: &str, ref_wav: &str, ref_text: Option<&str>, opts: &str) -> Result<(Vec<f32>, i32), String> {
+        let (seed, temperature, max_new_tokens) = qwen_params(opts);
+        let said = match ref_wav.strip_prefix(QWEN_VOICE) {
+            Some(speaker) => {
+                let say = qwentts::Say { text, lang: &self.lang, speaker: Some(speaker), reference: None, seed, temperature, max_new_tokens };
+                self.engine(false)?.speak(&say)
+            }
+            None => {
+                let at_24k = PathBuf::from(format!("{ref_wav}.24k.wav"));
+                if !at_24k.is_file() {
+                    media::extract_audio(Path::new(ref_wav), &at_24k, qwentts::SAMPLE_RATE, 1)?;
+                }
+                let (reference, _) = wavio::read_mono_f32(&at_24k)?;
+                let say = qwentts::Say { text, lang: &self.lang, speaker: None, reference: Some((&reference, ref_text)), seed, temperature, max_new_tokens };
+                self.engine(true)?.speak(&say)
+            }
+        };
+        said.map(|audio| (audio, qwentts::SAMPLE_RATE as i32)).map_err(|e| match e {
+            qwentts::QwenError::Cancelled => crate::jobs::CANCELLED.to_string(),
+            other => other.to_string(),
+        })
+    }
+
+    fn cancel(&self) {
+        for slot in [&self.base, &self.custom] {
+            if let Some(engine) = slot.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+                engine.cancel();
+            }
+        }
+    }
+}
+
+/// Параметры Qwen3-TTS из JSON попытки Higgs: seed его или свежий случайный, `max_new_tokens` Higgs (75 токенов/с с
+/// запасом 1.5) -> кадры Qwen (12.5/с с запасом 2), температура Higgs 0.1-0.35 -> 0.6-0.95 (по умолчанию 0.9).
+fn qwen_params(opts: &str) -> (u64, f32, i32) {
+    let v: serde_json::Value = serde_json::from_str(opts).unwrap_or_default();
+    let seed = v.get("seed").and_then(|s| s.as_u64()).unwrap_or_else(|| uuid::Uuid::new_v4().as_u64_pair().0);
+    let tokens = v.get("max_new_tokens").and_then(|t| t.as_u64()).unwrap_or(2048) as f64;
+    let max_new = ((tokens * 12.5 * 2.0 / (75.0 * 1.5)).ceil() as i32).clamp(48, 2048);
+    let temperature = v.get("temperature").and_then(|t| t.as_f64()).map_or(0.9, |t| (0.6 + t).min(0.95)) as f32;
+    (seed, temperature, max_new)
+}
+
 /// Загрузить локальный TTS, выбранный в настройках, с сообщением в журнал.
-fn load_tts(paths: &RenderPaths, progress: &Progress) -> Result<Arc<TtsEngine>, String> {
+fn load_tts(paths: &RenderPaths, lang: &str, progress: &Progress) -> Result<Arc<TtsEngine>, String> {
+    if let Some(quant) = crate::models::qwen_quant(&paths.higgs_quant) {
+        if let Some(why) = crate::models::qwen_unavailable() {
+            return Err(why);
+        }
+        if !qwentts::installed(&paths.models_root, quant, true) || !qwentts::installed(&paths.models_root, quant, false) {
+            return Err(t!("render-qwen-missing"));
+        }
+        emit(progress, "tts", &t!("render-loading-qwen"));
+        return Ok(Arc::new(TtsEngine::Qwen(QwenVoices {
+            models_root: paths.models_root.clone(),
+            quant,
+            lang: lang.to_string(),
+            base: std::sync::Mutex::new(None),
+            custom: std::sync::Mutex::new(None),
+        })));
+    }
     if paths.higgs_quant == crate::models::DRAMA_TTS {
         emit(progress, "tts", &t!("render-loading-drama"));
         Ok(Arc::new(TtsEngine::Drama(load_drama(paths)?)))
@@ -639,17 +726,22 @@ fn load_tts(paths: &RenderPaths, progress: &Progress) -> Result<Arc<TtsEngine>, 
     }
 }
 
-/// Локальный TTS дубляжа: на карте одна модель — Higgs Audio v3 или Drama 3.
+/// Локальный TTS дубляжа: на карте одна модель — Higgs Audio v3, Drama 3 или Qwen3-TTS.
 pub enum TtsEngine {
     Higgs(AudiocppEngine),
     Drama(drama::DramaEngine),
+    Qwen(QwenVoices),
 }
 
 impl TtsEngine {
     /// Клон голоса рефа. `opts` — JSON лестницы попыток Higgs; Drama берёт из него seed, потолок длины и
     /// ступень температуры (у Drama своя шкала: 1.0 по умолчанию, ступени лестницы опускают её до 0.8).
     fn voice_clone(&self, text: &str, ref_wav: &str, ref_text: Option<&str>, opts: &str) -> Result<(Vec<f32>, i32), String> {
+        if !matches!(self, TtsEngine::Qwen(_)) && ref_wav.starts_with(QWEN_VOICE) {
+            return Err(t!("render-qwen-voice-other-engine", voice = ref_wav.to_string()));
+        }
         match self {
+            TtsEngine::Qwen(voices) => voices.speak(text, ref_wav, ref_text, opts),
             TtsEngine::Higgs(e) => e.voice_clone(text, ref_wav, ref_text, opts).map_err(|e| e.localize()),
             TtsEngine::Drama(e) => {
                 let ref_text = ref_text.filter(|t| !t.trim().is_empty()).ok_or_else(|| t!("render-drama-no-ref-text"))?;
@@ -666,6 +758,7 @@ impl TtsEngine {
         match self {
             TtsEngine::Higgs(e) => e.cancel(),
             TtsEngine::Drama(e) => e.cancel(),
+            TtsEngine::Qwen(voices) => voices.cancel(),
         }
     }
 }
@@ -689,6 +782,23 @@ fn drama_params(opts: &str) -> drama::Params {
     let max_new = ((tokens * drama::FRAMES_PER_SECOND * 2.0 / (75.0 * 1.5)).ceil() as u32).clamp(64, 2048);
     let temperature = v.get("temperature").and_then(|t| t.as_f64()).map_or(1.0, |t| (0.7 + t).min(1.0)) as f32;
     drama::Params { temperature, seed, max_new, ..Default::default() }
+}
+
+#[cfg(test)]
+mod qwen_params_tests {
+    use super::qwen_params;
+
+    #[test]
+    fn the_attempt_ladder_reaches_qwen_on_its_own_scales() {
+        let (seed, temperature, max_new) = qwen_params(r#"{"temperature":0.30,"max_new_tokens":365,"seed":2002}"#);
+        assert_eq!(seed, 2002);
+        assert!((temperature - 0.9).abs() < 1e-6);
+        assert_eq!(max_new, 82);
+        let (first, _, _) = qwen_params(r#"{"temperature":0.10}"#);
+        let (second, _, _) = qwen_params(r#"{"temperature":0.10}"#);
+        assert_ne!(first, second, "regenerating a line must give a new take");
+        assert!((qwen_params("{}").1 - 0.9).abs() < 1e-6);
+    }
 }
 
 #[cfg(test)]
@@ -1030,6 +1140,10 @@ fn build_dub_pass(
                 pack_names.insert(spk.clone(), nm.to_string());
                 if nm == crate::voice_slots::CLONE_SLOT {
                     clone_slot_spks.insert(spk.clone()); // спикер на клоне — identity-реф ниже
+                    continue;
+                }
+                if nm.starts_with(QWEN_VOICE) {
+                    map.insert(spk.clone(), PathBuf::from(nm)); // голос модели Qwen3-TTS: записи нет, имя идёт в синтез
                     continue;
                 }
                 let src = ["wav", "mp3"].iter().map(|e| paths.voices_dir.join(format!("{nm}.{e}"))).find(|p| p.is_file());
@@ -1590,7 +1704,7 @@ fn build_dub_pass(
             // identity-рефа — заранее посчитанный reftext_of. Считаем ТОЛЬКО при
             // синтезе (не тратить ffmpeg-обрезку на закэшированные не-dirty сегменты).
             if engine.is_none() {
-                *engine = Some(load_tts(paths, progress)?);
+                *engine = Some(load_tts(paths, &proj.tgt_lang, progress)?);
             }
             let (ref_wav, ref_text): (PathBuf, Option<String>) = match emo_ref_of(s, &sid) {
                 Some(emo) => emo,
@@ -2007,7 +2121,7 @@ fn build_dub_pass(
             emit(progress, "tts", &t!("render-qc-mismatch", count = bad_idx.len()),
             );
             if engine.is_none() {
-                *engine = Some(load_tts(paths, progress)?);
+                *engine = Some(load_tts(paths, &proj.tgt_lang, progress)?);
             }
             for &i in &bad_idx {
                 crate::jobs::check_cancelled()?;

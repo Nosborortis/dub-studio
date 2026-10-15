@@ -523,6 +523,19 @@ const DRAMA3_MARKERS: &[Marker] = &[
     Marker { rel: platform::DRAMA_ENGINE.dest_rel, expect: platform::DRAMA_ENGINE.size },
 ];
 
+/// Qwen3-TTS 1.7B GGUF (Serveurperso/Qwen3-TTS-GGUF, Apache 2.0): кодек 12 Гц и талкеры CustomVoice и Base каждого кванта.
+/// Пути и SHA — как у Speech Studio, чтобы файлы брались у неё. Библиотека qwen.dll (qwentts.cpp) ещё не выпущена:
+/// маркер движка её требует, так движок без неё не считается установленным.
+const QWEN_CODEC: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-tokenizer-12hz-Q8_0.gguf", dest_rel: "models/qwen3-tts/qwen-tokenizer-12hz-Q8_0.gguf", size: 291_150_624, sha256: "1883beeed99348fc35e23dd225e9082f93f6f8c109330a33d935baa8acdbfd94", extract: Extract::None };
+const QWEN_Q4_K_M: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-1.7b-customvoice-Q4_K_M.gguf", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-customvoice-Q4_K_M.gguf", size: 1_182_631_296, sha256: "cc328834a631bc08bf9f43e62fa23f8a1383d9b429864ce6690cfb172077fc4a", extract: Extract::None };
+const QWEN_BASE_Q4_K_M: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-1.7b-base-Q4_K_M.gguf", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-base-Q4_K_M.gguf", size: 1_219_245_248, sha256: "ea393ebaf2167ea23ce9fc18b093822851358a950d7075cd47ab4f6ce23e887d", extract: Extract::None };
+const QWEN_Q8_0: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-1.7b-customvoice-Q8_0.gguf", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-customvoice-Q8_0.gguf", size: 2_042_834_304, sha256: "cab2cff67a0a557310febe558dc83076b28ed790e491867eb2751759f4cd89fa", extract: Extract::None };
+const QWEN_BASE_Q8_0: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-1.7b-base-Q8_0.gguf", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-base-Q8_0.gguf", size: 2_079_448_256, sha256: "4b9a33a236908dd9435a42f7a396e38038329d053b704342a6413c08544c4fda", extract: Extract::None };
+#[cfg(windows)]
+const QWEN_LIBRARY: &str = "models/qwen3-tts/qwen.dll";
+#[cfg(not(windows))]
+const QWEN_LIBRARY: &str = "models/qwen3-tts/libqwen.so";
+
 /// Полный список компонентов. Порядок = порядок показа в панели «Первый запуск».
 pub fn manifest() -> Vec<Component> {
     let mut all = vec![
@@ -688,6 +701,47 @@ pub fn manifest() -> Vec<Component> {
             size: DRAMA3_WEIGHTS + platform::DRAMA_ENGINE.size,
             files: DRAMA3_FILES,
             markers: DRAMA3_MARKERS,
+            external_url: None,
+        },
+        // Третий движок озвучки: клон по эталону (талкер Base) и девять голосов модели (CustomVoice), тот же слот tts.
+        // Движок — библиотека и кодек, общие для обоих квантов; кванты — пары талкеров.
+        Component {
+            id: "qwen3-tts-engine",
+            name: t!("setup-comp-qwen3-tts-engine-name"),
+            purpose: t!("setup-comp-qwen3-tts-engine-purpose"),
+            requirement: Requirement::Optional,
+            delivery: Delivery::Download,
+            size: QWEN_CODEC.size,
+            files: &[QWEN_CODEC],
+            markers: &[Marker { rel: QWEN_LIBRARY, expect: 0 }, Marker { rel: QWEN_CODEC.dest_rel, expect: QWEN_CODEC.size }],
+            external_url: None,
+        },
+        Component {
+            id: "qwen3-tts",
+            name: "Qwen3-TTS 1.7B (Q4_K_M)".into(),
+            purpose: t!("setup-comp-qwen3-tts-purpose"),
+            requirement: Requirement::Optional,
+            delivery: Delivery::Download,
+            size: QWEN_Q4_K_M.size + QWEN_BASE_Q4_K_M.size,
+            files: &[QWEN_Q4_K_M, QWEN_BASE_Q4_K_M],
+            markers: &[
+                Marker { rel: QWEN_Q4_K_M.dest_rel, expect: QWEN_Q4_K_M.size },
+                Marker { rel: QWEN_BASE_Q4_K_M.dest_rel, expect: QWEN_BASE_Q4_K_M.size },
+            ],
+            external_url: None,
+        },
+        Component {
+            id: "qwen3-tts-q8_0",
+            name: "Qwen3-TTS 1.7B (Q8_0)".into(),
+            purpose: t!("setup-comp-qwen3-tts-purpose"),
+            requirement: Requirement::Optional,
+            delivery: Delivery::Download,
+            size: QWEN_Q8_0.size + QWEN_BASE_Q8_0.size,
+            files: &[QWEN_Q8_0, QWEN_BASE_Q8_0],
+            markers: &[
+                Marker { rel: QWEN_Q8_0.dest_rel, expect: QWEN_Q8_0.size },
+                Marker { rel: QWEN_BASE_Q8_0.dest_rel, expect: QWEN_BASE_Q8_0.size },
+            ],
             external_url: None,
         },
         // Альтернативный квант ASR: fp32 (точнее, тяжелее int8). Отдельная папка (fp32 приоритетнее int8).
@@ -1174,6 +1228,8 @@ fn vram_estimate(id: &str) -> u64 {
         "higgs-q6_k" => gb(5.1),
         "higgs-q4_k_m" => gb(4.2),
         "drama3" => gb(22.6),
+        "qwen3-tts" => gb(2.8),
+        "qwen3-tts-q8_0" => gb(3.7),
         "gemma" => gb(8.5),
         "gemma-q5_0" => gb(9.9),
         "gemma-q6_k" => gb(11.2),
