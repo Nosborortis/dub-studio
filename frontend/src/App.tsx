@@ -410,6 +410,7 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
             <VariantPicker base={ttsPick === "drama3" ? "Fish Audio Drama 3" : isQwenTts(ttsPick) ? "Qwen3-TTS 1.7B" : "Higgs Audio v3"} ids={TTS_IDS} i18n={TTS_VARIANT_I18N} />
             {ttsPick !== "drama3" && !isQwenTts(ttsPick) && rowOf("higgs-engine")}
             {isQwenTts(ttsPick) && rowOf("qwen3-tts-engine")}
+            {isQwenTts(ttsPick) && rowOf("qwen3-tts-ru-stress")}
           </>
         )}
       </Group>

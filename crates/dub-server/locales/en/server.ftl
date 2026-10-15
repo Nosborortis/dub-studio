@@ -952,4 +952,6 @@ setup-comp-drama3-purpose = Voices the translation in the original actors' voice
 setup-comp-qwen3-tts-purpose = Voices the translation in the original actors' voices or in nine ready voices of its own; a light third engine, about 3 GB of video memory on an NVIDIA card
 setup-comp-qwen3-tts-engine-name = Qwen3-TTS engine
 setup-comp-qwen3-tts-engine-purpose = The library and the 12 Hz codec Qwen3-TTS speaks through, shared by both quantisations
+setup-comp-qwen3-tts-ru-stress-name = Russian stress for Qwen3-TTS
+setup-comp-qwen3-tts-ru-stress-purpose = A small add-on for a Russian dub cloned with Qwen3-TTS: a plus before a vowel in a line (z+amok) puts the stress exactly there; the model's own voices are not affected
 render-drama-kept-original = ⚠ segment { $line }: the voice reference has no transcript (no speech was recognised in it), Drama 3 cannot clone without one — the original is kept

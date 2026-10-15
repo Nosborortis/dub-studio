@@ -10,6 +10,7 @@ release notes on GitHub are taken from the release's section.
 
 - **Drama 3 voice** for NVIDIA cards with 24 GB and more: a local expressive voice that clones each speaker, chosen in Settings like the other voices.
 - **Qwen3-TTS voice** (1.7B, Q4_K_M or Q8_0, about 3 GB of video memory): clones each speaker from their own lines, or gives a character one of the model's nine ready voices, picked in the cast list and heard before the dub. Its files are taken from Speech Studio when it is installed on the same computer.
+- **Russian stress for Qwen3-TTS**: a small add-on for a Russian dub cloned with Qwen3-TTS. A plus before a vowel in a line (з+амок, зам+ок) puts the stress exactly there; the marks stay out of the subtitles and are dropped for the other voices.
 
 ### Fixed
 

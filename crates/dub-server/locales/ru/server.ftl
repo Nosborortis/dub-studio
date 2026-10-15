@@ -972,4 +972,6 @@ setup-comp-drama3-purpose = Озвучка голосами исходных а�
 setup-comp-qwen3-tts-purpose = Озвучка голосами исходных актёров или девятью готовыми голосами модели, лёгкий третий движок — около 3 ГБ видеопамяти на карте NVIDIA
 setup-comp-qwen3-tts-engine-name = Движок Qwen3-TTS
 setup-comp-qwen3-tts-engine-purpose = Библиотека и кодек 12 Гц, через которые говорит Qwen3-TTS, общие для обоих квантов
+setup-comp-qwen3-tts-ru-stress-name = Русские ударения для Qwen3-TTS
+setup-comp-qwen3-tts-ru-stress-purpose = Небольшая добавка к русской озвучке клоном Qwen3-TTS: плюс перед гласной в тексте фразы (з+амок) ставит ударение ровно туда; голоса модели не затрагивает
 render-drama-kept-original = ⚠ сегмент { $line }: у рефа голоса нет расшифровки (в нём не распознана речь), Drama 3 без неё не клонирует — оставлен оригинал

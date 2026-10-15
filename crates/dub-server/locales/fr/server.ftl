@@ -946,4 +946,6 @@ setup-comp-drama3-purpose = Double la traduction avec les voix des acteurs d'ori
 setup-comp-qwen3-tts-purpose = Double la traduction avec les voix des acteurs d'origine ou avec neuf voix toutes prêtes ; troisième moteur léger, environ 3 Go de mémoire vidéo sur une carte NVIDIA
 setup-comp-qwen3-tts-engine-name = Moteur Qwen3-TTS
 setup-comp-qwen3-tts-engine-purpose = La bibliothèque et le codec 12 Hz par lesquels parle Qwen3-TTS, communs aux deux quantifications
+setup-comp-qwen3-tts-ru-stress-name = Accent tonique russe pour Qwen3-TTS
+setup-comp-qwen3-tts-ru-stress-purpose = Un petit complément pour un doublage russe cloné avec Qwen3-TTS : un plus devant une voyelle dans la réplique (z+amok) place l'accent exactement là ; les voix propres du modèle ne changent pas
 render-drama-kept-original = ⚠ phrase { $line } : la référence vocale n'a pas de transcription (aucune parole n'y a été reconnue), Drama 3 ne clone pas sans elle — l'original est conservé

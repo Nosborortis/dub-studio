@@ -530,6 +530,7 @@ const QWEN_CODEC: FileSpec = FileSpec { url: "https://huggingface.co/Serveurpers
 const QWEN_Q4_K_M: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-1.7b-customvoice-Q4_K_M.gguf", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-customvoice-Q4_K_M.gguf", size: 1_182_631_296, sha256: "cc328834a631bc08bf9f43e62fa23f8a1383d9b429864ce6690cfb172077fc4a", extract: Extract::None };
 const QWEN_BASE_Q4_K_M: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-1.7b-base-Q4_K_M.gguf", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-base-Q4_K_M.gguf", size: 1_219_245_248, sha256: "ea393ebaf2167ea23ce9fc18b093822851358a950d7075cd47ab4f6ce23e887d", extract: Extract::None };
 const QWEN_Q8_0: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-1.7b-customvoice-Q8_0.gguf", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-customvoice-Q8_0.gguf", size: 2_042_834_304, sha256: "cab2cff67a0a557310febe558dc83076b28ed790e491867eb2751759f4cd89fa", extract: Extract::None };
+const QWEN_RU_STRESS: FileSpec = FileSpec { url: "https://huggingface.co/siriusfreak/qwen3-tts-12hz-1.7b-ru-stress-cf/resolve/c16b3af3db3095120efc1ebb73f6522442bcb3b1/lora/adapter.safetensors", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-base-ru-stress-lora.safetensors", size: 34_908_456, sha256: "88a94c0fbe85800d309f94bb9c28d698bf9c86d9494617b6cf4dd996cc13648b", extract: Extract::None };
 const QWEN_BASE_Q8_0: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-1.7b-base-Q8_0.gguf", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-base-Q8_0.gguf", size: 2_079_448_256, sha256: "4b9a33a236908dd9435a42f7a396e38038329d053b704342a6413c08544c4fda", extract: Extract::None };
 #[cfg(windows)]
 const QWEN_LIBRARY: &str = "models/qwen3-tts/qwen.dll";
@@ -742,6 +743,17 @@ pub fn manifest() -> Vec<Component> {
                 Marker { rel: QWEN_Q8_0.dest_rel, expect: QWEN_Q8_0.size },
                 Marker { rel: QWEN_BASE_Q8_0.dest_rel, expect: QWEN_BASE_Q8_0.size },
             ],
+            external_url: None,
+        },
+        Component {
+            id: "qwen3-tts-ru-stress",
+            name: t!("setup-comp-qwen3-tts-ru-stress-name"),
+            purpose: t!("setup-comp-qwen3-tts-ru-stress-purpose"),
+            requirement: Requirement::Optional,
+            delivery: Delivery::Download,
+            size: QWEN_RU_STRESS.size,
+            files: &[QWEN_RU_STRESS],
+            markers: &[Marker { rel: QWEN_RU_STRESS.dest_rel, expect: QWEN_RU_STRESS.size }],
             external_url: None,
         },
         // Альтернативный квант ASR: fp32 (точнее, тяжелее int8). Отдельная папка (fp32 приоритетнее int8).
@@ -1230,6 +1242,7 @@ fn vram_estimate(id: &str) -> u64 {
         "drama3" => gb(22.6),
         "qwen3-tts" => gb(2.8),
         "qwen3-tts-q8_0" => gb(3.7),
+        "qwen3-tts-ru-stress" => gb(0.1),
         "gemma" => gb(8.5),
         "gemma-q5_0" => gb(9.9),
         "gemma-q6_k" => gb(11.2),

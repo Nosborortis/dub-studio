@@ -1,5 +1,6 @@
 //! Qwen3-TTS 1.7B через qwentts.cpp (ServeurpersoCom, ggml на CUDA), загружаемый во время работы: его C ABI `qwen.h`
-//! (ABI 6) — девять голосов модели (CustomVoice), клон по эталону (Base), потоковые куски и отмена.
+//! (ABI 6, с адаптером ударений ABI 7) — девять голосов модели (CustomVoice), клон по эталону (Base), адаптер LoRA
+//! русских ударений на Base, потоковые куски и отмена.
 
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::path::{Path, PathBuf};
@@ -16,6 +17,10 @@ pub const QUANTS: &[(&str, &str, &str)] = &[
     ("Q4_K_M", "qwen-talker-1.7b-customvoice-Q4_K_M.gguf", "qwen-talker-1.7b-base-Q4_K_M.gguf"),
     ("Q8_0", "qwen-talker-1.7b-customvoice-Q8_0.gguf", "qwen-talker-1.7b-base-Q8_0.gguf"),
 ];
+/// siriusfreak/qwen3-tts-12hz-1.7b-ru-stress-cf `lora/adapter.safetensors`: r 16, alpha 32 на талкере Base, читает
+/// ударение знаком U+0301 после гласной. Имя файла то же, что у Speech Studio.
+pub const STRESS_LORA: &str = "qwen-talker-1.7b-base-ru-stress-lora.safetensors";
+const STRESS_LORA_SCALE: f32 = 32.0 / 16.0;
 #[cfg(windows)]
 pub const LIBRARY: &str = "qwen.dll";
 #[cfg(not(windows))]
@@ -34,6 +39,8 @@ pub const SPEAKERS: &[(&str, &str, &str, &str)] = &[
 ];
 pub const SAMPLE_RATE: u32 = 24_000;
 const ABI_VERSION: i32 = 6;
+/// Поля адаптера появились в ABI 7: библиотека ABI 6 их не читает, поэтому 7 ставится только с адаптером.
+const ABI_LORA: i32 = 7;
 const STATUS_CANCELLED: i32 = -5;
 
 #[derive(Debug, Error)]
@@ -56,6 +63,8 @@ struct InitParams {
     max_batch: i32,
     codec_chunk_sec: f32,
     device: *const c_char,
+    lora_path: *const c_char,
+    lora_scale: f32,
 }
 
 type ChunkFn = unsafe extern "C" fn(*const f32, i32, *mut c_void) -> bool;
@@ -161,6 +170,34 @@ pub fn installed(models_root: &Path, quant: &str, clone: bool) -> bool {
     d.join(LIBRARY).is_file() && d.join(CODEC).is_file() && talker(models_root, quant, clone).is_some_and(|t| t.is_file())
 }
 
+/// Есть ли адаптер русских ударений.
+pub fn stress_installed(models_root: &Path) -> bool {
+    dir(models_root).join(STRESS_LORA).is_file()
+}
+
+/// Ударение «+» перед гласной: с адаптером становится знаком U+0301 после неё, без адаптера снимается.
+pub fn stress_marks(text: &str, acute: bool) -> String {
+    let mut out = String::with_capacity(text.len() + 8);
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match chars.peek() {
+            Some(&v) if c == '+' && is_vowel(v) => {
+                chars.next();
+                out.push(v);
+                if acute {
+                    out.push('\u{301}');
+                }
+            }
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+fn is_vowel(c: char) -> bool {
+    "аеёиоуыэюяАЕЁИОУЫЭЮЯ".contains(c)
+}
+
 /// Имя языка, которое читает ABI; `None` — модель определит сама.
 fn lang_name(code: &str) -> Option<&'static str> {
     Some(match code.to_ascii_lowercase().as_str() {
@@ -223,8 +260,12 @@ unsafe impl Send for QwenEngine {}
 unsafe impl Sync for QwenEngine {}
 
 impl QwenEngine {
-    /// Загружает библиотеку (CUDA-библиотеки она находит по PATH) и талкер кванта: Base при `clone`, иначе CustomVoice.
-    pub fn load(models_root: &Path, quant: &str, clone: bool) -> Result<QwenEngine, QwenError> {
+    /// Загружает библиотеку (CUDA-библиотеки она находит по PATH) и талкер кванта: Base при `clone`, иначе CustomVoice;
+    /// `stress` добавляет к Base адаптер ударений.
+    pub fn load(models_root: &Path, quant: &str, clone: bool, stress: bool) -> Result<QwenEngine, QwenError> {
+        if stress && !clone {
+            return Err(QwenError::Load("the stress adapter is trained on the Base talker".into()));
+        }
         let d = dir(models_root);
         // её библиотеки ggml лежат рядом под именами, которые есть и у других движков: эта папка в PATH первой
         let path = std::env::var("PATH").unwrap_or_default();
@@ -235,11 +276,17 @@ impl QwenEngine {
         let api = library(&d)?;
         let talker = talker(models_root, quant, clone).ok_or_else(|| QwenError::Load(format!("no quantisation {quant}")))?;
         let (t, c) = (cstring(&talker.to_string_lossy(), "talker path")?, cstring(&d.join(CODEC).to_string_lossy(), "codec path")?);
+        let lora = if stress { Some(cstring(&d.join(STRESS_LORA).to_string_lossy(), "adapter path")?) } else { None };
         let mut p: InitParams = unsafe { std::mem::zeroed() };
         unsafe { (api.init_default)(&mut p) };
         p.abi_version = ABI_VERSION;
         p.talker_path = t.as_ptr();
         p.codec_path = c.as_ptr();
+        if let Some(lora) = &lora {
+            p.abi_version = ABI_LORA;
+            p.lora_path = lora.as_ptr();
+            p.lora_scale = STRESS_LORA_SCALE;
+        }
         let raw = unsafe { (api.init)(&p) };
         if raw.is_null() {
             return Err(QwenError::Load(unsafe { last_error(&api) }));
@@ -326,5 +373,12 @@ mod tests {
         assert!(talker(root, "Q4_K_M", true).unwrap().ends_with("qwen3-tts/qwen-talker-1.7b-base-Q4_K_M.gguf"));
         assert!(talker(root, "Q8_0", false).unwrap().ends_with("qwen3-tts/qwen-talker-1.7b-customvoice-Q8_0.gguf"));
         assert!(talker(root, "Q2_K", false).is_none());
+    }
+
+    #[test]
+    fn a_plus_before_a_vowel_becomes_an_acute_after_it_or_goes() {
+        assert_eq!(stress_marks("Он з+амок запер на зам+ок, 2+2", true), "Он за\u{301}мок запер на замо\u{301}к, 2+2");
+        assert_eq!(stress_marks("Он з+амок запер на зам+ок, 2+2", false), "Он замок запер на замок, 2+2");
+        assert_eq!(stress_marks("+Атлас", true), "А\u{301}тлас");
     }
 }

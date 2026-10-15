@@ -638,6 +638,8 @@ pub struct QwenVoices {
     models_root: PathBuf,
     quant: &'static str,
     lang: String,
+    /// Клон читает русские ударения адаптером: «+» перед гласной уходит в модель знаком U+0301.
+    stress: bool,
     base: std::sync::Mutex<Option<Arc<qwentts::QwenEngine>>>,
     custom: std::sync::Mutex<Option<Arc<qwentts::QwenEngine>>>,
 }
@@ -649,7 +651,7 @@ impl QwenVoices {
             return Ok(engine.clone());
         }
         let engine = Arc::new(
-            qwentts::QwenEngine::load(&self.models_root, self.quant, clone).map_err(|e| t!("render-qwen-load-failed", error = e.to_string()))?,
+            qwentts::QwenEngine::load(&self.models_root, self.quant, clone, clone && self.stress).map_err(|e| t!("render-qwen-load-failed", error = e.to_string()))?,
         );
         *slot = Some(engine.clone());
         Ok(engine)
@@ -660,16 +662,18 @@ impl QwenVoices {
         let (seed, temperature, max_new_tokens) = qwen_params(opts);
         let said = match ref_wav.strip_prefix(QWEN_VOICE) {
             Some(speaker) => {
-                let say = qwentts::Say { text, lang: &self.lang, speaker: Some(speaker), reference: None, seed, temperature, max_new_tokens };
+                let text = qwentts::stress_marks(text, false);
+                let say = qwentts::Say { text: &text, lang: &self.lang, speaker: Some(speaker), reference: None, seed, temperature, max_new_tokens };
                 self.engine(false)?.speak(&say)
             }
             None => {
                 let at_24k = PathBuf::from(format!("{ref_wav}.24k.wav"));
-                if !at_24k.is_file() {
+                if !converted_after(&at_24k, Path::new(ref_wav)) {
                     media::extract_audio(Path::new(ref_wav), &at_24k, qwentts::SAMPLE_RATE, 1)?;
                 }
                 let (reference, _) = wavio::read_mono_f32(&at_24k)?;
-                let say = qwentts::Say { text, lang: &self.lang, speaker: None, reference: Some((&reference, ref_text)), seed, temperature, max_new_tokens };
+                let text = qwentts::stress_marks(text, self.stress);
+                let say = qwentts::Say { text: &text, lang: &self.lang, speaker: None, reference: Some((&reference, ref_text)), seed, temperature, max_new_tokens };
                 self.engine(true)?.speak(&say)
             }
         };
@@ -688,6 +692,12 @@ impl QwenVoices {
     }
 }
 
+/// Копия `converted` сделана не раньше `source`: рефы пересобираются под тем же именем, старая копия — чужой голос.
+fn converted_after(converted: &Path, source: &Path) -> bool {
+    let modified = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    matches!((modified(converted), modified(source)), (Some(c), Some(s)) if c >= s)
+}
+
 /// Параметры Qwen3-TTS из JSON попытки Higgs: seed его или свежий случайный, `max_new_tokens` Higgs (75 токенов/с с
 /// запасом 1.5) -> кадры Qwen (12.5/с с запасом 2), температура Higgs 0.1-0.35 -> 0.6-0.95 (по умолчанию 0.9).
 fn qwen_params(opts: &str) -> (u64, f32, i32) {
@@ -697,6 +707,11 @@ fn qwen_params(opts: &str) -> (u64, f32, i32) {
     let max_new = ((tokens * 12.5 * 2.0 / (75.0 * 1.5)).ceil() as i32).clamp(48, 2048);
     let temperature = v.get("temperature").and_then(|t| t.as_f64()).map_or(0.9, |t| (0.6 + t).min(0.95)) as f32;
     (seed, temperature, max_new)
+}
+
+/// Адаптер ударений берётся для русской озвучки, когда он установлен.
+fn qwen_stress(models_root: &Path, lang: &str) -> bool {
+    lang.to_ascii_lowercase().starts_with("ru") && qwentts::stress_installed(models_root)
 }
 
 /// Загрузить локальный TTS, выбранный в настройках, с сообщением в журнал.
@@ -713,6 +728,7 @@ fn load_tts(paths: &RenderPaths, lang: &str, progress: &Progress) -> Result<Arc<
             models_root: paths.models_root.clone(),
             quant,
             lang: lang.to_string(),
+            stress: qwen_stress(&paths.models_root, lang),
             base: std::sync::Mutex::new(None),
             custom: std::sync::Mutex::new(None),
         })));
@@ -742,8 +758,10 @@ impl TtsEngine {
         }
         match self {
             TtsEngine::Qwen(voices) => voices.speak(text, ref_wav, ref_text, opts),
-            TtsEngine::Higgs(e) => e.voice_clone(text, ref_wav, ref_text, opts).map_err(|e| e.localize()),
+            TtsEngine::Higgs(e) => e.voice_clone(&qwentts::stress_marks(text, false), ref_wav, ref_text, opts).map_err(|e| e.localize()),
             TtsEngine::Drama(e) => {
+                let text = qwentts::stress_marks(text, false);
+                let text = text.as_str();
                 let ref_text = ref_text.filter(|t| !t.trim().is_empty()).ok_or_else(|| t!("render-drama-no-ref-text"))?;
                 let audio = e.speak(text, Path::new(ref_wav), ref_text, &drama_params(opts)).map_err(|err| match err {
                     drama::DramaError::Cancelled => crate::jobs::CANCELLED.to_string(),
@@ -1112,6 +1130,10 @@ fn build_dub_pass(
     // оригинальных реплик и микса.
     let (ref_src, ref_from_mix) = ref_source(wd, &audio_hq);
 
+    // Qwen3-TTS клонирует по рефу, который кончается концом фразы и не длиннее QWEN_REF_SECS: обрезанный посреди
+    // фразы реф ломает и Base, на более длинном адаптер ударений обрывает речь.
+    let qwen_refs = crate::models::qwen_quant(&paths.higgs_quant).is_some();
+    let ref_secs = if qwen_refs { paths.ref_secs.min(QWEN_REF_SECS) } else { paths.ref_secs };
     // 3) клон-референс. voice.mode="voice" -> реф из пака/записи (voices/<name>.wav|mp3) НА КАЖДОГО спикера.
     //    Имя — CSV; позиция = отсортированный спикер (как во фронте: speaker ?? "0", лексикографически),
     //    пустой слот берёт первое непустое имя. Иначе (clone) — длиннейшая реплика спикера из вокала.
@@ -1151,7 +1173,7 @@ fn build_dub_pass(
                     let out = wd.join(format!("ref_pack_{i}.wav"));
                     // реф КАПИТСЯ до paths.ref_secs (дефолт 12с; на слабой RAM юзер уменьшает в настройках —
                     // длинный реф раздувает prefill-граф Higgs -> OOM на 32ГБ).
-                    if media::trim_ref(&src, &out, 0.0, paths.ref_secs).is_ok() {
+                    if media::trim_ref(&src, &out, 0.0, ref_secs).is_ok() {
                         map.insert(spk.clone(), out);
                     }
                 }
@@ -1185,14 +1207,14 @@ fn build_dub_pass(
                 .cloned()
                 .collect();
             let mut asr = crate::models::build_engine(&paths.asr);
-            build_speaker_refs(&segs_clone, &ref_src, wd, paths.ref_secs, asr.as_mut(), progress,
+            build_speaker_refs(&segs_clone, &ref_src, wd, ref_secs, qwen_refs, asr.as_mut(), progress,
             )?
         }
     } else {
         // Скоринг кандидатов + REF-QC (транскрипт каждого кандидата сверяется с текстом его окна,
         // брак -> следующий) — ref_text выставляется ВНУТРИ по фактически услышанному.
         let mut asr = crate::models::build_engine(&paths.asr);
-        build_speaker_refs(&segs, &ref_src, wd, paths.ref_secs, asr.as_mut(), progress)?
+        build_speaker_refs(&segs, &ref_src, wd, ref_secs, qwen_refs, asr.as_mut(), progress)?
     };
     if use_pack {
         // Реф-транскрипция выбранным движком (Parakeet/Whisper), а НЕ захардкоженным Parakeet — иначе у
@@ -1262,6 +1284,7 @@ fn build_dub_pass(
             && !use_pack
             && (s.end - s.start) >= REF_MIN_AFTER_TRIM
             && seg_is_clean(s, s.speaker.as_deref().unwrap_or("0"), &segs)
+            && (!qwen_refs || s.end - s.start <= ref_secs)
     };
     // Эмоц-реф и его ref_text: текст — ровно то, что звучит в окне (ref_window), либо None.
     let emo_ref_of = |s: &dub_core::Segment, sid: &str| -> Option<(PathBuf, Option<String>)> {
@@ -1270,7 +1293,7 @@ fn build_dub_pass(
         }
         let out = wd.join(format!("emoref_{sid}.wav"));
         // кап длины сверху ref_secs (не раздувать prefill-граф Higgs), как для identity-рефа.
-        let cap = paths.ref_secs.min(REF_IDEAL_HI).max(REF_MIN_AFTER_TRIM);
+        let cap = ref_secs.min(REF_IDEAL_HI).max(REF_MIN_AFTER_TRIM);
         let (a, b, text) = ref_window(s, s.start, s.end.min(s.start + cap));
         match media::trim_ref(&ref_src, &out, a, b.max(a + 0.05)) {
             Ok(()) => Some((out, text)),
@@ -1405,6 +1428,8 @@ fn build_dub_pass(
             crate::models::openrouter_tts_voice(&paths.models_root)
         )
     }
+    } else if let Some(quant) = crate::models::qwen_quant(&paths.higgs_quant) {
+        format!("qwen:{quant}{}", if qwen_stress(&paths.models_root, &proj.tgt_lang) { "+ru-stress" } else { "" })
     } else if paths.higgs_quant == crate::models::DRAMA_TTS {
         format!("drama:{}", crate::models::DRAMA_TTS)
     } else {
@@ -1419,7 +1444,7 @@ fn build_dub_pass(
         u8::from(speech_rate_on),
         u8::from(multitake_on),
         u8::from(emo_enabled),
-        paths.ref_secs
+        ref_secs
     );
     let ref_tags: std::cell::RefCell<std::collections::HashMap<PathBuf, String>> = Default::default();
     let key_of = |s: &dub_core::Segment| -> String {
@@ -1523,7 +1548,7 @@ fn build_dub_pass(
             jobs.push(crate::cloud_tts::Job {
                 out: raw,
                 key: format!("{}:{}", sid, keys[idx]),
-                text: tgt.to_string(), voice,
+                text: qwentts::stress_marks(tgt, false), voice,
                 style: crate::cloud_tts::style(s).into(),
             });
             job_segs.push(idx);
@@ -2471,6 +2496,8 @@ type SpkRefs = (
 /// (мало тембра) или очень длинном (крик/оверлап, раздувает prefill-граф Higgs). Верх капится ref_secs.
 const REF_IDEAL_LO: f64 = 7.0;
 const REF_IDEAL_HI: f64 = 12.0;
+/// Потолок рефа Qwen3-TTS: на 7-10.75 с клон чист, с 12.3 с адаптер ударений обрывает фразы, на 18.7 с молчит.
+const QWEN_REF_SECS: f64 = 10.0;
 /// ±1с внутренняя обрезка полей реф-клипа: края реплики часто с придыханием/захватом соседней речи.
 /// Применяем только если после обрезки остаётся достаточно (≥ ~2.5с) — иначе берём клип как есть.
 const REF_EDGE_TRIM: f64 = 1.0;
@@ -2551,6 +2578,21 @@ fn ref_window(s: &dub_core::Segment, a: f64, b: f64) -> (f64, f64, Option<String
         Some((na, nb, text)) => (na, nb, Some(text)),
         None => (a, b, None),
     }
+}
+
+/// Окно от начала реплики `s` до последнего конца предложения не дальше `cap` с и его слова; None — такого нет.
+fn sentence_window(s: &dub_core::Segment, cap: f64) -> Option<(f64, f64, Option<String>)> {
+    let words = seg_words(s)?;
+    let ends_sentence = |w: &str| w.trim().trim_end_matches(['"', '\'', '»', ')']).ends_with(['.', '!', '?', '…']);
+    let last = words
+        .iter()
+        .rposition(|w| w.2 <= s.start + cap + REF_WORD_EPS && w.2 - s.start >= REF_MIN_AFTER_TRIM && ends_sentence(&w.0))?;
+    let end = match words.get(last + 1) {
+        Some(next) => words[last].2 + ((next.1 - words[last].2) / 2.0).clamp(0.0, REF_WORD_PAD),
+        None => words[last].2,
+    };
+    let text = words[..=last].iter().map(|w| w.0.trim()).collect::<Vec<_>>().join(" ");
+    Some((s.start, end.min(s.start + cap), Some(text)))
 }
 
 /// Почему голос из реплики спикера не сделан. `NoSeparator` пользователь исправляет сам (ставит компонент
@@ -2670,6 +2712,7 @@ fn build_speaker_refs(
     ref_src: &Path,
     wd: &Path,
     ref_secs: f64,
+    sentences: bool,
     asr: &mut dyn dub_asr::AsrEngine,
     progress: &Progress,
 ) -> Result<SpkRefs, String> {
@@ -2761,7 +2804,10 @@ fn build_speaker_refs(
         let mut wins: Vec<(f64, String)> = Vec::with_capacity(good.len());
         for (i, c) in good.iter().enumerate() {
             let p = wd.join(format!("ref_cand_spk{spk}_{i}.wav"));
-            let (a, b, text) = ref_window(c, c.start, c.end.min(c.start + ref_secs));
+            let (a, b, text) = (sentences && c.end - c.start > ref_secs)
+                .then(|| sentence_window(c, ref_secs))
+                .flatten()
+                .unwrap_or_else(|| ref_window(c, c.start, c.end.min(c.start + ref_secs)));
             media::trim_ref(ref_src, &p, a, b.max(a + 0.05))?;
             batch.push(p);
             wins.push((b - a, text.unwrap_or_else(|| c.src_text.trim().to_string())));
@@ -3916,6 +3962,27 @@ mod tests {
         let ws: Vec<Value> = words.iter().map(|(w, a, b)| json!({ "word": w, "start": a, "end": b })).collect();
         s.extra.insert("words".into(), Value::Array(ws));
         s
+    }
+
+    #[test]
+    fn a_long_line_gives_qwen_its_last_whole_sentence_within_the_cap() {
+        let words = [
+            ("Я", 0.10, 0.30),
+            ("пришёл", 0.40, 1.20),
+            ("домой.", 1.30, 2.90),
+            ("Потом", 3.20, 4.00),
+            ("лёг", 4.10, 5.00),
+            ("спать!", 5.10, 7.80),
+            ("А", 8.10, 8.40),
+            ("утром", 8.50, 11.00),
+            ("ушёл.", 11.10, 12.50),
+        ];
+        let s = with_words(seg("s0", 0.0, 13.0, "x"), "Я пришёл домой. Потом лёг спать! А утром ушёл.", &words);
+        let (a, b, text) = sentence_window(&s, 10.0).unwrap();
+        assert_eq!(a, 0.0);
+        assert!(b > 7.80 && b < 8.10, "конец в паузе после «спать!»: {b}");
+        assert_eq!(text.as_deref(), Some("Я пришёл домой. Потом лёг спать!"));
+        assert!(sentence_window(&s, 2.0).is_none(), "ни одно предложение не кончается к 2 с");
     }
 
     #[test]

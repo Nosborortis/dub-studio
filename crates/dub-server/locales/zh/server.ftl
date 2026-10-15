@@ -748,4 +748,6 @@ setup-comp-drama3-purpose = 用原演员的声音为译文配音；第二个引�
 setup-comp-qwen3-tts-purpose = 用原演员的声音或模型自带的九种现成声音为译文配音；轻量的第三个引擎，NVIDIA 显卡上约占 3 GB 显存
 setup-comp-qwen3-tts-engine-name = Qwen3-TTS 引擎
 setup-comp-qwen3-tts-engine-purpose = Qwen3-TTS 发声所用的库和 12 Hz 编解码器，两种量化共用
+setup-comp-qwen3-tts-ru-stress-name = Qwen3-TTS 俄语重音
+setup-comp-qwen3-tts-ru-stress-purpose = 用 Qwen3-TTS 克隆的俄语配音的小附加组件：在台词中元音前加加号（z+amok）即把重音放在那里；不影响模型自带的音色
 render-drama-kept-original = ⚠ 第 { $line } 句：声音参考没有文字稿（其中未识别到语音），Drama 3 没有文字稿无法克隆 — 已保留原声
