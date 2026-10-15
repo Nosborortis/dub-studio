@@ -129,6 +129,8 @@ pub struct WhisperAsr {
     compute: String,
     /// Устройство исполнения: cpu|cuda.
     device: String,
+    /// Подсказка распознавателю (`--initial_prompt`): термины и написание, которые ждём в записи.
+    prompt: Option<String>,
 }
 
 impl WhisperAsr {
@@ -145,7 +147,14 @@ impl WhisperAsr {
             model: model.into(),
             compute: compute.into(),
             device: device.into(),
+            prompt: None,
         }
+    }
+
+    /// Подсказка распознавателю: текст уходит в `--initial_prompt` каждого прогона (у оконного — каждого окна).
+    pub fn with_prompt(mut self, prompt: Option<String>) -> Self {
+        self.prompt = prompt.map(|p| p.trim().to_string()).filter(|p| !p.is_empty());
+        self
     }
 
     /// Авто-выбор пути: короткий файл (< PAR_MIN_DUR) — монолитный прогон КАК РАНЬШЕ (паритет);
@@ -312,6 +321,9 @@ impl WhisperAsr {
         if !l.is_empty() && l != "auto" {
             cmd.arg("--language").arg(l);
         }
+        if let Some(p) = &self.prompt {
+            cmd.arg("--initial_prompt").arg(p);
+        }
         // Оффлайн: не ходить в сеть за моделью (веса уже на диске).
         cmd.env("HF_HUB_OFFLINE", "1").env("TRANSFORMERS_OFFLINE", "1");
         if let Some(dir) = self.bin.parent() {
@@ -414,6 +426,9 @@ impl WhisperAsr {
         let l = lang.trim();
         if !l.is_empty() && l != "auto" {
             cmd.arg("--language").arg(l);
+        }
+        if let Some(p) = &self.prompt {
+            cmd.arg("--initial_prompt").arg(p);
         }
         cmd.env("HF_HUB_OFFLINE", "1").env("TRANSFORMERS_OFFLINE", "1");
         if let Some(dir) = self.bin.parent() {
