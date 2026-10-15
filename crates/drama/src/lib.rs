@@ -48,6 +48,8 @@ type FnVersion = unsafe extern "C" fn() -> *const c_char;
 type FnSampleRate = unsafe extern "C" fn() -> u32;
 type FnLastError = unsafe extern "C" fn() -> *const c_char;
 type FnLoad = unsafe extern "C" fn(*const c_char, u32, u32) -> *mut RawEngine;
+type FnLoadEx = unsafe extern "C" fn(*const c_char, u32, u32, u32) -> *mut RawEngine;
+type FnExperts = unsafe extern "C" fn(*mut RawEngine, *mut u32, *mut u64, *mut u64) -> i32;
 type FnFree = unsafe extern "C" fn(*mut RawEngine);
 type FnSpeak = unsafe extern "C" fn(*mut RawEngine, *const c_char, *const c_char, *const c_char, *const Params, *mut *mut f32, *mut usize) -> i32;
 type FnChunk = unsafe extern "C" fn(*const f32, usize, *mut c_void);
@@ -70,6 +72,9 @@ struct Api {
     sample_rate: FnSampleRate,
     last_error: FnLastError,
     load: FnLoad,
+    /// Нет у DLL до engine-0.1.3.
+    load_ex: Option<FnLoadEx>,
+    experts: Option<FnExperts>,
     free: FnFree,
     speak: FnSpeak,
     /// Нет у DLL до engine-0.1.2.
@@ -104,6 +109,13 @@ fn cstring(s: &str, what: &str) -> Result<CString, DramaError> {
 impl DramaEngine {
     /// Грузит DLL и веса из `model_dir`. `lib_dirs` — каталоги её зависимостей (cuBLAS), они идут в PATH.
     pub fn load(dll: &Path, lib_dirs: &[&Path], model_dir: &Path, max_len: u32) -> Result<Self, DramaError> {
+        Self::load_limited(dll, lib_dirs, model_dir, max_len, 0)
+    }
+
+    /// Как `load`, и движок берёт не больше `vram_limit_mb` видеопамяти (0 — вся модель, если влезает в свободную,
+    /// иначе свободная без 1 ГБ). Не влезает модель целиком — эксперты (18 ГБ из 21) живут в RAM, а остаток лимита
+    /// идёт под кэш экспертов в видеопамяти: звук тот же, меньше видеопамяти — медленнее.
+    pub fn load_limited(dll: &Path, lib_dirs: &[&Path], model_dir: &Path, max_len: u32, vram_limit_mb: u32) -> Result<Self, DramaError> {
         for dir in lib_dirs.iter().copied().chain(dll.parent()) {
             add_dll_directory(dir);
         }
@@ -119,6 +131,8 @@ impl DramaEngine {
                 sample_rate: sym!("drama_sample_rate"),
                 last_error: sym!("drama_last_error"),
                 load: sym!("drama_load"),
+                load_ex: lib.get::<FnLoadEx>(b"drama_load_ex\0").ok().map(|s| *s),
+                experts: lib.get::<FnExperts>(b"drama_experts\0").ok().map(|s| *s),
                 free: sym!("drama_free"),
                 speak: sym!("drama_speak"),
                 speak_stream: lib.get::<FnSpeakStream>(b"drama_speak_stream\0").ok().map(|s| *s),
@@ -127,11 +141,26 @@ impl DramaEngine {
             }
         };
         let dir = cstring(&model_dir.to_string_lossy(), "model_dir")?;
-        let raw = unsafe { (api.load)(dir.as_ptr(), max_len, 512) };
+        let raw = match (api.load_ex, vram_limit_mb) {
+            (Some(load_ex), _) => unsafe { load_ex(dir.as_ptr(), max_len, 512, vram_limit_mb) },
+            (None, 0) => unsafe { (api.load)(dir.as_ptr(), max_len, 512) },
+            (None, _) => return Err(DramaError::Load("drama_load_ex is missing in this DLL (engine-0.1.3+ takes a VRAM limit)".into())),
+        };
         if raw.is_null() {
             return Err(DramaError::Engine(unsafe { last_error(&api) }));
         }
         Ok(Self { api, raw, _lib: lib })
+    }
+
+    /// Эксперты в RAM (а не в видеопамяти) и обращения к их кэшу с загрузки: (попадания, копии из RAM).
+    /// None — DLL без `drama_experts` (до engine-0.1.3): все эксперты в видеопамяти.
+    pub fn experts(&self) -> Result<Option<(bool, u64, u64)>, DramaError> {
+        let Some(f) = self.api.experts else { return Ok(None) };
+        let (mut placement, mut hits, mut misses) = (0u32, 0u64, 0u64);
+        if unsafe { f(self.raw, &mut placement, &mut hits, &mut misses) } != DRAMA_OK {
+            return Err(DramaError::Engine(unsafe { last_error(&self.api) }));
+        }
+        Ok(Some((placement == 2, hits, misses)))
     }
 
     pub fn version(&self) -> String {
