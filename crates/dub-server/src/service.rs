@@ -248,6 +248,21 @@ pub fn wait_until_serving(port: u16, timeout: Duration) -> bool {
     false
 }
 
+/// Задач в очереди и в работе у студии на порту; None — сервис не ответил за `timeout`.
+pub fn jobs_in_progress(port: u16, timeout: Duration) -> Option<usize> {
+    let addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, port);
+    let mut stream = TcpStream::connect_timeout(&addr.into(), timeout).ok()?;
+    let _ = stream.set_read_timeout(Some(timeout));
+    let _ = stream.set_write_timeout(Some(timeout));
+    let request = format!("GET /jobs HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nAccept: application/json\r\n\r\n");
+    stream.write_all(request.as_bytes()).ok()?;
+    let mut raw = Vec::new();
+    let _ = stream.read_to_end(&mut raw);
+    let text = String::from_utf8_lossy(&raw);
+    let body: Value = serde_json::from_str(text.split_once("\r\n\r\n")?.1).ok()?;
+    Some(body["jobs"].as_array()?.iter().filter(|j| matches!(j["status"].as_str(), Some("queued" | "running"))).count())
+}
+
 pub(crate) fn record_port(port: u16) {
     let _ = LISTEN_PORT.set(port);
 }

@@ -2735,6 +2735,7 @@ mod tests {
         ("POST", "/mcp", "the MCP server itself"),
         ("PUT", "/settings/ui-lang", "the window reports the language it is shown in, so the server speaks it"),
         ("GET", "/mcp/status", "the settings page's view of the agent"),
+        ("GET", "/mcp/agent-llm/images/{name}", "a frame of a request the agent already holds by path and URL in assistant_requests_wait"),
         ("GET", "/mcp/window", "the window's own stream of commands: the ui_* and editor_* tools go through it"),
         ("POST", "/mcp/window/result", "the window's answers to those commands"),
         ("POST", "/mcp/window/focus", "the window the person turned to"),
