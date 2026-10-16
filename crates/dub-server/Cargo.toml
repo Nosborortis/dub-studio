@@ -17,7 +17,11 @@ dub-ocr = { path = "../dub-ocr" }
 dub-faces = { path = "../dub-faces" }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 audiocpp = { path = "../audiocpp" }
+drama = { path = "../drama" }
+qwentts = { path = "../qwentts" }
 hound = "3"
+realfft = "3.5"
+strsim = "0.11"
 axum = { version = "0.8", features = ["multipart"] }
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.7", features = ["cors", "fs"] }
@@ -35,6 +39,7 @@ mime_guess = "2"
 percent-encoding = "2.3"
 # MCP: картинки кадров в ответе инструмента, заголовки =?base64?…?= и границы since/until в часовом поясе компьютера.
 base64 = "0.23"
+trash = "5"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 # setup-автозакачка: HTTPS-загрузка компонентов (rustls, без системного OpenSSL) + распаковка zip/wheel.
 # rustls: собственный криптопровайдер reqwest (aws-lc-rs) и корни из системного хранилища сертификатов.
@@ -60,9 +65,14 @@ blake3 = "1"
 # SHA-256 скачанных моделей и движков против закреплённых хэшей (HF lfs.oid, digest GitHub, PyPI/NVIDIA).
 sha2 = "0.11"
 # Studio Hub: anonymous statistics and the news feed (telemetry only after the first-run screen showed its choice).
-studio-hub-client = { git = "https://github.com/timoncool/studio-hub-client", rev = "531327a64882580bd44f8e173908be0a046c7adc" }
+studio-hub-client = { git = "https://github.com/timoncool/studio-hub-client", rev = "365c2b757bfddd45fff67e7264b41f4f961a0032" }
 # чистка текста перед синтезом (tts_text.rs): теги звуков, разметка, метки спикеров.
 regex = "1"
+# Supertonic 3 и RUAccent (ударения русской озвучки) — ONNX на той же onnxruntime 1.28.2, что распознавание.
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic", "tracing", "api-28", "cuda"] }
+unicode-normalization = "0.1"
+tokenizers = { version = "0.23", default-features = false, features = ["onig"] }
+fst = "0.4"
 rust-genai = { version = "=0.3.1", default-features = false }
 
 # job object с kill-on-close: сайдкары не переживают студию (process_group.rs).

@@ -89,8 +89,26 @@ pub fn snapshot() -> HardwareSnapshot {
     snap
 }
 
-/// Видеопамять карты 0, байт (NVML); 0 — карты нет или NVML не ответил.
+/// Объём из `var` в ГБ, если он задан: проверка поведения студии на другой машине.
+fn simulated(var: &str) -> Option<u64> {
+    std::env::var(var).ok().and_then(|v| v.parse::<u64>().ok()).map(|gb| gb << 30)
+}
+
+/// Оперативная память машины, байт (sysinfo); `DUB_STUDIO_SIMULATE_RAM_GB` подменяет её.
+pub fn total_ram() -> u64 {
+    if let Some(bytes) = simulated("DUB_STUDIO_SIMULATE_RAM_GB") {
+        return bytes;
+    }
+    let mut sg = sysinfo().lock().unwrap();
+    sg.refresh_memory();
+    sg.total_memory()
+}
+
+/// Видеопамять карты 0, байт (NVML); 0 — карты нет или NVML не ответил. `DUB_STUDIO_SIMULATE_VRAM_GB` подменяет её.
 pub fn total_vram() -> u64 {
+    if let Some(bytes) = simulated("DUB_STUDIO_SIMULATE_VRAM_GB") {
+        return bytes;
+    }
     let mut ng = nvml().lock().unwrap();
     if ng.is_none() {
         *ng = Nvml::init().ok();

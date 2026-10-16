@@ -127,7 +127,7 @@ The same results come two ways.
 - Each makes a project of the file, listed by `projects_list` with `source: agent`. The
   same tool called again with the same file and arguments finds that project and answers
   from the finished work at once; a changed file or other arguments make another project.
-  `project_delete` removes it; nothing else does.
+  `project_delete` moves it to the system's recycle bin, `project_restore` takes it back; nothing else does.
 - A call waits for the studio up to `seconds` (45 by default, 55 at most). When the work
   takes longer it answers `done: false` with the `job` at work: `studio_wait` with its
   `job_id`, then call the tool again with the same arguments - the finished stages are
@@ -288,6 +288,18 @@ for the cloud at once. The proxy has three modes: `system` (as in Windows), `cus
 address, `kind` giving the scheme of an address without one) and `off`; `proxy_test` checks a mode
 and address before `proxy_settings_set` stores them (`proxy_settings_get` shows them, the password hidden).
 
+### You as the studio's language model
+
+With `llm_provider` (and `vision_provider`) set to `agent` - "Agent (MCP)" beside Gemma, a local server
+and OpenRouter in Settings, Models - the studio asks you what it would ask its own model: translating
+the lines, shortening them, the glossary (target `llm`) and the video's frames for subtitle style,
+titles and scene (target `vision`). Keep calling `assistant_requests_wait`; each request carries the
+instructions, the request, `answer_schema` and, for frames, `images` - a file path on this computer
+and a URL of this server for each, named in the request as `[image N: path]`; read them as pictures.
+Answer with `assistant_request_answer`: the JSON object `answer_schema` describes, written by the
+instructions, as the studio's model would. A request waits about nine minutes, then the stage fails
+with that reason.
+
 ## Working in the window, in front of the user
 
 The studio's window is the second way in: `editor_*` tools work in its editor exactly as
@@ -375,6 +387,13 @@ without it they answer that the window is not open, and everything else still wo
   `engine_preset_apply`, `proxy_test`, `proxy_settings_get`, `proxy_settings_set`,
   `fonts_list`, `caption_presets_list`, `launch_defaults_get`, `launch_defaults_set` (what the start
   screen's form opens with), `studio_paths` (where the data, projects and models are).
+- **diagnostics**: `diagnostics_get` (version, system, card against CUDA, ffmpeg, components, the
+  engines' missing DLLs and the latest log lines), `diagnostics_report` (a ZIP for a bug report, keys
+  masked), `diagnostics_report_reveal` and `diagnostics_logs_reveal` (in Explorer, for the user).
+- **journal**: the activity journal the user reads in the window's status bar, kept across restarts;
+  your changes are written there by themselves (verb, kind and what you named). `journal_get`,
+  `journal_note` (a line of your own: what you did, what you need from them), `journal_delete`,
+  `journal_clear`.
 - **openrouter**: `openrouter_status`, `openrouter_set_key`, `openrouter_delete_key`,
   `openrouter_verify`, `openrouter_models`, `openrouter_voices`, `openrouter_catalog`,
   `openrouter_catalog_refresh`.
@@ -385,7 +404,7 @@ without it they answer that the window is not open, and everything else still wo
   `project_transcript` (the transcript without the window),
   `project_analyze`, `project_resume`, `project_retranslate`, `project_remix`,
   `project_align`, `project_dub_audio`, `project_render`, `project_export_lang`,
-  `project_put`, `project_patch` (any edit by its op), `project_delete`,
+  `project_put`, `project_patch` (any edit by its op), `project_delete`, `project_restore`,
   `project_waveform`, `project_frame`.
 - **videos by link** (yt-dlp): `url_probe`, `project_create_from_url` (in the background, wait
   with `studio_wait`), `url_fetches_list`, `url_fetch_get`, `url_fetch_cancel`,

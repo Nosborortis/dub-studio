@@ -19,12 +19,14 @@ mod cloud_tts;
 mod cloud_voices;
 mod compose;
 mod credentials;
-#[cfg(test)]
+pub mod diagnostics;
+mod journal;
 #[cfg(windows)]
 mod dll_imports;
 mod downloads;
 mod dub_timing;
 mod endpoints;
+mod checks;
 mod f0;
 mod fitplan;
 mod frame;
@@ -57,13 +59,16 @@ pub mod service;
 mod setup;
 mod shorten;
 mod spa;
+mod stress;
 mod studio_settings;
 mod subalign;
 mod subimport;
 mod subs_text;
 mod subtracks;
+mod supertonic;
 mod takes;
 mod translate;
+mod tts_audit;
 mod tts_text;
 mod tts_trim;
 mod url_import;
@@ -315,7 +320,14 @@ pub async fn serve(state: AppState, listener: std::net::TcpListener) -> anyhow::
     listener.set_nonblocking(true)?;
     service::record_port(listener.local_addr()?.port());
     let listener = tokio::net::TcpListener::from_std(listener)?;
-    hub::start(&state.repo_root);
+    hub::start(&state.repo_root, &state.workspace);
+    // models another program already has are linked in at start; only what is missing everywhere is downloaded
+    let root = state.repo_root.clone();
+    tokio::task::spawn_blocking(move || {
+        for (id, app) in setup::import_from_neighbors(&root, &hub::neighbors(), false, None) {
+            tracing::info!("model {id} taken from {app}, not downloaded");
+        }
+    });
     axum::serve(listener, build_router(state)).await?;
     Ok(())
 }
@@ -325,6 +337,16 @@ impl AppState {
         let repo_root = repo_root.as_ref().to_path_buf();
         let workspace = repo_root.join("workspace");
         let _ = std::fs::create_dir_all(&workspace);
+        // the language the window last showed, so what the studio says before a window opens is in it too
+        match std::fs::read_to_string(repo_root.join(UI_LANG_FILE)) {
+            Ok(code) => {
+                if let Err(e) = i18n::set_language(code.trim()) {
+                    tracing::error!("[ERROR] {UI_LANG_FILE}: {e}");
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => tracing::error!("[ERROR] {UI_LANG_FILE}: {e}"),
+        }
         let interrupted = job_store::recover(&workspace);
         if interrupted > 0 {
             eprintln!("[jobs] interrupted project jobs: {interrupted} (they can be resumed)");
@@ -467,6 +489,7 @@ fn clean_partials(dir: &Path) {
 }
 
 pub fn build_router(state: AppState) -> Router {
+    journal::open(&state.repo_root);
     let api = Router::new()
         .route("/health", get(service::health))
         .route("/engine/capabilities", get(capabilities))
@@ -568,6 +591,13 @@ pub fn build_router(state: AppState) -> Router {
             "/projects/{pid}",
             get(get_project).patch(patch_project).put(endpoints::put_project).delete(delete_project),
         )
+        .route("/projects/{pid}/restore", post(restore_project))
+        .route("/diagnostics", get(diagnostics::get))
+        .route("/diagnostics/report", post(diagnostics::make_report))
+        .route("/diagnostics/report/reveal", post(diagnostics::reveal_report))
+        .route("/diagnostics/logs/reveal", post(diagnostics::reveal_logs))
+        .route("/journal", get(journal::read).post(journal::write).delete(journal::clear))
+        .route("/journal/{id}", axum::routing::delete(journal::remove))
         .route("/projects/{pid}/analyze", post(analyze_project))
         .route("/projects/{pid}/resume", post(resume_project))
         .route("/projects/{pid}/align", post(align_project))
@@ -613,6 +643,8 @@ pub fn build_router(state: AppState) -> Router {
         .layer(axum::middleware::from_fn(mcp::track))
         .merge(hub::router())
         .with_state(state);
+    // counted before the MCP tools take the router, so an agent's calls count as the features they use
+    let api = hub::track(api);
     // MCP-инструменты зовут те же маршруты внутри процесса. Гард Origin/Host вешается ниже этой точки,
     // снаружи /mcp и /mcp/status, а не внутри `api`.
     mcp::install(api.clone());
@@ -622,6 +654,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/mcp/window/result", post(mcp::window_result).layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024)),
         )
         .route("/mcp/window/focus", post(mcp::window_focus))
+        .route("/mcp/agent-llm/v1/chat/completions", post(mcp::agent_llm))
+        .route("/mcp/agent-llm/images/{name}", get(mcp::agent_llm_image))
         .layer(guard::cors())
         // Снаружи всех слоёв: чужой Origin/Host получает 403 раньше CORS, SPA и любой ручки.
         .layer(axum::middleware::from_fn(guard::origin_guard))
@@ -810,6 +844,10 @@ fn ensure_job_components(
             .unwrap_or(false)
     };
     let mut need: Vec<String> = Vec::new();
+    // ffmpeg/ffprobe нужны любой джобе, а до неё можно дойти мимо экрана первого запуска (?pid=, сбой /setup/status).
+    if missing("ffmpeg") {
+        need.push("ffmpeg".to_string());
+    }
     // Кастинг персонажей (#115) → его модели (детект лиц + эмбеддинг лица/голоса + аниме/окклюдер).
     if casting && missing("casting") {
         need.push("casting".to_string());
@@ -897,7 +935,97 @@ fn list_voice_names(dir: &Path) -> Vec<String> {
 
 /// GET /voices — список голосов из каталога (пак + записи с микрофона).
 async fn voices_list(State(st): State<AppState>) -> Json<Value> {
-    Json(json!({ "voices": list_voice_names(&st.voices_dir) }))
+    let mut voices = list_voice_names(&st.voices_dir);
+    voices.extend(qwen_voice_names(&st.models_root));
+    voices.extend(supertonic_voice_names(&st.models_root));
+    Json(json!({ "voices": voices }))
+}
+
+/// Девять голосов Qwen3-TTS (`qwen:<id>`), когда он выбран движком озвучки: их дают персонажам, как записи пака.
+fn qwen_voice_names(mroot: &Path) -> Vec<String> {
+    let selection = models::load_selection(mroot);
+    let chosen = selection.get("tts").and_then(|v| v.as_str()).and_then(models::qwen_quant);
+    match chosen {
+        Some(_) => qwentts::SPEAKERS.iter().map(|(id, ..)| format!("{}{id}", render::QWEN_VOICE)).collect(),
+        None => Vec::new(),
+    }
+}
+
+/// Десять голосов Supertonic 3 (`supertonic:<F1..M5>`), когда он выбран движком озвучки.
+fn supertonic_voice_names(mroot: &Path) -> Vec<String> {
+    if models::load_selection(mroot).get("tts").and_then(|v| v.as_str()) != Some(models::SUPERTONIC_TTS) {
+        return Vec::new();
+    }
+    supertonic::VOICES.iter().map(|v| format!("{}{v}", render::SUPERTONIC_VOICE)).collect()
+}
+
+/// Проба голоса Supertonic 3: один раз сказанная фраза, дальше файл из models/supertonic3/samples.
+async fn supertonic_voice_sample(mroot: &Path, voice: &str, req: axum::http::Request<axum::body::Body>) -> Response {
+    if !supertonic::VOICES.contains(&voice) {
+        return (StatusCode::NOT_FOUND, "voice not found").into_response();
+    }
+    if !supertonic::installed(mroot) {
+        return (StatusCode::NOT_FOUND, "Supertonic 3 is not installed").into_response();
+    }
+    let sample = supertonic::dir(mroot).join("samples").join(format!("{voice}.wav"));
+    if !sample.is_file() {
+        let (root, out, voice) = (mroot.to_path_buf(), sample.clone(), voice.to_string());
+        let made = tokio::task::spawn_blocking(move || -> Result<(), String> {
+            static MAKING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+            let _one = MAKING.lock().unwrap_or_else(|e| e.into_inner());
+            if out.is_file() {
+                return Ok(());
+            }
+            let model = supertonic::Model::load(&root, models::local_backend(&root) == "gpu")?;
+            let audio = model.speak("Hello! This is how my voice sounds in your dub.", "en", &voice, supertonic::DEFAULT_STEPS, supertonic::DEFAULT_SPEED, 7)?;
+            if let Some(dir) = out.parent() {
+                std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+            }
+            wavio::write_mono_f32(&out, &audio, model.sample_rate())
+        })
+        .await;
+        match made {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return (StatusCode::SERVICE_UNAVAILABLE, e).into_response(),
+            Err(e) => return join_failure(e),
+        }
+    }
+    serve_file_range(&sample, req, None).await
+}
+
+/// Проба голоса Qwen3-TTS: один раз сказанная фраза, дальше файл из models/qwen3-tts/samples.
+async fn qwen_voice_sample(mroot: &Path, speaker: &str, req: axum::http::Request<axum::body::Body>) -> Response {
+    let Some(quant) = models::load_selection(mroot).get("tts").and_then(|v| v.as_str()).and_then(models::qwen_quant) else {
+        return (StatusCode::NOT_FOUND, "Qwen3-TTS is not the chosen voice engine").into_response();
+    };
+    if !qwentts::SPEAKERS.iter().any(|(id, ..)| *id == speaker) {
+        return (StatusCode::NOT_FOUND, "voice not found").into_response();
+    }
+    let sample = qwentts::dir(mroot).join("samples").join(format!("{speaker}.wav"));
+    if !sample.is_file() {
+        let (root, out, speaker) = (mroot.to_path_buf(), sample.clone(), speaker.to_string());
+        let made = tokio::task::spawn_blocking(move || -> Result<(), String> {
+            static MAKING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+            let _one = MAKING.lock().unwrap_or_else(|e| e.into_inner());
+            if out.is_file() {
+                return Ok(());
+            }
+            let engine = qwentts::QwenEngine::load(&root, quant, false, false).map_err(|e| e.to_string())?;
+            let say = qwentts::Say { text: "Hello! This is how my voice sounds in your dub.", lang: "en", speaker: Some(&speaker), reference: None, seed: 7, temperature: 0.7, max_new_tokens: 0 };
+            let audio = engine.speak(&say).map_err(|e| e.to_string())?;
+            if let Some(dir) = out.parent() {
+                std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+            }
+            wavio::write_mono_f32(&out, &audio, qwentts::SAMPLE_RATE)
+        })
+        .await;
+        match made {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return (StatusCode::SERVICE_UNAVAILABLE, e).into_response(),
+            Err(e) => return join_failure(e),
+        }
+    }
+    serve_file_range(&sample, req, None).await
 }
 
 /// GET /voices/sample?name=<name> — отдать аудио-сэмпл голоса (voices/<name>.wav|.mp3) с Range для <audio>
@@ -907,6 +1035,12 @@ async fn voice_sample(
     axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>,
     req: axum::http::Request<axum::body::Body>,
 ) -> Response {
+    if let Some(speaker) = q.get("name").and_then(|name| name.strip_prefix(render::QWEN_VOICE)) {
+        return qwen_voice_sample(&st.models_root, speaker, req).await;
+    }
+    if let Some(voice) = q.get("name").and_then(|name| name.strip_prefix(render::SUPERTONIC_VOICE)) {
+        return supertonic_voice_sample(&st.models_root, voice, req).await;
+    }
     let name = sanitize_voice_name(q.get("name").map(|s| s.as_str()).unwrap_or(""));
     if name.is_empty() {
         return (StatusCode::BAD_REQUEST, "no name").into_response();
@@ -1526,7 +1660,7 @@ async fn setup_browse(State(st): State<AppState>, Json(body): Json<Value>) -> Re
         rfd::FileDialog::new()
             .set_title(title)
             .pick_folder()
-            .map(|d| setup::import_from_dir(&root, &d, only.as_deref()))
+            .map(|d| setup::import_from_dir(&root, &d, only.as_deref(), true, false))
     })
     .await;
     let report = match res {
@@ -1554,7 +1688,7 @@ async fn setup_import(State(st): State<AppState>, Json(body): Json<Value>) -> Re
     let only = body.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
     let root = st.repo_root.clone();
     let report = match tokio::task::spawn_blocking(move || {
-        setup::import_from_dir(&root, Path::new(&path), only.as_deref())
+        setup::import_from_dir(&root, Path::new(&path), only.as_deref(), true, false)
     }).await {
         Ok(r) => r,
         Err(e) => return join_failure(e),
@@ -1804,7 +1938,7 @@ async fn get_project(State(st): State<AppState>, AxPath(pid): AxPath<String>) ->
 pub(crate) fn project_response(st: &AppState, dir: &Path, proj: &Project) -> Response {
     let rules = fitplan::rules(&st.models_root, st.opts.max_stretch as f64);
     let mut shown = proj.clone();
-    tts_text::annotate(&mut shown);
+    tts_text::annotate(&mut shown, tts_text::Speak::load(&st.models_root));
     match fitplan::decorate(dir, &shown, &rules) {
         Ok(mut v) => {
             v["source_name"] = source_name(dir, &proj.meta.video).into();
@@ -1824,8 +1958,7 @@ pub(crate) fn source_name(dir: &Path, video: &str) -> String {
         .unwrap_or_else(|| Path::new(video).file_name().and_then(|s| s.to_str()).unwrap_or(video).to_string())
 }
 
-// ─── DELETE /projects/{pid} — удалить проект (весь каталог workspace/<pid>) ───
-// Убирает проект из «последних» на главной И реально стирает его данные с диска.
+// ─── DELETE /projects/{pid} — проект в корзину системы (весь каталог workspace/<pid>), откуда его вернёт restore ───
 async fn delete_project(State(st): State<AppState>, AxPath(pid): AxPath<String>) -> Response {
     let dir = match st.proj_dir(&pid) {
         Ok(d) => d,
@@ -1838,13 +1971,56 @@ async fn delete_project(State(st): State<AppState>, AxPath(pid): AxPath<String>)
         )
             .into_response();
     }
-    match std::fs::remove_dir_all(&dir) {
-        Ok(()) => ([("content-type", "application/json")], "{\"ok\":true}").into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            t!("project-delete-failed", path = dir.display().to_string(), error = e.to_string()),
-        )
-            .into_response(),
+    let shown = dir.display().to_string();
+    // the window may still be reading the project's video for a frame: Windows aborts the move while a file is open,
+    // and lets it through once the read ends
+    let to_bin = move || {
+        let mut tries = 0;
+        loop {
+            match trash::delete(&dir) {
+                Ok(()) => return Ok(()),
+                Err(e) if tries < 12 => {
+                    tries += 1;
+                    tracing::warn!("project {} did not go to the recycle bin yet ({e}); trying again", dir.display());
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                }
+                Err(e) => return Err(t!("project-delete-in-use", error = e.to_string())),
+            }
+        }
+    };
+    match tokio::task::spawn_blocking(to_bin).await {
+        Ok(Ok(())) => ([("content-type", "application/json")], "{\"ok\":true}").into_response(),
+        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, t!("project-delete-failed", path = shown, error = e)).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, t!("project-delete-failed", path = shown, error = e.to_string())).into_response(),
+    }
+}
+
+// ─── POST /projects/{pid}/restore — проект, удалённый последним под этим id, обратно из корзины системы ───
+async fn restore_project(State(st): State<AppState>, AxPath(pid): AxPath<String>) -> Response {
+    if pid.is_empty() || !pid.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return (StatusCode::NOT_FOUND, "project not found").into_response();
+    }
+    let dir = st.workspace.join(&pid);
+    if dir.exists() {
+        return (StatusCode::CONFLICT, t!("project-restore-exists")).into_response();
+    }
+    let (workspace, name) = (st.workspace.clone(), pid.clone());
+    let found = tokio::task::spawn_blocking(move || -> Result<(), String> {
+        // the bin keeps the folder the project was deleted from as the system spells it
+        let home = std::fs::canonicalize(&workspace).map_err(|e| format!("{}: {e}", workspace.display()))?;
+        let item = trash::os_limited::list()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .filter(|i| i.name == name.as_str() && std::fs::canonicalize(&i.original_parent).is_ok_and(|parent| parent == home))
+            .max_by_key(|i| i.time_deleted)
+            .ok_or_else(|| t!("project-restore-gone"))?;
+        trash::os_limited::restore_all([item]).map_err(|e| e.to_string())
+    })
+    .await;
+    match found {
+        Ok(Ok(())) => Json(json!({ "restored": pid })).into_response(),
+        Ok(Err(e)) => (StatusCode::NOT_FOUND, e).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
 
@@ -2356,19 +2532,23 @@ async fn export_lang_enqueue(st: &AppState, pid: &str, args: &Value,
             .map_err(|e| t!("translate-no-llm", error = e))?;
             let client = prov.client();
             // Сегменты: src_text -> Lx (раскладка/стили/тайминг остаются от пользователя).
+            let (checks, genders) = crate::translate::line_checks(&models_root_xl, &dst_for_job, &p);
             let mut segs: Vec<Seg> = p
                 .segments
                 .iter()
-                .map(|s| {
+                .zip(genders)
+                .map(|(s, gender)| {
                     let spk = crate::analyze::speaker_to_i64(s.speaker.as_deref());
                     // Вручную добавленные фразы имеют пустой src_text — их перевод берём из текущего tgt_text
                     // (он на СТАРОМ целевом языке), иначе flat_run их пропустит и они останутся на старом языке.
                     let src = if s.src_text.trim().is_empty() { s.tgt_text.clone() } else { s.src_text.clone() };
-                    Seg::new(src, spk)
+                    let mut seg = Seg::new(src, spk);
+                    seg.gender = gender;
+                    seg
                 })
                 .collect();
             let contract = dub_translate::Contract::for_client(client);
-            let opts = FlatOpts { src: "auto", tgt: &lang_c, spoken, style: &p.audio.translate_style, glossary: &p.glossary, contract: &contract,
+            let opts = FlatOpts { src: "auto", tgt: &lang_c, spoken, style: &p.audio.translate_style, glossary: &p.glossary, contract: &contract, checks,
             };
             flat_run_with(client, &mut segs, &opts, &mut |m: &dub_translate::Note| {
                 progress(json!({ "type": "progress", "stage": "translate", "msg": m.localize() }))
@@ -2392,7 +2572,7 @@ async fn export_lang_enqueue(st: &AppState, pid: &str, args: &Value,
             // очищаем tgt -> рендер покажет исходный text (лучше, чем титр на старом языке рядом с новыми сегментами).
             if !p.captions.titles.is_empty() {
                 let mut tsegs: Vec<Seg> = p.captions.titles.iter().map(|ti| Seg::new(ti.text.clone(), 0)).collect();
-                let topts = FlatOpts { src: "auto", tgt: &lang_c, spoken: false, style: &p.audio.translate_style, glossary: &[], contract: &contract,
+                let topts = FlatOpts { src: "auto", tgt: &lang_c, spoken: false, style: &p.audio.translate_style, glossary: &[], contract: &contract, checks: dub_translate::TextChecks::default(),
                 };
                 let done = flat_run_with(client, &mut tsegs, &topts, &mut |m: &dub_translate::Note| {
                     progress(json!({ "type": "progress", "stage": "translate", "msg": m.localize() }))
@@ -2506,17 +2686,20 @@ async fn retranslate_enqueue(st: &AppState, pid: &str, args: &Value,
             (s.id.clone(), text.clone())
         };
         let inputs: Vec<(String, String)> = p.segments.iter().map(input).collect();
+        let (checks, genders) = crate::translate::line_checks(&models_root_xl, &dir_for_job, &p);
         let mut segs: Vec<Seg> = p
             .segments
             .iter()
             .zip(&inputs)
-            .map(|(s, (_, text))| {
-                Seg::new(text.clone(), crate::analyze::speaker_to_i64(s.speaker.as_deref()),
-                )
+            .zip(genders)
+            .map(|((s, (_, text)), gender)| {
+                let mut seg = Seg::new(text.clone(), crate::analyze::speaker_to_i64(s.speaker.as_deref()));
+                seg.gender = gender;
+                seg
             })
             .collect();
         let contract = dub_translate::Contract::for_client(client);
-        let opts = FlatOpts { src: "auto", tgt: &lang_c, spoken, style: &p.audio.translate_style, glossary: &p.glossary, contract: &contract,
+        let opts = FlatOpts { src: "auto", tgt: &lang_c, spoken, style: &p.audio.translate_style, glossary: &p.glossary, contract: &contract, checks,
         };
         flat_run_with(client, &mut segs, &opts, &mut |m: &dub_translate::Note| {
             progress(json!({ "type": "progress", "stage": "translate", "msg": m.localize() }))
@@ -2534,7 +2717,7 @@ async fn retranslate_enqueue(st: &AppState, pid: &str, args: &Value,
         let mut title_tgts: Vec<String> = Vec::new();
         if !titles.is_empty() {
             let mut tsegs: Vec<Seg> = titles.iter().map(|text| Seg::new(text.clone(), 0)).collect();
-            let topts = FlatOpts { src: "auto", tgt: &lang_c, spoken: false, style: &p.audio.translate_style, glossary: &[], contract: &contract,
+            let topts = FlatOpts { src: "auto", tgt: &lang_c, spoken: false, style: &p.audio.translate_style, glossary: &[], contract: &contract, checks: dub_translate::TextChecks::default(),
             };
             flat_run_with(client, &mut tsegs, &topts, &mut |m: &dub_translate::Note| {
                 progress(json!({ "type": "progress", "stage": "translate", "msg": m.localize() }))
@@ -3184,9 +3367,14 @@ async fn spa_fallback(State(st): State<AppState>, uri: axum::http::Uri) -> Respo
     spa::serve_spa(st.web_root.as_deref(), path).await
 }
 
-/// The language the window shows, reported by the window so the server speaks it too.
-async fn set_ui_lang(Json(body): Json<Value>) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+/// Where the window's language is kept between runs, in the data root.
+const UI_LANG_FILE: &str = "ui-lang.txt";
+
+/// The language the window shows, reported by the window so the server speaks it too, now and after a restart.
+async fn set_ui_lang(State(st): State<AppState>, Json(body): Json<Value>) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let lang = body.get("lang").and_then(Value::as_str).unwrap_or_default();
     i18n::set_language(lang).map_err(|detail| (StatusCode::BAD_REQUEST, Json(json!({ "code": "bad_lang", "detail": detail }))))?;
+    let file = st.repo_root.join(UI_LANG_FILE);
+    std::fs::write(&file, lang).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "code": "write_failed", "detail": format!("{}: {e}", file.display()) }))))?;
     Ok(Json(json!({ "lang": lang })))
 }

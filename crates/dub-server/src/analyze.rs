@@ -356,8 +356,9 @@ fn has_speech(segs: &[Segment], total: f64) -> bool {
     cov >= 0.10 && uniq >= 0.35
 }
 
-/// Является ли символ CJK-иероглифом (китайский, японский кандзи, корейский хангыль).
-fn is_cjk(c: char) -> bool {
+/// Является ли символ CJK-иероглифом (китайский, японский кандзи, корейский хангыль): каждый — сказанный слог
+/// и отдельное слово при сравнении текстов, пробелов между словами эти письменности не ставят.
+pub(crate) fn is_cjk(c: char) -> bool {
     matches!(c as u32,
         0x4E00..=0x9FFF      // CJK Unified Ideographs
         | 0x3400..=0x4DBF    // CJK Extension A
@@ -705,6 +706,7 @@ fn provider_tag(paths: &AnalyzePaths, stage: &str) -> String {
             format!("server:{}:{}", crate::models::server_url(mr), crate::models::server_model(mr, stage))
         }
         crate::models::LlmBackend::OpenRouter => format!("openrouter:{}", crate::models::openrouter_model(mr, stage)),
+        crate::models::LlmBackend::Agent => "agent".to_string(),
     }
 }
 
@@ -1221,7 +1223,13 @@ pub fn run(args: &AnalyzeArgs, paths: &AnalyzePaths, progress: &Progress) -> Res
         let turns: &[dub_asr::Turn] = diar.as_ref().map(|d| d.turns.as_slice()).unwrap_or(&[]);
         let evidence = crate::asr_filter::VoiceEvidence::build(clean, turns, &vocals16)
             .map_err(|e| t!("analyze-hallucination-filter", error = e.to_string()))?;
-        let report = crate::asr_filter::apply(&mut segments, rules, &evidence);
+        let sel = crate::models::load_selection(&paths.models_root);
+        let loops = dub_asr::LoopRules {
+            inside: crate::checks::on(&sel, "asr_repeat_inside"),
+            lines: crate::checks::on(&sel, "asr_repeat_lines"),
+            long_words: crate::checks::on(&sel, "asr_long_words"),
+        };
+        let report = crate::asr_filter::apply(&mut segments, rules, loops, &evidence);
         if !report.hidden.is_empty() {
             emit(progress, "asr", &t!(
                 "analyze-hidden-hallucinations",

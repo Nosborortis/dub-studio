@@ -1,5 +1,6 @@
 import i18n from "./i18n";
 import type en from "../locales/en.json";
+import { requireCloud } from "./cloudConsent";
 // Dub Studio API client — talks to the single-worker FastAPI backend over the dub-engine.
 // dev: Vite (5173) -> dub-server (8793, DUB_STUDIO_PORT). desktop/portable: the server serves the SPA
 // itself, so calls are same-origin (""). VITE_API overrides both.
@@ -155,7 +156,7 @@ const analyzePostQuery = (p: AnalyzePost): string =>
   + (p.keepOriginal ? `&keep_original=1&container=${encodeURIComponent(p.keepOriginal.container)}` : "")
   + (p.voiceSlots ? `&voice_slots=${encodeURIComponent(JSON.stringify(p.voiceSlots))}` : "");
 // Подключённый к MCP-серверу агент: последний вызов и сколько секунд назад. window_open появится с мостом окна.
-export type McpStatus = { agent_connected: boolean; agent_last_call: string | null; agent_seconds_ago: number | null; agent_calls: number; window_open?: boolean };
+export type McpStatus = { agent_connected: boolean; agent_last_call: string | null; agent_seconds_ago: number | null; agent_calls: number; window_open?: boolean; requests_waiting?: number };
 export type ModelStack = { asr: string; llm: string; vision: string; tts: string };
 // Выбор active.json: строковые слоты + флаги секретов. Ключ OpenRouter и пароль прокси сервер не отдаёт.
 export type Selection = { [slot: string]: string | boolean | undefined; or_key_set?: boolean; proxy_password_set?: boolean };
@@ -193,6 +194,7 @@ export type SetupComponent = {
   size: number; installed: boolean; bytesOnDisk: number;
   spaceNeeded: number;   // место на томе моделей под докачку (остаток + распаковка архивов)
   missing: string[]; detail?: string | null; externalUrl?: string | null; vram?: number; fitsVram?: boolean | null;
+  takenFrom?: string | null;   // id программы, у которой модель взята в этом запуске вместо закачки
 };
 // Фоновая закачка (мимо GPU-очереди): её состояние приходит в /setup/status.active, опрос вместо SSE.
 export type DownloadStatus = "downloading" | "completed" | "paused" | "interrupted" | "failed";
@@ -276,6 +278,18 @@ async function setupPost<T>(path: string, body: unknown): Promise<T> {
 }
 
 // Ошибка ручки с кодом ({error, detail}): текст для окна выбирается по коду через t().
+/** A line of the journal: an agent's change (verb, kind, target) or a message the window showed (text). */
+export type JournalLine = { id: number; at: number; source: "agent" | "studio"; tone: "work" | "done" | "error" | "agent"; verb: string; kind: string; target: string; text: string };
+export const journalApi = {
+  read: () => fetch(`${BASE}/journal`).then(j<JournalLine[]>),
+  write: (tone: JournalLine["tone"], text: string) =>
+    fetch(`${BASE}/journal`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "studio", tone, text }) }).then(j<JournalLine>),
+  clear: async (): Promise<void> => {
+    const r = await fetch(`${BASE}/journal`, { method: "DELETE" });
+    if (!r.ok) throw new Error(`journal: http ${r.status}: ${await r.text()}`);
+  },
+};
+
 export class ApiError extends Error {
   code: string;
   detail: string;
@@ -353,10 +367,10 @@ export type OrModelKind = "llm" | "vision" | "tts" | "asr";
 export type OrCatalog = { refreshed_at: number; total: number; counts: Record<OrModelKind, number> };
 // Провайдер перевода/vision: своя Gemma, локальный OpenAI-совместимый сервер или OpenRouter. Сервер отдаёт
 // действующий провайдер в llm_provider/vision_provider, даже если он выбран прежними флагами or_*_on.
-export type LlmProviderKind = "local" | "server" | "openrouter";
+export type LlmProviderKind = "local" | "server" | "openrouter" | "agent";
 export const llmProviderOf = (sel: Selection | undefined, stage: "llm" | "vision"): LlmProviderKind => {
   const v = slot(sel, stage === "llm" ? "llm_provider" : "vision_provider");
-  return v === "server" || v === "openrouter" ? v : "local";
+  return v === "server" || v === "openrouter" || v === "agent" ? v : "local";
 };
 
 export const api = {
@@ -437,7 +451,7 @@ export const api = {
     return fetch(`${BASE}/projects`, { method: "POST", body: fd }).then(j<{ project_id: string; imported_subs?: boolean }>);
   },
   analyze: (pid: string, tgt_lang: string, mode = "auto", src_lang = "auto", subs = "auto", rewrite = "", burn = true, detect = true, importTranslated = false, translateStyle = "", casting = false, castingRef = "", contentType = "auto", alignSubs = false, post: AnalyzePost = {}, speakerCount = 0) =>
-    fetch(`${BASE}/projects/${pid}/analyze?tgt_lang=${tgt_lang}&mode=${mode}&src_lang=${src_lang}&subs=${subs}&rewrite=${encodeURIComponent(rewrite)}&burn=${burn ? 1 : 0}&detect=${detect ? 1 : 0}&import_translated=${importTranslated ? 1 : 0}&translate_style=${encodeURIComponent(translateStyle)}&casting=${casting ? 1 : 0}&casting_ref=${encodeURIComponent(castingRef)}&content_type=${encodeURIComponent(contentType)}&align_subs=${alignSubs ? 1 : 0}&speaker_count=${speakerCount}${analyzePostQuery(post)}`, { method: "POST" }).then(j<{ job_id: string }>),
+    requireCloud(mode === "transcribe" || importTranslated ? ["recognition"] : ["recognition", "translation", "vision"]).then(() => fetch(`${BASE}/projects/${pid}/analyze?tgt_lang=${tgt_lang}&mode=${mode}&src_lang=${src_lang}&subs=${subs}&rewrite=${encodeURIComponent(rewrite)}&burn=${burn ? 1 : 0}&detect=${detect ? 1 : 0}&import_translated=${importTranslated ? 1 : 0}&translate_style=${encodeURIComponent(translateStyle)}&casting=${casting ? 1 : 0}&casting_ref=${encodeURIComponent(castingRef)}&content_type=${encodeURIComponent(contentType)}&align_subs=${alignSubs ? 1 : 0}&speaker_count=${speakerCount}${analyzePostQuery(post)}`, { method: "POST" })).then(j<{ job_id: string }>),
   // Кастинг персонажей (#115): список найденных персонажей (аватар+пол+голос+реплики) / сохранение правок.
   casting: (pid: string) => getJson<{ characters: Character[] }>(`/projects/${pid}/casting`),
   castingAvatarUrl: (pid: string, id: string) => `${BASE}/projects/${pid}/casting/avatar?id=${encodeURIComponent(id)}`,
@@ -454,13 +468,18 @@ export const api = {
   glossary: (pid: string) => getJson<ProjectGlossary>(`/projects/${pid}/glossary`),
   glossaryTsv: (pid: string) => fetch(`${BASE}/projects/${pid}/glossary?format=tsv`).then(async (r) => { if (!r.ok) throw new Error(`${r.status} ${await r.text()}`); return r.text(); }),
   saveGlossary: (pid: string, body: GlossaryPut) => sendCoded<ProjectGlossary>("PUT", `/projects/${pid}/glossary`, body),
-  extractGlossary: (pid: string) => postJson<{ job_id: string }>(`/projects/${pid}/glossary/extract`, {}),
+  extractGlossary: (pid: string) => requireCloud(["translation"]).then(() => postJson<{ job_id: string }>(`/projects/${pid}/glossary/extract`, {})),
   seriesGlossary: (slug: string) => getJson<{ slug: string; entries: GlossaryEntry[] }>(`/casting/library/${encodeURIComponent(slug)}/glossary`),
   saveSeriesGlossary: (slug: string, body: GlossaryPut) =>
     sendCoded<{ slug: string; entries: GlossaryEntry[] }>("PUT", `/casting/library/${encodeURIComponent(slug)}/glossary`, body),
   listProjects: () => getJson<{ projects: ProjectListing[] }>("/projects"),   // недавние/сохранённые проекты для экрана «Открыть»
   getProject: (pid: string) => getJson<Project>(`/projects/${pid}`),
-  deleteProject: (pid: string) => fetch(`${BASE}/projects/${pid}`, { method: "DELETE" }).then(j<{ ok: boolean }>),   // удалить проект (стирает workspace/<pid>) — кнопка в «Недавних»
+  deleteProject: (pid: string) => fetch(`${BASE}/projects/${pid}`, { method: "DELETE" }).then(j<{ ok: boolean }>),   // проект в корзину системы — кнопка в «Недавних» и в списке проектов
+  diagnostics: () => getJson<{ text: string; report: { gpu: GpuReport } }>("/diagnostics"),   // система, компоненты, DLL и последние строки лога — для баг-репорта
+  diagnosticsReport: () => postJson<{ path: string }>("/diagnostics/report", {}),
+  revealReport: (path: string) => postJson<{ ok: boolean }>("/diagnostics/report/reveal", { path }),
+  revealLogs: () => postJson<{ ok: boolean }>("/diagnostics/logs/reveal", {}),
+  restoreProject: (pid: string) => fetch(`${BASE}/projects/${pid}/restore`, { method: "POST" }).then(j<{ restored: string }>),   // удалённый последним под этим id — обратно из корзины
   // undo/redo: та же очередь, что у patch(). base — ревизия, на которой снят снимок (без неё — последняя известная
   // окну). Если после неё проект сохранял кто-то, кроме этого окна, сервер его не перезапишет: ApiError project_changed.
   putProject: (pid: string, project: Project, base?: number) =>
@@ -470,19 +489,19 @@ export const api = {
   patch: (pid: string, edit: Record<string, unknown>) =>   // run after the previous patch settles (ok or failed)
     _chain(() => fetch(`${BASE}/projects/${pid}`, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(edit) }).then(j<Project>)),
   alignProject: (pid: string) => fetch(`${BASE}/projects/${pid}/align`, { method: "POST" }).then(j<{ job_id: string; project_id: string }>),
-  render: (pid: string) => fetch(`${BASE}/projects/${pid}/render`, { method: "POST" }).then(j<{ job_id: string }>),
+  render: (pid: string) => requireCloud(["voicing"]).then(() => fetch(`${BASE}/projects/${pid}/render`, { method: "POST" })).then(j<{ job_id: string }>),
   // Экспорт-уровень мультиязыка: клон отредактированного проекта на язык lang (наследует раскладку/стиль/
   // блюр/титры + клон голоса), ре-перевод текста + рендер одним джобом. -> новый project_id + job_id.
-  exportLang: (pid: string, lang: string) => fetch(`${BASE}/projects/${pid}/export-lang?lang=${encodeURIComponent(lang)}`, { method: "POST" }).then(j<{ job_id: string; project_id: string }>),
+  exportLang: (pid: string, lang: string) => requireCloud(["translation", "voicing"]).then(() => fetch(`${BASE}/projects/${pid}/export-lang?lang=${encodeURIComponent(lang)}`, { method: "POST" })).then(j<{ job_id: string; project_id: string }>),
   // #122: смена режима из транскрипта — перевод готовых сегментов на lang + смена режима, БЕЗ повторного ASR.
-  retranslate: (pid: string, lang: string, mode: string) => fetch(`${BASE}/projects/${pid}/retranslate?lang=${encodeURIComponent(lang)}&mode=${encodeURIComponent(mode)}`, { method: "POST" }).then(j<{ job_id: string; project_id: string }>),
-  dubAudio: (pid: string) => fetch(`${BASE}/projects/${pid}/dub-audio`, { method: "POST" }).then(j<{ job_id: string }>),   // сгенерить только озвучку (без сборки видео) — слушать дуб в редакторе
+  retranslate: (pid: string, lang: string, mode: string) => requireCloud(["translation"]).then(() => fetch(`${BASE}/projects/${pid}/retranslate?lang=${encodeURIComponent(lang)}&mode=${encodeURIComponent(mode)}`, { method: "POST" })).then(j<{ job_id: string; project_id: string }>),
+  dubAudio: (pid: string) => requireCloud(["voicing"]).then(() => fetch(`${BASE}/projects/${pid}/dub-audio`, { method: "POST" })).then(j<{ job_id: string }>),   // сгенерить только озвучку (без сборки видео) — слушать дуб в редакторе
   // Сократить перевод реплик под слот (джоба shorten): названные строки или все, что не влезают.
-  shorten: (pid: string, target: { ids: string[] } | { all_over: true }) => postJson<{ job_id: string }>(`/projects/${pid}/shorten`, target),
+  shorten: (pid: string, target: { ids: string[] } | { all_over: true }) => requireCloud(["translation"]).then(() => postJson<{ job_id: string }>(`/projects/${pid}/shorten`, target)),
   takes: (pid: string, id: string) => getJson<Takes>(`/projects/${pid}/segments/${encodeURIComponent(id)}/takes`),
   takeAudioUrl: (pid: string, id: string, n: number) => `${BASE}/projects/${pid}/segments/${encodeURIComponent(id)}/takes/${n}/audio`,
   remix: (pid: string, instruction: string) =>
-    fetch(`${BASE}/projects/${pid}/remix?instruction=${encodeURIComponent(instruction)}`, { method: "POST" }).then(j<{ job_id: string }>),
+    requireCloud(["translation", "voicing"]).then(() => fetch(`${BASE}/projects/${pid}/remix?instruction=${encodeURIComponent(instruction)}`, { method: "POST" })).then(j<{ job_id: string }>),
   previewUrl: (pid: string, t: number, rev = 0, lowres = false) => `${BASE}/projects/${pid}/preview?t=${t}&rev=${rev}${lowres ? "&lr=1" : ""}`,   // lr=1 при плее -> низкое разрешение на больших видео (быстрее)
   originalUrl: (pid: string, t: number) => `${BASE}/projects/${pid}/original?t=${t}`,
   waveform: (pid: string) => getJson<{ peaks: number[] }>(`/projects/${pid}/waveform`),
@@ -519,8 +538,21 @@ export const api = {
           else if (e.type === "cancelled") { es.close(); reject(new JobCancelledError()); }
         } catch (err) { es.close(); reject(err instanceof Error ? err : new Error(String(err))); }
       };
-      // EventSource fires onerror on transient drops too (it auto-reconnects) — only give up once truly CLOSED
-      es.onerror = () => { if (es.readyState === EventSource.CLOSED) reject(new Error(i18n.t("common.streamLost"))); };
+      // EventSource fires onerror on transient drops too (it auto-reconnects); once it is CLOSED the job itself is
+      // asked how it ended, since a closed stream says nothing about the job
+      es.onerror = () => {
+        if (es.readyState !== EventSource.CLOSED) return;
+        void (async () => {
+          for (;;) {
+            if (signal?.aborted) return;
+            const snap = await fetch(`${BASE}/jobs/${jobId}?wait=50`).then((r) => (r.status === 404 ? null : j<JobSnapshot>(r)));
+            if (!snap) throw new Error(i18n.t("common.streamLost"));
+            if (snap.status === "done") { resolve(snap.result); return; }
+            if (snap.status === "cancelled") { reject(new JobCancelledError()); return; }
+            if (snap.status === "error") { reject(new Error(snap.error ?? i18n.t("common.streamLost"))); return; }
+          }
+        })().catch((e: unknown) => reject(e instanceof Error ? e : new Error(String(e))));
+      };
     }),
 };
 

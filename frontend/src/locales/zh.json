@@ -203,7 +203,7 @@
       "cloud": "云端",
       "cloudHint": "OpenRouter 密钥与并行请求",
       "quality": "质量",
-      "qualityHint": "配音检查、多次生成与诊断",
+      "qualityHint": "识别、翻译、配音与检查",
       "network": "网络",
       "networkHint": "用于下载模型和云端的代理",
       "interface": "语言与声音",
@@ -235,7 +235,15 @@
     "modelsDir": "模型与设置",
     "copyPath": "复制路径",
     "copied": "已复制",
-    "pathsFailed": "无法获取数据文件夹：{{error}}"
+    "pathsFailed": "无法获取数据文件夹：{{error}}",
+    "recognitionGroup": "识别",
+    "translationGroup": "翻译",
+    "takesGroup": "配音检查",
+    "theme": "主题",
+    "themeHint": "深色、浅色或跟随系统",
+    "theme_system": "跟随系统",
+    "theme_dark": "深色",
+    "theme_light": "浅色"
   },
   "projects": {
     "title": "全部项目",
@@ -297,7 +305,8 @@
     "setupNeeded": "需要下载组件",
     "log": "活动日志",
     "clear": "清除",
-    "backendOffline": "后端不可用"
+    "backendOffline": "后端不可用",
+    "journalFailed": "日志未能加载：{{error}}"
   },
   "edit": {
     "setStart": "起点设为播放头",
@@ -359,7 +368,12 @@
     "auto": "自动",
     "sec": "秒",
     "bench": "阶段基准测试",
-    "benchHint": "按阶段测量时间/GPU/显存 -> bench.json + 日志中的 ⏱ 行。每秒一次的轻量后台采样。"
+    "benchHint": "按阶段测量时间/GPU/显存 -> bench.json + 日志中的 ⏱ 行。每秒一次的轻量后台采样。",
+    "dlTitle": "下载“{{name}}”？",
+    "dlSize": "需下载 {{size}}，磁盘需要 {{need}}（含解压）。",
+    "dlFree": "可用 {{free}}。",
+    "dlNoSpace": "仅剩 {{free}} 可用：请释放空间或选择其他模型文件夹。",
+    "dlVram": "模型约占用 {{vram}} 显存。"
   },
   "secrets": {
     "orTitle": "OpenRouter 密钥",
@@ -411,6 +425,10 @@
     "visionHint": "字幕样式、标题、场景上下文；没有它翻译照常进行",
     "localGemma": "Gemma-4 12B",
     "server": "本地服务器",
+    "agent": "代理（MCP）",
+    "agentHint": "翻译、缩短、术语表和画面查看由连接到工作室的代理完成（Claude Code、Codex 等，使用其自己的订阅）：它获得与工作室自带模型相同的指令和相同的回答格式，画面以图片文件提供。无需 Gemma。代理须连接到工作室的 MCP 服务器并监听请求（assistant_requests_wait）。",
+    "agentConnected": "代理已连接：上次调用 {{seconds}} 秒前，等待中的请求：{{count}}。",
+    "agentMissing": "当前没有连接代理：请将其连接到工作室的 MCP 服务器（设置 → 代理），否则这些阶段会附原因拒绝。",
     "needKey": "请在下方输入 OpenRouter 密钥（云端设置）",
     "pickTranslateModel": "— 选择翻译模型 —",
     "pickVisionModel": "— 选择视觉模型 —",
@@ -530,6 +548,7 @@
     "downloadOne": "下载",
     "cancel": "取消",
     "installed": "已安装",
+    "takenFrom": "取自 {{app}}",
     "missing": "缺失",
     "downloading": "下载中…",
     "required": "必需",
@@ -797,6 +816,17 @@
     "ultraInt8": "Ultra · int8",
     "ultraInt8Hint": "Moondream 在基础模型上微调并量化的版本：识别错误更少，同样支持 25 种语言 · int8 约 0.7 GB"
   },
+  "ttsVariant": {
+    "drama3": "Drama 3",
+    "drama3Hint": "第二个配音引擎（Fish Audio），适用于 6 GB 及以上显存的显卡；显存低于 24 GB 时需要 32 GB 内存 · 约 21 GB",
+    "qwen": "Qwen3-TTS",
+    "qwenQ8": "Qwen3-TTS（Q8_0）",
+    "qwenHint": "轻量的第三个配音引擎：使用原演员的声音，或为角色选用模型自带的九种现成声音 · 约 3 GB 显存",
+    "supertonic": "Supertonic 3",
+    "supertonicHint": "快速配音引擎：31 种语言的十个现成声音，不支持克隆；按说话人性别分配声音 · 约 0.6 GB",
+    "dramaVram": "Drama 3 的显存",
+    "dramaVramHint": "“自动”会自行设置：模型能整体放入空闲显存时整体加载，否则其专家（18 GB）放在内存中，显卡缓存当前用到的专家。选择数字可手动指定显存，24 GB 表示整个模型放在显卡上。声音不变，显存越少越慢（RTX 4090 实测）：24 GB 约为实时的 8 倍，12 GB 为 4.7 倍，8 GB 为 3 倍，6 GB 为 2.2 倍。"
+  },
   "units": {
     "gb": "GB",
     "mb": "MB",
@@ -847,9 +877,9 @@
   },
   "qc": {
     "asr": {
-      "tip": "用 Whisper ASR 自动核对识别出的文本，剔除静音和瑕疵",
-      "label": "ASR 文本校验（QC）",
-      "hint": "通过 ASR 自动核对配音（关闭可加快合成）"
+      "tip": "合成后用所选识别引擎识别每条配音；与文本不符的重新配音。仅限本地合成。",
+      "label": "识别核对",
+      "hint": "配音被识别并与文本比对；不符则重新合成（更慢）"
     },
     "duration": {
       "tip": "调整语速并控制音频时长，使其与字幕时间段吻合",
@@ -885,6 +915,91 @@
       "tip": "若配音后的句子需要超过渲染所用上限的加速（动态语速下最多 ×4），翻译模型会将其改短一次，并只为该句重新配音",
       "label": "句子放不下时缩短译文",
       "hint": "改短放不进时段的句子的译文并重新配音"
+    },
+    "asrRepeats": {
+      "tip": "识别有时会在音乐和静音上循环。此类句子在其时段内没有人声时会从配音和字幕中隐藏（可在编辑器中恢复）；有人声时只在日志中标记。",
+      "label": "剔除循环识别",
+      "hint": "无人声的循环句被隐藏，有人声的仅标记"
+    },
+    "asrRepeatInside": {
+      "tip": "NVIDIA NeMo 数据过滤规则：“the the the the the”。",
+      "label": "句内重复",
+      "hint": "五个词以上且不同词不超过 40% 的句子"
+    },
+    "asrRepeatLines": {
+      "tip": "短句（“是。”“什么？”）不判断：人确实会重复。带副歌的歌曲可关闭。",
+      "label": "同一句再次出现",
+      "hint": "三个词以上的句子紧接自身重复或全片出现三次"
+    },
+    "asrLongWords": {
+      "tip": "德语长复合词较多时可关闭。",
+      "label": "超过 25 个字母的词",
+      "hint": "粘连的识别垃圾"
+    },
+    "trGender": {
+      "tip": "说话人性别由其几句最长台词的音高判断；测量不确定时不提示。适用于有语法性别的语言（如俄语中男女说“我说了”的形式不同）。",
+      "label": "向译者提供说话人性别",
+      "hint": "译者知道这句话是男性还是女性说的"
+    },
+    "trGenderCheck": {
+      "tip": "说话人用另一性别称呼自己时，该句会重新请求。所有尝试后仍错误则保留并在日志中注明。",
+      "label": "检查“我说了”的性别形式",
+      "hint": "使用另一性别形式的句子会重新请求（俄语）"
+    },
+    "trLatin": {
+      "tip": "人名和品牌（原文首字母大写：Google、iPhone、Wi-Fi）、数字和术语表中“不翻译”的术语保留。语音模型会带口音读出残留的英文词。",
+      "label": "不保留英文单词",
+      "hint": "非拉丁文字语言：残留的拉丁字母原词会重新请求"
+    },
+    "ttsCaps": {
+      "tip": "语音模型可能逐字母拼读全大写单词。整句全大写：除不含元音的短词外每个词；普通句子：五个字母以上的词。显示的文本不变。",
+      "label": "大写按单词朗读",
+      "hint": "全大写的词按普通字母朗读，缩写（USA、FBI）保留"
+    },
+    "ttsSymbols": {
+      "tip": "字幕标记残留不读出。显示的文本不变。",
+      "label": "去除标记符号",
+      "hint": "_ | ~ ^ \\ { } < > # * 不朗读"
+    },
+    "audio": {
+      "tip": "每条配音在合成后立即检查声音，每句不到一秒。失控过长、截断、静音和嗡鸣始终检查；这里是额外的特征。",
+      "label": "配音声音检查",
+      "hint": "声音有缺陷则重新生成；云端配音写入日志"
+    },
+    "audioRepeat": {
+      "tip": "按频谱相似度查找。文本本身有重复词时不按声音判断。",
+      "label": "片段重复",
+      "hint": "文本没有重复，但句子片段听起来出现两次"
+    },
+    "audioEnd": {
+      "tip": "模型有时会多加一个词，或以满幅爆音结束配音。",
+      "label": "结尾爆音或多余的词",
+      "hint": "配音结尾比几乎整句都响"
+    },
+    "audioCloud": {
+      "tip": "云端模型的已知问题。云端合成收费，不会自动重试：请在编辑器中重新生成该句。",
+      "label": "云端配音啸叫与底噪",
+      "hint": "啸叫、停顿处底噪——仅云端，写入日志"
+    },
+    "asrLetters": {
+      "tip": "只有单词和字母都不符才算不符：减少因识别写法导致的无谓重合成。",
+      "label": "按字母比对",
+      "hint": "写法差异不算不符：去掉空格和符号后比较"
+    },
+    "asrRepeat": {
+      "tip": "拖长的语气词（“呃呃”“嗯”）不计。",
+      "label": "多余的重复词",
+      "hint": "文本中只出现一次的词被听到两次——不符"
+    },
+    "voiceGender": {
+      "tip": "比较说话人几句已配音台词的音高与其原声性别。可发现目录中性别标错的声音和用他人样本克隆的声音。",
+      "label": "配音声音性别",
+      "hint": "配音声音与说话人性别不同时在日志中警告"
+    },
+    "audioSilence": {
+      "tip": "模型有时会输出一小段残句或无关的词加静音来代替台词。在 Drama 3 上发现；在 726 条 Higgs 配音上从未触发。",
+      "label": "几乎全是静音",
+      "hint": "三秒以上的配音中语音不足三分之一"
     }
   },
   "manual": {
@@ -1309,12 +1424,12 @@
     "batch": "批处理 — API 费率降低 50%",
     "batchHint": "Google 将批处理加入队列（目标：24 小时）。取消本地任务会暂停轮询，远程批处理继续运行。恢复时读取已有结果，不会重复付费提交。用量和估算费用：MCP 中的 project_google_tts_report。",
     "standardHint": "按云端并发设置发送并行直接请求。用量和估算费用：MCP 中的 project_google_tts_report。",
-    "provider_local": "本地 · Higgs",
+    "provider_local": "本地 · Higgs / Drama / Qwen / Supertonic",
     "provider_openrouter": "通过 OpenRouter",
     "provider_google": "Google · 直连"
   },
   "hub": {
-    "why": "有多少人在用 Dub Studio、用来做什么，决定接下来做什么。不含任何个人信息：没有视频、文本、声音或文件名——只有任务计数、各阶段所用模型、版本、显卡档次和任务失败原因；原因中的路径、名称和引号内文字会在发送前于本机删除。",
+    "why": "有多少人在用 Dub Studio、用来做什么，决定接下来做什么。不含任何个人信息：没有视频、文本、声音或文件名——只有任务计数、用过哪些功能（仅功能名，不含内容）、各阶段所用模型、版本、我们各程序共用的电脑编号（不可逆哈希，不是系统编号本身）、显卡档次和任务失败原因；原因中的路径、名称和引号内文字会在发送前于本机删除。",
     "checkbox": "发送匿名使用统计",
     "what": "发送的内容",
     "byEnv": "已被环境变量 DO_NOT_TRACK 或 STUDIO_TELEMETRY 关闭。",
@@ -1325,5 +1440,114 @@
     "refresh": "立即检查",
     "notices": "通知",
     "close": "关闭"
+  },
+  "undoDelete": {
+    "deleted": "「{{video}}」已移到回收站",
+    "restore": "恢复",
+    "failed": "「{{video}}」未删除：{{error}}"
+  },
+  "diag": {
+    "title": "系统诊断",
+    "hint": "工作室看到的情况：显卡、驱动和 CUDA、ffmpeg、哪些组件已就位、引擎缺少哪些库，以及最新的日志行。密钥绝不会包含在内。",
+    "copy": "复制诊断信息",
+    "pack": "生成错误报告包",
+    "report": "报告问题",
+    "logs": "日志文件夹",
+    "refresh": "刷新",
+    "packed": "报告包已保存：",
+    "show": "在文件夹中显示"
+  },
+  "journal": {
+    "line": "{{verb}}：{{kind}}{{target}}",
+    "quoted": "“{{name}}”",
+    "verb": {
+      "create": "创建",
+      "delete": "删除",
+      "restore": "恢复",
+      "analyze": "分析",
+      "translate": "翻译",
+      "dub": "配音",
+      "render": "合成视频",
+      "remix": "混音",
+      "align": "对齐",
+      "resume": "继续",
+      "update": "修改",
+      "export": "导出",
+      "save": "保存",
+      "transcribe": "识别",
+      "separate": "人声分离",
+      "detect": "识别画面文字",
+      "add": "添加",
+      "split": "拆分",
+      "merge": "合并",
+      "hide": "隐藏",
+      "keep": "保留原声",
+      "reorder": "调整顺序",
+      "regen": "重新配音",
+      "shorten": "缩短",
+      "select": "选择",
+      "pin": "固定",
+      "assign": "分配",
+      "rename": "重命名",
+      "download": "下载",
+      "record": "录音",
+      "extract": "收集术语",
+      "apply": "应用",
+      "set": "保存",
+      "refresh": "刷新",
+      "cancel": "取消",
+      "import": "导入"
+    },
+    "kind": {
+      "project": "项目",
+      "file": "文件",
+      "subtitles": "字幕",
+      "line": "台词",
+      "take": "片段",
+      "voice": "声音",
+      "voices": "声音",
+      "casting": "选角",
+      "glossary": "术语表",
+      "blur": "模糊框",
+      "title": "标题",
+      "translation": "翻译",
+      "sound": "声音",
+      "model": "模型",
+      "download": "下载",
+      "setting": "设置",
+      "preset": "预设",
+      "proxy": "代理",
+      "key": "密钥",
+      "catalog": "目录",
+      "tool": "工具",
+      "job": "任务"
+    }
+  },
+  "consent": {
+    "title": "发送到 {{provider}}？",
+    "allow": "允许",
+    "once": "每个阶段只询问一次；可在“设置 → 隐私”中撤销。",
+    "what_recognition": "视频的声音会发送到 {{provider}} 进行识别，文字从那里返回；费用由你的密钥支付。",
+    "what_translation": "台词文本会发送到 {{provider}} 进行翻译或缩短，译文从那里返回；费用由你的密钥支付。",
+    "what_vision": "视频画面会发送到 {{provider}}，其模型读取字幕样式、标题和场景；费用由你的密钥支付。",
+    "what_voicing": "翻译后的台词（克隆时还有说话人的声音样本）会发送到 {{provider}} 进行配音，音频从那里返回；费用由你的密钥支付。",
+    "declined": "已停止：你让这一阶段留在本机运行。在哪里运行可在“设置 → 模型”中选择。"
+  },
+  "privacyRoutes": {
+    "title": "数据去向",
+    "hint": "未标为云端的一切都留在本机。某个阶段第一次发送到云端之前，工作室会先询问。",
+    "askAgain": "重新询问",
+    "willAsk": "发送前会询问",
+    "stage_recognition": "识别",
+    "stage_translation": "翻译与缩短",
+    "stage_vision": "画面（字幕样式、标题）",
+    "stage_voicing": "配音",
+    "cloud": "当前：{{provider}}，数据会发送到云端。",
+    "local": "当前：在本机运行。"
+  },
+  "errors": {
+    "whatToDo": "怎么办：复制文本、查看诊断或报告问题。",
+    "copy": "复制",
+    "diagnostics": "诊断"
   }
 }

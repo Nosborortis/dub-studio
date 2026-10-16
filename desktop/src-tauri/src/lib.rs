@@ -240,6 +240,40 @@ fn hide_console_window() {
     }
 }
 
+/// The port of the studio's own service and whether the close question is on screen.
+#[derive(Default)]
+struct Shell {
+    port: std::sync::atomic::AtomicU16,
+    asking: std::sync::atomic::AtomicBool,
+}
+
+/// Closing the window while tasks run asks first, in the studio's language; with nothing running, or a service that
+/// does not answer, the studio closes.
+fn confirm_close(app: &tauri::AppHandle) {
+    use std::sync::atomic::Ordering;
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+    let shell = app.state::<Shell>();
+    if shell.asking.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let running = service::jobs_in_progress(shell.port.load(Ordering::SeqCst), Duration::from_secs(2)).unwrap_or(0);
+    let close = running == 0
+        || app
+            .dialog()
+            .message(dub_server::i18n::text("quit-running", &[("n", running.to_string())]))
+            .title(dub_server::i18n::text("quit-title", &[]))
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                dub_server::i18n::text("quit-button-close", &[]),
+                dub_server::i18n::text("quit-button-stay", &[]),
+            ))
+            .blocking_show();
+    shell.asking.store(false, Ordering::SeqCst);
+    if close {
+        app.exit(0);
+    }
+}
+
 pub fn run() {
     // Что бы ни завершило процесс — окно, диспетчер задач, taskkill, падение, — llama-server,
     // bs_roformer-cli, whisper и ffmpeg уходят вместе с ним.
@@ -248,6 +282,7 @@ pub fn run() {
     }
     #[cfg(windows)]
     hide_console_window();
+    dub_server::diagnostics::init_logging();
     let placed = match layout::resolve().and_then(|l| layout::apply_environment(&l).map(|_| l)) {
         Ok(l) => l,
         Err(e) => layout::fatal(&e),
@@ -292,6 +327,8 @@ pub fn run() {
                     return Ok(());
                 }
             };
+            app.manage(Shell::default());
+            app.state::<Shell>().port.store(port, std::sync::atomic::Ordering::SeqCst);
             let url = format!("http://127.0.0.1:{port}/");
             // Иконка бандла для GUI-окна: без явной установки окно оставалось пустым в ALT+TAB/панели задач
             // (иконка висела на консольном окне). Ставим её на само GUI-окно.
@@ -333,9 +370,13 @@ pub fn run() {
         })
         .build(context)
         .expect("ошибка запуска Tauri")
-        .run(|_, event| {
-            if let tauri::RunEvent::Exit = event {
-                dub_server::flush_hub_on_exit();
+        .run(|app, event| match &event {
+            tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { api, .. }, .. } if label == "main" => {
+                api.prevent_close();
+                let app = app.clone();
+                std::thread::spawn(move || confirm_close(&app));
             }
+            tauri::RunEvent::Exit => dub_server::flush_hub_on_exit(),
+            _ => {}
         });
 }

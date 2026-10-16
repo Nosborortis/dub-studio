@@ -205,7 +205,7 @@
       "cloud": "Services cloud",
       "cloudHint": "Clé OpenRouter et requêtes parallèles",
       "quality": "Qualité",
-      "qualityHint": "Vérifications de la voix, prises et diagnostic",
+      "qualityHint": "Reconnaissance, traduction, voix et contrôles",
       "network": "Réseau",
       "networkHint": "Proxy pour le téléchargement des modèles et le cloud",
       "interface": "Langue et sons",
@@ -237,7 +237,15 @@
     "modelsDir": "Modèles et paramètres",
     "copyPath": "Copier le chemin",
     "copied": "Copié",
-    "pathsFailed": "Impossible d'obtenir le dossier de données : {{error}}"
+    "pathsFailed": "Impossible d'obtenir le dossier de données : {{error}}",
+    "recognitionGroup": "Reconnaissance",
+    "translationGroup": "Traduction",
+    "takesGroup": "Contrôle des prises",
+    "theme": "Thème",
+    "themeHint": "Sombre, clair ou comme le système",
+    "theme_system": "Comme le système",
+    "theme_dark": "Sombre",
+    "theme_light": "Clair"
   },
   "projects": {
     "title": "Tous les projets",
@@ -305,7 +313,8 @@
     "setupNeeded": "Composants à télécharger",
     "log": "Journal d'activité",
     "clear": "Effacer",
-    "backendOffline": "backend hors ligne"
+    "backendOffline": "backend hors ligne",
+    "journalFailed": "Le journal ne s’est pas chargé : {{error}}"
   },
   "edit": {
     "setStart": "Début au curseur",
@@ -367,7 +376,12 @@
     "auto": "Auto",
     "sec": "s",
     "bench": "Benchmark des étapes",
-    "benchHint": "Mesure temps/GPU/VRAM par étape -> bench.json + lignes ⏱ dans le journal. Échantillonnage léger en arrière-plan chaque seconde."
+    "benchHint": "Mesure temps/GPU/VRAM par étape -> bench.json + lignes ⏱ dans le journal. Échantillonnage léger en arrière-plan chaque seconde.",
+    "dlTitle": "Télécharger « {{name}} » ?",
+    "dlSize": "{{size}} à télécharger, {{need}} nécessaires sur le disque (avec la décompression).",
+    "dlFree": "{{free}} libres.",
+    "dlNoSpace": "Seulement {{free}} libres : libérez de la place ou choisissez un autre dossier de modèles.",
+    "dlVram": "Le modèle occupe environ {{vram}} de mémoire vidéo."
   },
   "secrets": {
     "orTitle": "Clé OpenRouter",
@@ -419,6 +433,10 @@
     "visionHint": "style des sous-titres, titres, contexte de la scène ; sans elle la traduction continue",
     "localGemma": "Gemma-4 12B",
     "server": "Serveur local",
+    "agent": "Agent (MCP)",
+    "agentHint": "La traduction, le raccourcissement, le glossaire et le regard sur les images sont faits par l’agent connecté au studio (Claude Code, Codex et d’autres, avec leur propre abonnement) : il reçoit les mêmes instructions et la même forme de réponse que le modèle du studio, et les images en fichiers. Gemma n’est pas nécessaire. L’agent doit être connecté au serveur MCP du studio et écouter les demandes (assistant_requests_wait).",
+    "agentConnected": "Agent connecté : dernier appel il y a {{seconds}} s, demandes en attente : {{count}}.",
+    "agentMissing": "Aucun agent n’est connecté : connectez-en un au serveur MCP du studio (Réglages → Agent), sinon ces étapes sont refusées avec la raison.",
     "needKey": "Saisissez une clé OpenRouter ci-dessous (Paramètres cloud)",
     "pickTranslateModel": "— choisir un modèle de traduction —",
     "pickVisionModel": "— choisir un modèle de vision —",
@@ -540,6 +558,7 @@
     "downloadOne": "Télécharger",
     "cancel": "Annuler",
     "installed": "Installé",
+    "takenFrom": "Repris de {{app}}",
     "missing": "Manquant",
     "downloading": "Téléchargement…",
     "required": "Obligatoire",
@@ -819,6 +838,17 @@
     "ultraInt8": "Ultra · int8",
     "ultraInt8Hint": "Version du modèle de base affinée par Moondream, quantifiée : moins d'erreurs de reconnaissance, les mêmes 25 langues · int8 ~0,7 Go"
   },
+  "ttsVariant": {
+    "drama3": "Drama 3",
+    "drama3Hint": "Un second moteur de voix (Fish Audio), pour les cartes graphiques à partir de 6 Go ; sous 24 Go il lui faut 32 Go de mémoire vive · ~21 Go",
+    "qwen": "Qwen3-TTS",
+    "qwenQ8": "Qwen3-TTS (Q8_0)",
+    "qwenHint": "Un troisième moteur de voix léger : les voix des acteurs d'origine ou neuf voix toutes prêtes pour les personnages · ~3 Go de mémoire vidéo",
+    "supertonic": "Supertonic 3",
+    "supertonicHint": "Un moteur de voix rapide : dix voix prêtes en 31 langues, sans clonage ; chaque locuteur reçoit une voix selon son genre · ~0,6 Go",
+    "dramaVram": "VRAM pour Drama 3",
+    "dramaVramHint": "Auto se règle tout seul : le modèle entier s'il tient dans la VRAM libre, sinon ses experts (18 Go) restent en mémoire vive et la carte garde un cache de ceux en usage. Un nombre fixe la quantité à la main ; 24 Go garde le modèle entier sur la carte. Le son est le même ; moins de VRAM, c'est plus lent (mesuré sur une RTX 4090) : 24 Go, environ 8× le temps réel ; 12 Go, 4,7× ; 8 Go, 3× ; 6 Go, 2,2×."
+  },
   "units": {
     "gb": "Go",
     "mb": "Mo",
@@ -869,9 +899,9 @@
   },
   "qc": {
     "asr": {
-      "tip": "Vérifie automatiquement le texte reconnu avec Whisper ASR pour écarter silences et défauts",
-      "label": "Vérification du texte par ASR (QC)",
-      "hint": "contrôle automatique du doublage par ASR (le désactiver accélère la synthèse)"
+      "tip": "Après la synthèse, chaque prise est reconnue par le moteur de reconnaissance choisi ; celle qui ne correspond pas au texte est redite. Synthèse locale seulement.",
+      "label": "Contrôle par reconnaissance",
+      "hint": "la voix est reconnue et comparée au texte ; un écart est resynthétisé (plus lent)"
     },
     "duration": {
       "tip": "Ajuste de la vitesse et contrôle de la durée audio selon la plage du sous-titre",
@@ -907,6 +937,91 @@
       "tip": "Si une réplique doublée demande plus d'accélération que le rendu n'en applique (jusqu'à ×4 avec le débit de parole dynamique), le modèle de traduction la réécrit plus court une fois et seule cette réplique est redoublée",
       "label": "Raccourcir les répliques qui ne tiennent pas",
       "hint": "réécrire plus court la traduction des répliques qui ne tiennent pas et les redoubler"
+    },
+    "asrRepeats": {
+      "tip": "La reconnaissance boucle parfois sur la musique et le silence. Une telle ligne sans voix sur son intervalle est masquée du doublage et des sous-titres (à rétablir dans l’éditeur) ; avec voix elle est seulement signalée dans le journal.",
+      "label": "Écarter la reconnaissance en boucle",
+      "hint": "les lignes en boucle sans voix sont masquées, avec voix elles sont signalées"
+    },
+    "asrRepeatInside": {
+      "tip": "Règle du filtre de données NVIDIA NeMo : « the the the the the ».",
+      "label": "Répétition dans la ligne",
+      "hint": "ligne de cinq mots ou plus avec au plus 40 % de mots différents"
+    },
+    "asrRepeatLines": {
+      "tip": "Les répliques courtes (« Oui. », « Quoi ? ») ne sont pas jugées : on les répète vraiment. À couper pour les chansons avec refrain.",
+      "label": "La même ligne encore",
+      "hint": "ligne de trois mots ou plus juste après elle-même ou trois fois dans la vidéo"
+    },
+    "asrLongWords": {
+      "tip": "À couper pour l’allemand aux longs mots composés.",
+      "label": "Mots de plus de 25 lettres",
+      "hint": "déchets de reconnaissance collés"
+    },
+    "trGender": {
+      "tip": "Le genre vient de la hauteur de voix de plusieurs de ses plus longues répliques ; une mesure incertaine ne donne pas d’indice. Utile aux langues à genre grammatical (« prêt / prête »).",
+      "label": "Genre du locuteur pour le traducteur",
+      "hint": "le traducteur sait si un homme ou une femme dit la ligne"
+    },
+    "trGenderCheck": {
+      "tip": "Si le locuteur parle de lui-même à l’autre genre, la ligne est redemandée. Si elle reste fausse après tous les essais, elle est gardée avec une note dans le journal.",
+      "label": "Vérifier le genre de « j’ai dit »",
+      "hint": "une ligne à la forme de l’autre genre est redemandée (russe)"
+    },
+    "trLatin": {
+      "tip": "Noms et marques (avec majuscule dans la source : Google, iPhone, Wi-Fi), nombres et termes « ne pas traduire » restent. La voix lit avec un accent un mot anglais oublié.",
+      "label": "Ne laisser aucun mot anglais",
+      "hint": "pour les langues non latines : un mot source laissé en latin est redemandé"
+    },
+    "ttsCaps": {
+      "tip": "Un modèle de voix peut épeler un mot en majuscules. Ligne entière en majuscules : chaque mot sauf les courts sans voyelle ; ligne normale : mots de cinq lettres ou plus. Le texte affiché ne change pas.",
+      "label": "Lire les majuscules comme des mots",
+      "hint": "les mots en majuscules sont dits en lettres normales, les sigles (USA, FBI) restent"
+    },
+    "ttsSymbols": {
+      "tip": "Les restes du balisage des sous-titres ne sont pas lus. Le texte affiché ne change pas.",
+      "label": "Retirer les signes de balisage",
+      "hint": "_ | ~ ^ \\ { } < > # * ne sont pas dits"
+    },
+    "audio": {
+      "tip": "Le son de chaque prise est contrôlé juste après la synthèse, une fraction de seconde par ligne. Emballement, coupure, silence et bourdonnement sont toujours contrôlés ; ce sont des signes en plus.",
+      "label": "Contrôle du son de la prise",
+      "hint": "un défaut de son régénère la prise ; pour la voix cloud il va au journal"
+    },
+    "audioRepeat": {
+      "tip": "Recherche par similarité spectrale. Un texte dont les mots se répètent n’est pas jugé au son.",
+      "label": "Un passage répété",
+      "hint": "un passage de la phrase sonne deux fois sans répétition dans le texte"
+    },
+    "audioEnd": {
+      "tip": "Le modèle ajoute parfois un mot ou finit la prise par un clic à pleine échelle.",
+      "label": "Clic ou mot en trop à la fin",
+      "hint": "la fin de la prise est plus forte que presque toute la phrase"
+    },
+    "audioCloud": {
+      "tip": "Défauts connus des modèles cloud. La synthèse cloud est payante et ne se relance pas seule : régénérez la réplique dans l’éditeur.",
+      "label": "Sifflement et souffle de la voix cloud",
+      "hint": "sifflement, souffle dans les pauses — cloud seulement, au journal"
+    },
+    "asrLetters": {
+      "tip": "Une prise n’est en écart que si les mots et les lettres diffèrent : moins de resynthèses inutiles dues à l’écriture du reconnaisseur.",
+      "label": "Comparer les lettres",
+      "hint": "les écarts d’écriture ne comptent pas : comparaison sans espaces ni signes"
+    },
+    "asrRepeat": {
+      "tip": "Les interjections allongées (« euh-euh », « mm ») ne comptent pas.",
+      "label": "Mot répété en trop",
+      "hint": "un mot présent une fois dans le texte est entendu deux fois — écart"
+    },
+    "voiceGender": {
+      "tip": "La hauteur de plusieurs répliques doublées d’un locuteur est comparée à son genre dans l’original. Repère une voix de catalogue au mauvais genre et un clone d’un échantillon étranger.",
+      "label": "Genre de la voix du doublage",
+      "hint": "une voix de doublage de l’autre genre que le locuteur donne un avertissement au journal"
+    },
+    "audioSilence": {
+      "tip": "Le modèle donne parfois un bout de phrase ou d’autres mots et du silence au lieu de la réplique. Vu avec Drama 3 ; jamais déclenché sur 726 prises Higgs.",
+      "label": "Presque que du silence",
+      "hint": "prise de trois secondes ou plus avec de la voix sur moins d’un tiers"
     }
   },
   "manual": {
@@ -1345,12 +1460,12 @@
     "batch": "Batch — tarif API réduit de 50 %",
     "batchHint": "Google place le lot en attente (objectif : 24 heures). Annuler la tâche locale suspend les consultations ; le lot distant continue. Reprendre récupère le résultat sans nouvel envoi payant. Usage et coût estimé : project_google_tts_report dans MCP.",
     "standardHint": "Requêtes directes en parallèle selon le paramètre de concurrence du cloud. Usage et coût estimé : project_google_tts_report dans MCP.",
-    "provider_local": "En local · Higgs",
+    "provider_local": "En local · Higgs / Drama / Qwen / Supertonic",
     "provider_openrouter": "Via OpenRouter",
     "provider_google": "Google · directement"
   },
   "hub": {
-    "why": "Savoir combien de personnes utilisent Dub Studio et pour quoi aide à décider de la suite. Rien de personnel : ni vidéos, ni textes, ni voix, ni noms de fichiers — seulement des compteurs de tâches, les modèles de chaque étape, la version, la classe de carte graphique et la raison d’un échec, chemins, noms et texte entre guillemets retirés sur cet ordinateur avant l’envoi.",
+    "why": "Savoir combien de personnes utilisent Dub Studio et pour quoi aide à décider de la suite. Rien de personnel : ni vidéos, ni textes, ni voix, ni noms de fichiers — seulement des compteurs de tâches, les fonctions du studio utilisées (par leur nom, jamais avec quoi), les modèles de chaque étape, la version, un numéro d’ordinateur commun à nos programmes (un hachage irréversible, pas le numéro du système), la classe de carte graphique et la raison d’un échec, chemins, noms et texte entre guillemets retirés sur cet ordinateur avant l’envoi.",
     "checkbox": "Envoyer des statistiques d'utilisation anonymes",
     "what": "Ce qui est envoyé",
     "byEnv": "Désactivées par DO_NOT_TRACK ou STUDIO_TELEMETRY dans l'environnement.",
@@ -1361,5 +1476,114 @@
     "refresh": "Vérifier maintenant",
     "notices": "Annonces",
     "close": "Fermer"
+  },
+  "undoDelete": {
+    "deleted": "«{{video}}» est dans la corbeille",
+    "restore": "Restaurer",
+    "failed": "«{{video}}» n’a pas été supprimé : {{error}}"
+  },
+  "diag": {
+    "title": "Diagnostic du système",
+    "hint": "Ce que voit le studio : la carte graphique, le pilote et CUDA, ffmpeg, les composants présents, les bibliothèques qui manquent aux moteurs et les dernières lignes du journal. Les clés n’y figurent jamais.",
+    "copy": "Copier le diagnostic",
+    "pack": "Créer un paquet de rapport de bug",
+    "report": "Signaler un problème",
+    "logs": "Dossier des journaux",
+    "refresh": "Actualiser",
+    "packed": "Paquet enregistré :",
+    "show": "Afficher dans le dossier"
+  },
+  "journal": {
+    "line": "{{verb}} : {{kind}}{{target}}",
+    "quoted": "« {{name}} »",
+    "verb": {
+      "create": "Création",
+      "delete": "Suppression",
+      "restore": "Restauration",
+      "analyze": "Analyse",
+      "translate": "Traduction",
+      "dub": "Doublage",
+      "render": "Montage vidéo",
+      "remix": "Remix",
+      "align": "Alignement",
+      "resume": "Reprise",
+      "update": "Modification",
+      "export": "Export",
+      "save": "Enregistrement",
+      "transcribe": "Reconnaissance",
+      "separate": "Séparation de la voix",
+      "detect": "Texte à l’écran",
+      "add": "Ajout",
+      "split": "Découpe",
+      "merge": "Fusion",
+      "hide": "Masqué",
+      "keep": "Original gardé",
+      "reorder": "Nouvel ordre",
+      "regen": "Nouvelle voix",
+      "shorten": "Raccourci",
+      "select": "Sélection",
+      "pin": "Épinglé",
+      "assign": "Attribution",
+      "rename": "Renommage",
+      "download": "Téléchargement",
+      "record": "Enregistrement",
+      "extract": "Termes relevés",
+      "apply": "Application",
+      "set": "Enregistrement de la clé",
+      "refresh": "Actualisation",
+      "cancel": "Annulation",
+      "import": "Import"
+    },
+    "kind": {
+      "project": "projet",
+      "file": "fichier",
+      "subtitles": "sous-titres",
+      "line": "réplique",
+      "take": "prise",
+      "voice": "voix",
+      "voices": "voix",
+      "casting": "casting",
+      "glossary": "glossaire",
+      "blur": "flou",
+      "title": "titre",
+      "translation": "traduction",
+      "sound": "son",
+      "model": "modèle",
+      "download": "téléchargement",
+      "setting": "réglage",
+      "preset": "préréglage",
+      "proxy": "proxy",
+      "key": "clé",
+      "catalog": "catalogue",
+      "tool": "outil",
+      "job": "tâche"
+    }
+  },
+  "consent": {
+    "title": "Envoyer à {{provider}} ?",
+    "allow": "Autoriser",
+    "once": "Le studio demande une fois par étape ; vous pouvez revenir dessus dans Réglages, Confidentialité.",
+    "what_recognition": "Le son de la vidéo part chez {{provider}} pour être reconnu, et le texte en revient ; c’est payé avec votre clé.",
+    "what_translation": "Le texte des répliques part chez {{provider}} pour être traduit ou raccourci, et la traduction en revient ; c’est payé avec votre clé.",
+    "what_vision": "Des images de la vidéo partent chez {{provider}}, dont le modèle lit le style des sous-titres, les titres et la scène ; c’est payé avec votre clé.",
+    "what_voicing": "Les répliques traduites (et, pour le clonage, des extraits de voix des locuteurs) partent chez {{provider}} pour être doublées, et le son en revient ; c’est payé avec votre clé.",
+    "declined": "Arrêté : vous avez gardé cette étape sur cet ordinateur. Réglages, Modèles choisissent où elle tourne."
+  },
+  "privacyRoutes": {
+    "title": "Où vont les données",
+    "hint": "Tout ce qui n’est pas indiqué comme cloud reste sur cet ordinateur. Avant qu’une étape parte au cloud pour la première fois, le studio demande.",
+    "askAgain": "Redemander",
+    "willAsk": "demande avant l’envoi",
+    "stage_recognition": "Reconnaissance",
+    "stage_translation": "Traduction et raccourcissement",
+    "stage_vision": "Images (style des sous-titres, titres)",
+    "stage_voicing": "Doublage",
+    "cloud": "Maintenant : {{provider}}, donc les données partent dans le cloud.",
+    "local": "Maintenant : sur cet ordinateur."
+  },
+  "errors": {
+    "whatToDo": "Que faire : copiez le texte, consultez le diagnostic ou signalez le problème.",
+    "copy": "Copier",
+    "diagnostics": "Diagnostic"
   }
 }

@@ -20,11 +20,13 @@ use axum::{Json, Router};
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
+mod assistant;
 mod atomic;
 mod window;
 
-pub(crate) use window::{carry, carry_job, save_with_revision, tell_windows, track, REV_HEADER};
+pub(crate) use window::{carry, carry_job, current_actor, save_with_revision, tell_windows, track, REV_HEADER};
 pub use window::{window_events, window_focus, window_result};
+pub(crate) use assistant::{agent_llm, agent_llm_image};
 
 /// The studio's API router, set once the service has built it.
 static API: OnceLock<Router> = OnceLock::new();
@@ -668,7 +670,7 @@ fn annotations(name: &str) -> Value {
     const CHANGES: &[&str] = &[
         "import", "delete", "create", "update", "cancel", "select", "download", "apply", "add", "set", "assign", "analyze", "render", "remix", "retranslate",
         "align", "patch", "put", "rename", "save", "hide", "keep", "reorder", "regen", "enable", "resume", "export", "open", "reveal",
-        "shorten", "pin",
+        "shorten", "pin", "refresh",
     ];
     // reads whose names the rules above miss
     const READ_NAMES: &[&str] = &["studio_wait", "proxy_test", "openrouter_verify", "project_transcript", "ui_screenshot", "ui_read_page", "ui_console", "editor_state", "url_probe",
@@ -696,6 +698,123 @@ fn annotations(name: &str) -> Value {
     // a one-call tool on a file finds its project again and answers from the finished work
     let idempotent = read_only || name.ends_with("_set") || name.contains("_select") || name.ends_with("_file");
     json!({ "title": title, "readOnlyHint": read_only, "destructiveHint": destructive, "idempotentHint": idempotent, "openWorldHint": open_world })
+}
+
+/// What a tool that changes something did, for the journal: the verb and the kind of thing (the window words them).
+/// The window's own editor_* and ui_* steps are left out: the person sees them happen.
+const JOURNAL: &[(&str, &str, &str)] = &[
+    ("project_create", "create", "project"),
+    ("project_create_from_url", "create", "project"),
+    ("project_delete", "delete", "project"),
+    ("project_restore", "restore", "project"),
+    ("project_analyze", "analyze", "project"),
+    ("project_retranslate", "translate", "project"),
+    ("project_dub_audio", "dub", "project"),
+    ("project_render", "render", "project"),
+    ("project_remix", "remix", "project"),
+    ("project_align", "align", "project"),
+    ("project_resume", "resume", "project"),
+    ("project_put", "update", "project"),
+    ("project_patch", "update", "project"),
+    ("project_mode_set", "update", "project"),
+    ("project_export_lang", "export", "project"),
+    ("project_save_output", "save", "file"),
+    ("project_save_text", "save", "file"),
+    ("export_subtitles", "export", "subtitles"),
+    ("dub_file", "dub", "file"),
+    ("translate_file", "translate", "file"),
+    ("transcribe_file", "transcribe", "file"),
+    ("separate_file", "separate", "file"),
+    ("detect_text_file", "detect", "file"),
+    ("segment_update", "update", "line"),
+    ("segment_add", "add", "line"),
+    ("segment_split", "split", "line"),
+    ("segments_delete", "delete", "line"),
+    ("segments_merge", "merge", "line"),
+    ("segments_hide", "hide", "line"),
+    ("segments_keep_original", "keep", "line"),
+    ("segments_reorder", "reorder", "line"),
+    ("segment_regen", "regen", "line"),
+    ("segments_regen_all", "regen", "line"),
+    ("segment_shorten", "shorten", "line"),
+    ("take_select", "select", "take"),
+    ("take_pin", "pin", "take"),
+    ("voice_set", "update", "voice"),
+    ("voice_slots_assign", "assign", "voice"),
+    ("voice_from_speaker", "create", "voice"),
+    ("voice_rename", "rename", "voice"),
+    ("voice_delete", "delete", "voice"),
+    ("voice_download", "download", "voice"),
+    ("voices_download_pack", "download", "voices"),
+    ("voice_record_stop", "record", "voice"),
+    ("casting_update", "update", "casting"),
+    ("casting_library_save", "save", "casting"),
+    ("casting_library_delete", "delete", "casting"),
+    ("glossary_set", "update", "glossary"),
+    ("series_glossary_set", "update", "glossary"),
+    ("glossary_extract", "extract", "glossary"),
+    ("blur_add", "add", "blur"),
+    ("blur_update", "update", "blur"),
+    ("blur_enable", "update", "blur"),
+    ("blurs_delete", "delete", "blur"),
+    ("title_add", "add", "title"),
+    ("title_update", "update", "title"),
+    ("titles_delete", "delete", "title"),
+    ("caption_style_set", "update", "subtitles"),
+    ("caption_preset_set", "update", "subtitles"),
+    ("subtitles_burn_set", "update", "subtitles"),
+    ("subtitles_content_set", "update", "subtitles"),
+    ("subtitles_position_set", "update", "subtitles"),
+    ("translation_target_set", "update", "translation"),
+    ("translation_style_set", "update", "translation"),
+    ("rewrite_set", "update", "translation"),
+    ("audio_output_set", "update", "sound"),
+    ("gain_set", "update", "sound"),
+    ("loudness_set", "update", "sound"),
+    ("original_track_set", "update", "sound"),
+    ("voiceover_gain_set", "update", "sound"),
+    ("models_download", "download", "model"),
+    ("models_cancel_download", "cancel", "download"),
+    ("models_remove", "delete", "model"),
+    ("models_import", "import", "model"),
+    ("models_select", "select", "model"),
+    ("settings_set", "update", "setting"),
+    ("launch_defaults_set", "update", "setting"),
+    ("engine_preset_apply", "apply", "preset"),
+    ("proxy_settings_set", "update", "proxy"),
+    ("google_set_key", "set", "key"),
+    ("openrouter_set_key", "set", "key"),
+    ("local_server_key_set", "set", "key"),
+    ("google_delete_key", "delete", "key"),
+    ("openrouter_delete_key", "delete", "key"),
+    ("local_server_key_delete", "delete", "key"),
+    ("openrouter_catalog_refresh", "refresh", "catalog"),
+    ("url_fetch_cancel", "cancel", "download"),
+    ("url_fetch_resume", "resume", "download"),
+    ("url_fetch_delete", "delete", "download"),
+    ("url_tool_update", "update", "tool"),
+    ("job_cancel", "cancel", "job"),
+];
+
+/// The name a journal line gives what a tool changed: a name the agent passed, else the project's name, else the id it
+/// named, a file by its name. Taken before the call, while a project about to be deleted still has its name.
+fn journal_target(args: &Value) -> String {
+    const NAMED: &[&str] = &["name", "new_name", "title", "voice", "model"];
+    const IDS: &[&str] = &["id", "key", "provider", "path", "pid", "project_id", "job_id", "fetch_id"];
+    let text = |key: &&str| args.get(*key).and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty()).map(str::to_string);
+    let project = || ["pid", "project_id"].iter().find_map(text).and_then(|pid| crate::journal::project_name(&pid));
+    let file = || text(&"path").map(|path| path.rsplit(['/', '\\']).next().unwrap_or(&path).to_string());
+    NAMED.iter().find_map(text).or_else(project).or_else(file).or_else(|| IDS.iter().find_map(text)).unwrap_or_default().chars().take(80).collect()
+}
+
+/// Journals a tool's change once it succeeded; work an agent still waits for (`done: false`) is journaled when it is
+/// asked for again and answers whole, and a call that found its finished work (`reused`) changed nothing.
+fn journal_call(name: &str, target: &str, answer: Option<&Value>) {
+    let Some((_, verb, kind)) = JOURNAL.iter().find(|(tool, _, _)| *tool == name) else { return };
+    if answer.is_some_and(|a| a.get("done") == Some(&Value::Bool(false)) || a.get("reused") == Some(&Value::Bool(true))) {
+        return;
+    }
+    crate::journal::agent_change(verb, kind, target);
 }
 
 // ---------------------------------------------------------------- origin and agent
@@ -733,6 +852,7 @@ pub async fn status() -> Json<Value> {
         "agent_seconds_ago": last.as_ref().map(|(at, _)| at.elapsed().as_secs()),
         "agent_calls": agent().calls.load(Ordering::Relaxed),
         "window_open": window::windows_open() > 0,
+        "requests_waiting": assistant::waiting(),
     }))
 }
 
@@ -1042,7 +1162,7 @@ fn tools() -> &'static [Tool] {
             },
             Tool {
                 name: "settings_get",
-                description: "The studio's settings and the values each takes: the model variant of each stage (tts, mt, sep, asr, asr_engine, whisper_model, whisper_compute, whisper_device), where each local stage runs (local_backend, sep_backend, diar_backend, asr_backend: auto, gpu, cpu), the voicing switches (qc_asr, qc_duration, multitake, breath_on, speech_rate_on, emo_ref_on, duck_on, auto_shorten: rewrite the translation of lines that do not fit their slot and voice them again during a render, lead_into_silence: a line that does not fit starts up to a second earlier, into the silence before it, instead of being sped up; off by default), the memory limits (llama_ubatch, higgs_ref_secs), who translates and who reads frames (llm_provider, vision_provider: local = the studio's Gemma, server = a local OpenAI-compatible server at srv_url with the models srv_llm and srv_vision, openrouter = the cloud with or_llm and or_vision), the other cloud stages through OpenRouter (or_tts_on, or_tts_model, or_tts_voice, or_tts_autocast, or_asr_on, or_asr, or_concurrency), whether the proxy is on (proxy_on; proxy_settings_set sets its address) and the stage benchmark (bench). The OpenRouter key is never shown: or_key_set says whether there is one.",
+                description: "The studio's settings and the values each takes: the model variant of each stage (tts, mt, sep, asr, asr_engine, whisper_model, whisper_compute, whisper_device), where each local stage runs (local_backend, sep_backend, diar_backend, asr_backend: auto, gpu, cpu), the voicing switches (qc_duration, multitake, breath_on, speech_rate_on, emo_ref_on, duck_on, auto_shorten: rewrite the translation of lines that do not fit their slot and voice them again during a render, lead_into_silence: a line that does not fit starts up to a second earlier, into the silence before it, instead of being sped up; off by default), the checks (\"1\" on, \"0\" off; a sub-check works only while its check is on): asr_repeats with asr_repeat_inside, asr_repeat_lines, asr_long_words (looped recognition); tr_gender (the speaker's gender for the translator) with tr_gender_check (Russian first-person forms); tr_latin (no source words left in Latin); tts_caps and tts_symbols (the text sent to synthesis); qc_audio with qc_repeat, qc_end, qc_silence, qc_cloud (the take's sound); qc_asr (off by default) with qc_asr_letters, qc_asr_repeat; qc_voice_gender (the dub voice against the speaker's gender), the memory limits (llama_ubatch, higgs_ref_secs), who translates and who reads frames (llm_provider, vision_provider: local = the studio's Gemma, server = a local OpenAI-compatible server at srv_url with the models srv_llm and srv_vision, openrouter = the cloud with or_llm and or_vision), the other cloud stages through OpenRouter (or_tts_on, or_tts_model, or_tts_voice, or_tts_autocast, or_asr_on, or_asr, or_concurrency), whether the proxy is on (proxy_on; proxy_settings_set sets its address) and the stage benchmark (bench). The OpenRouter key is never shown: or_key_set says whether there is one.",
                 schema: nothing,
                 call: |_| get("/engine/capabilities".into()),
             },
@@ -1498,9 +1618,63 @@ fn tools() -> &'static [Tool] {
             },
             Tool {
                 name: "project_delete",
-                description: "Delete a project and everything the studio made for it; the file it was made from stays where it is.",
+                description: "Delete a project and everything the studio made for it to the system's recycle bin (project_restore takes it back); the file it was made from stays where it is.",
                 schema: project_only,
                 call: |args| send(Method::DELETE, project_path(args, "")?, json!({})),
+            },
+            Tool {
+                name: "project_restore",
+                description: "Take a deleted project back: project_delete moves a project to the system's recycle bin, and this restores the one deleted last under that pid, as the window's Undo does. Fails when the bin was emptied or the project is already in place.",
+                schema: project_only,
+                call: |args| post(project_path(args, "/restore")?, json!({})),
+            },
+            Tool {
+                name: "diagnostics_get",
+                description: "The studio's diagnostics: version, system, graphics card against CUDA, ffmpeg, every component and whether it is on disk, what the engines' DLLs miss, and the latest log lines - as text to read and as data.",
+                schema: nothing,
+                call: |_| get("/diagnostics".into()),
+            },
+            Tool {
+                name: "diagnostics_report",
+                description: "Pack a bug report (the diagnostics, the activity journal and the log, keys masked) into a ZIP file: answers its path.",
+                schema: nothing,
+                call: |_| post("/diagnostics/report".into(), json!({})),
+            },
+            Tool {
+                name: "diagnostics_report_reveal",
+                description: "Show a bug report (path from diagnostics_report) in Explorer, selected, for the user.",
+                schema: || id_only("path", "the report's path"),
+                call: |args| post("/diagnostics/report/reveal".into(), json!({ "path": text(args, "path")? })),
+            },
+            Tool {
+                name: "diagnostics_logs_reveal",
+                description: "Open the folder of the studio's logs in Explorer, for the user.",
+                schema: nothing,
+                call: |_| post("/diagnostics/logs/reveal".into(), json!({})),
+            },
+            Tool {
+                name: "journal_get",
+                description: "The studio's activity journal, oldest first: what agents changed (verb, kind, target) and what the window told the user, each with its id and time.",
+                schema: nothing,
+                call: |_| get("/journal".into()),
+            },
+            Tool {
+                name: "journal_note",
+                description: "Write a line into the activity journal the user reads: text, and tone agent (default), work, done or error.",
+                schema: || object(json!({ "text": { "type": "string" }, "tone": { "type": "string", "enum": ["agent", "work", "done", "error"] } }), &["text"]),
+                call: |args| post("/journal".into(), json!({ "source": "studio", "tone": given(args, "tone").unwrap_or_else(|| "agent".into()), "text": text(args, "text")? })),
+            },
+            Tool {
+                name: "journal_clear",
+                description: "Empty the activity journal.",
+                schema: nothing,
+                call: |_| send(Method::DELETE, "/journal".into(), json!({})),
+            },
+            Tool {
+                name: "journal_delete",
+                description: "Remove one line of the activity journal by its id (journal_get).",
+                schema: || object(json!({ "id": { "type": "integer", "minimum": 0 } }), &["id"]),
+                call: |args| send(Method::DELETE, format!("/journal/{}", args.get("id").and_then(Value::as_u64).ok_or("'id' is required")?), json!({})),
             },
             Tool {
                 name: "project_waveform",
@@ -2090,6 +2264,7 @@ fn tools() -> &'static [Tool] {
         ];
         all.extend(atomic::tools());
         all.extend(window::tools());
+        all.extend(assistant::tools());
         all
     })
 }
@@ -2474,6 +2649,7 @@ pub async fn handle(headers: HeaderMap, body: axum::body::Bytes) -> Response {
                 );
             };
             // a tool may look at a file on disk before its call: off the runtime
+            let target = if JOURNAL.iter().any(|(tool, _, _)| *tool == name) { journal_target(&args) } else { String::new() };
             let prepare = tool.call;
             let prepared = {
                 let args = args.clone();
@@ -2493,9 +2669,17 @@ pub async fn handle(headers: HeaderMap, body: axum::body::Bytes) -> Response {
                     Ok(state) => tool_json(id, state),
                     Err(problem) => answer(problem, true),
                 },
+                Ok(call) if call.path == "composite:questions" => tool_json(id, assistant::wait_for_questions(&args).await),
+                Ok(call) if call.path == "composite:answer" => match assistant::answer_question(&args) {
+                    Ok(result) => tool_json(id, result),
+                    Err(problem) => answer(problem, true),
+                },
                 Ok(call) if call.path.starts_with(atomic::PREFIX) => {
                     match atomic::run(name, &args).await {
-                    Ok(result) => tool_json(id, result),
+                    Ok(result) => {
+                        journal_call(name, &target, Some(&result));
+                        tool_json(id, result)
+                    }
                     Err(problem) => answer(problem, true),
                 }
                 }
@@ -2513,8 +2697,14 @@ pub async fn handle(headers: HeaderMap, body: axum::body::Bytes) -> Response {
                         Ok(reply) if reply.status.is_success() => {
                             let text = reply_text(&reply);
                             match serde_json::from_str::<Value>(&text) {
-                                Ok(value) => tool_json(id, shape(name, &args, redact(value))),
-                                Err(_) => answer(text, false),
+                                Ok(value) => {
+                                    journal_call(name, &target, Some(&value));
+                                    tool_json(id, shape(name, &args, redact(value)))
+                                }
+                                Err(_) => {
+                                    journal_call(name, &target, None);
+                                    answer(text, false)
+                                }
                             }
                         }
                         Ok(reply) => answer(reply_text(&reply), true),
@@ -2726,6 +2916,7 @@ mod tests {
         ("POST", "/mcp", "the MCP server itself"),
         ("PUT", "/settings/ui-lang", "the window reports the language it is shown in, so the server speaks it"),
         ("GET", "/mcp/status", "the settings page's view of the agent"),
+        ("GET", "/mcp/agent-llm/images/{name}", "a frame of a request the agent already holds by path and URL in assistant_requests_wait"),
         ("GET", "/mcp/window", "the window's own stream of commands: the ui_* and editor_* tools go through it"),
         ("POST", "/mcp/window/result", "the window's answers to those commands"),
         ("POST", "/mcp/window/focus", "the window the person turned to"),
@@ -2743,6 +2934,8 @@ mod tests {
         ("composite:wait", &[("GET", "/jobs/x1"), ("GET", "/url/fetches/x1"), ("GET", "/jobs"), ("GET", "/setup/status"), ("GET", "/url/fetches"),
             ],
         ),
+        ("composite:questions", &[("POST", "/mcp/agent-llm/v1/chat/completions")]),
+        ("composite:answer", &[("POST", "/mcp/agent-llm/v1/chat/completions")]),
     ];
 
     /// Arguments for every property of a tool, and one set more for each other
@@ -2990,6 +3183,35 @@ mod tests {
         }
         let schema = (find("project_analyze").schema)();
         assert!(schema["properties"]["subs"]["enum"].as_array().unwrap().contains(&json!("bilingual")));
+    }
+
+    #[test]
+    fn every_journaled_tool_exists_and_changes_something() {
+        let names: Vec<&str> = tools().iter().map(|tool| tool.name).collect();
+        for (tool, verb, kind) in JOURNAL {
+            assert!(names.contains(tool), "{tool} is journaled but is not a tool");
+            assert_eq!(annotations(tool)["readOnlyHint"], false, "{tool} is journaled but reads only");
+            assert!(!verb.is_empty() && !kind.is_empty());
+        }
+    }
+
+    #[test]
+    fn the_window_has_words_for_every_journaled_change() {
+        for lang in ["en", "ru", "es", "fr", "pt", "zh"] {
+            let path = format!("{}/../../frontend/src/locales/{lang}.json", env!("CARGO_MANIFEST_DIR"));
+            let words: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            for (tool, verb, kind) in JOURNAL {
+                assert!(words["journal"]["verb"][verb].is_string(), "{lang}: {tool}: no words for the verb {verb}");
+                assert!(words["journal"]["kind"][kind].is_string(), "{lang}: {tool}: no words for the kind {kind}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_journal_line_names_what_the_agent_named() {
+        assert_eq!(journal_target(&json!({ "pid": "abc", "name": " Серия 1 " })), "Серия 1");
+        assert_eq!(journal_target(&json!({ "pid": "abc" })), "abc");
+        assert_eq!(journal_target(&json!({})), "");
     }
 
     #[test]

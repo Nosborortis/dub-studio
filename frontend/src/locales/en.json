@@ -236,7 +236,7 @@
       "cloud": "Cloud",
       "cloudHint": "OpenRouter key and parallel requests",
       "quality": "Quality",
-      "qualityHint": "Voice checks, takes and diagnostics",
+      "qualityHint": "Recognition, translation, voicing and checks",
       "network": "Network",
       "networkHint": "Proxy for model downloads and the cloud",
       "interface": "Language & sounds",
@@ -268,7 +268,15 @@
     "modelsDir": "Models and settings",
     "copyPath": "Copy path",
     "copied": "Copied",
-    "pathsFailed": "Couldn't get the data folder: {{error}}"
+    "pathsFailed": "Couldn't get the data folder: {{error}}",
+    "recognitionGroup": "Recognition",
+    "translationGroup": "Translation",
+    "takesGroup": "Take checks",
+    "theme": "Theme",
+    "themeHint": "Dark, light, or as the system is",
+    "theme_system": "As the system",
+    "theme_dark": "Dark",
+    "theme_light": "Light"
   },
   "projects": {
     "title": "All projects",
@@ -333,7 +341,8 @@
     "setupNeeded": "Components to download",
     "log": "Activity log",
     "clear": "Clear",
-    "backendOffline": "backend offline"
+    "backendOffline": "backend offline",
+    "journalFailed": "The journal did not load: {{error}}"
   },
   "edit": {
     "setStart": "Start at playhead",
@@ -395,7 +404,12 @@
     "auto": "Auto",
     "sec": "s",
     "bench": "Stage benchmark",
-    "benchHint": "Measure time/GPU/VRAM per pipeline stage -> bench.json + ⏱ lines in the log. Light background sampling once per second."
+    "benchHint": "Measure time/GPU/VRAM per pipeline stage -> bench.json + ⏱ lines in the log. Light background sampling once per second.",
+    "dlTitle": "Download “{{name}}”?",
+    "dlSize": "{{size}} to download, {{need}} needed on disk (with unpacking).",
+    "dlFree": "{{free}} free.",
+    "dlNoSpace": "Only {{free}} free: free some space or choose another models folder.",
+    "dlVram": "The model takes about {{vram}} of video memory."
   },
   "secrets": {
     "orTitle": "OpenRouter key",
@@ -447,6 +461,10 @@
     "visionHint": "subtitle style, titles, scene context; without it translation still runs",
     "localGemma": "Gemma-4 12B",
     "server": "Local server",
+    "agent": "Agent (MCP)",
+    "agentHint": "Translation, shortening, the glossary and the look at the frames are done by the agent connected to the studio (Claude Code, Codex and others, on their own subscription): it gets the same instructions and the same answer form as the studio's own model, and the frames as picture files. No Gemma is needed. The agent must be connected to the studio's MCP server and listening for requests (assistant_requests_wait).",
+    "agentConnected": "Agent connected: last call {{seconds}} s ago, requests waiting: {{count}}.",
+    "agentMissing": "No agent is connected now: connect one to the studio's MCP server (Settings → Agent), or these stages are refused with the reason.",
     "needKey": "Enter an OpenRouter key below (Cloud settings)",
     "pickTranslateModel": "— choose a translation model —",
     "pickVisionModel": "— choose a vision model —",
@@ -580,6 +598,7 @@
     "downloadOne": "Download",
     "cancel": "Cancel",
     "installed": "Installed",
+    "takenFrom": "Taken from {{app}}",
     "missing": "Missing",
     "downloading": "Downloading…",
     "required": "Required",
@@ -808,6 +827,17 @@
     "ultraInt8": "Ultra · int8",
     "ultraInt8Hint": "Moondream fine-tune of the base model, quantized: fewer recognition errors, same 25 languages · int8 ~0.7 GB"
   },
+  "ttsVariant": {
+    "drama3": "Drama 3",
+    "drama3Hint": "A second voice engine (Fish Audio), for graphics cards from 6 GB; under 24 GB it needs 32 GB of RAM · ~21 GB",
+    "qwen": "Qwen3-TTS",
+    "qwenQ8": "Qwen3-TTS (Q8_0)",
+    "qwenHint": "A light third voice engine: the original actors' voices or nine ready voices of its own for characters · ~3 GB of video memory",
+    "supertonic": "Supertonic 3",
+    "supertonicHint": "A fast voice engine: ten ready voices in 31 languages, no cloning; speakers get a voice by gender · ~0.6 GB",
+    "dramaVram": "VRAM for Drama 3",
+    "dramaVramHint": "Auto sets itself up: the whole model when it fits the free VRAM, otherwise its experts (18 GB) live in RAM and the card keeps a cache of the ones in use. A number sets the amount by hand; 24 GB keeps the whole model on the card. The sound is the same; less VRAM is slower (measured on an RTX 4090): 24 GB about 8× faster than real time, 12 GB 4.7×, 8 GB 3×, 6 GB 2.2×."
+  },
   "units": {
     "gb": "GB",
     "mb": "MB",
@@ -858,9 +888,9 @@
   },
   "qc": {
     "asr": {
-      "tip": "Automatically check the recognized text with Whisper ASR to cut out silence and defects",
-      "label": "ASR text check (QC)",
-      "hint": "auto-check the voiceover via ASR (turning it off speeds up synthesis)"
+      "tip": "After synthesis each take is recognised by the chosen recognition engine; one that does not match the text is voiced again. Local synthesis only.",
+      "label": "Check by recognition",
+      "hint": "the voicing is recognised and compared with the text; a mismatch is resynthesised (slower)"
     },
     "duration": {
       "tip": "Fit the speed and control the audio timing to the subtitle slot",
@@ -896,6 +926,91 @@
       "tip": "If a voiced line needs more speed-up than the render applies (up to ×4 with the dynamic speech rate), the translation model rewrites it shorter once and only that line is voiced again",
       "label": "Shorten lines that don't fit",
       "hint": "rewrite the translation of lines that don't fit their slot and voice them again"
+    },
+    "asrRepeats": {
+      "tip": "Recognition sometimes loops over music and silence. Such a line with no voice on its span is hidden from the dub and the subtitles (bring it back in the editor); with a voice it is only marked in the log.",
+      "label": "Drop looped recognition",
+      "hint": "looped lines without a voice are hidden, with a voice they are marked"
+    },
+    "asrRepeatInside": {
+      "tip": "The NVIDIA NeMo data filter rule: “the the the the the”.",
+      "label": "A repeat inside a line",
+      "hint": "a line of five or more words with at most 40% different words"
+    },
+    "asrRepeatLines": {
+      "tip": "Short lines (“Yes.”, “What?”) are not judged: people really repeat them. Turn off for songs with a chorus.",
+      "label": "The same line again",
+      "hint": "a line of three or more words right after itself or three times in a video"
+    },
+    "asrLongWords": {
+      "tip": "Turn off for German with long compound words.",
+      "label": "Words over 25 letters",
+      "hint": "recognition garbage stuck together"
+    },
+    "trGender": {
+      "tip": "The speaker’s gender comes from the pitch of several of their longest lines; an unsure measure gives no hint. It matters for languages with grammatical gender (in Russian a man and a woman say “I said” differently; French “prêt / prête”).",
+      "label": "Speaker gender for the translator",
+      "hint": "the translator knows whether a man or a woman says the line"
+    },
+    "trGenderCheck": {
+      "tip": "When the speaker speaks of themselves in the other gender, the line is asked again. If it stays wrong after every attempt, it is kept with a note in the log.",
+      "label": "Check “I said” forms",
+      "hint": "a line in the other gender’s form is asked again (Russian)"
+    },
+    "trLatin": {
+      "tip": "Names and brands (capitalised in the source: Google, iPhone, Wi-Fi), numbers and “keep” glossary terms stay. The voice model reads a left English word with an accent.",
+      "label": "Leave no English words",
+      "hint": "for non-Latin languages: a source word left in Latin is asked again"
+    },
+    "ttsCaps": {
+      "tip": "A voice model may spell a word in capitals letter by letter. A line all in capitals: every word except short ones without vowels; a normal line: words of five letters or more. The shown text does not change.",
+      "label": "Read capitals as words",
+      "hint": "words in capitals are voiced in plain letters, abbreviations (USA, FBI) stay"
+    },
+    "ttsSymbols": {
+      "tip": "Leftovers of subtitle markup are not read aloud. The shown text does not change.",
+      "label": "Drop markup signs",
+      "hint": "_ | ~ ^ \\ { } < > # * are not voiced"
+    },
+    "audio": {
+      "tip": "Each take’s sound is checked right after synthesis, a fraction of a second per line. A runaway take, a cut-off, silence and hum are always checked; these are extra signs.",
+      "label": "Take sound check",
+      "hint": "a defect in the sound regenerates the take; for cloud voicing it goes to the log"
+    },
+    "audioRepeat": {
+      "tip": "Found by spectral similarity. A text whose words repeat themselves is not judged by the sound.",
+      "label": "A repeated piece",
+      "hint": "a piece of the line sounds twice though the text has no repeat"
+    },
+    "audioEnd": {
+      "tip": "The model sometimes adds an extra word or ends the take with a full-scale click.",
+      "label": "A click or an extra word at the end",
+      "hint": "the end of the take is louder than almost the whole line"
+    },
+    "audioCloud": {
+      "tip": "Known faults of cloud models. Cloud synthesis is paid and is not repeated on its own: regenerate the line in the editor.",
+      "label": "Cloud whistle and hiss",
+      "hint": "a whistle, hiss in the pauses — cloud only, to the log"
+    },
+    "asrLetters": {
+      "tip": "A take is a mismatch only when both the words and the letters differ: fewer needless resyntheses over the recogniser’s spelling.",
+      "label": "Compare letters",
+      "hint": "spelling differences are not a mismatch: compared without spaces and signs"
+    },
+    "asrRepeat": {
+      "tip": "Drawn-out interjections (“uh-uh”, “mm”) do not count.",
+      "label": "An extra repeated word",
+      "hint": "a word said once in the text is heard twice — a mismatch"
+    },
+    "voiceGender": {
+      "tip": "The pitch of several voiced lines of a speaker is compared with their gender in the original. Catches a catalogue voice with a wrong gender and a clone from someone else’s sample.",
+      "label": "Dub voice gender",
+      "hint": "a dub voice of the other gender than the speaker gives a warning in the log"
+    },
+    "audioSilence": {
+      "tip": "The model sometimes gives a short scrap or other words and silence instead of the line. Found with Drama 3; never fired on 726 Higgs takes.",
+      "label": "Mostly silence",
+      "hint": "a take of three seconds or more with speech under a third of it"
     }
   },
   "manual": {
@@ -1327,12 +1442,12 @@
     "batch": "Batch — 50% lower API tariff",
     "batchHint": "Google queues the batch (target: 24 hours). Cancelling the local job pauses polling; the remote batch continues. Resume retrieves it without another paid submission. Usage and estimated cost: project_google_tts_report in MCP.",
     "standardHint": "Parallel direct requests using the cloud concurrency setting. Usage and estimated cost: project_google_tts_report in MCP.",
-    "provider_local": "Local · Higgs",
+    "provider_local": "Local · Higgs / Drama / Qwen / Supertonic",
     "provider_openrouter": "OpenRouter",
     "provider_google": "Google · direct"
   },
   "hub": {
-    "why": "How many people use Dub Studio and what for helps decide what to work on next. Nothing personal: no videos, texts, voices or file names — only counts of jobs, the models each stage used, the version, the graphics card class and why a job failed, with paths, names and quoted text cut out on this computer before it is sent.",
+    "why": "How many people use Dub Studio and what for helps decide what to work on next. Nothing personal: no videos, texts, voices or file names — only counts of jobs, which of the studio's functions were used (by name, never with what), the models each stage used, the version, a computer number shared by our programs (a one-way hash, not the system number itself), the graphics card class and why a job failed, with paths, names and quoted text cut out on this computer before it is sent.",
     "checkbox": "Send anonymous usage statistics",
     "what": "What is sent",
     "byEnv": "Turned off by DO_NOT_TRACK or STUDIO_TELEMETRY in the environment.",
@@ -1343,5 +1458,114 @@
     "refresh": "Check now",
     "notices": "Notices",
     "close": "Close"
+  },
+  "undoDelete": {
+    "deleted": "«{{video}}» moved to the recycle bin",
+    "restore": "Restore",
+    "failed": "«{{video}}» was not deleted: {{error}}"
+  },
+  "diag": {
+    "title": "System diagnostics",
+    "hint": "What the studio sees: the graphics card, driver and CUDA, ffmpeg, which components are in place, which libraries the engines lack, and the latest log lines. Keys never get in.",
+    "copy": "Copy diagnostics",
+    "pack": "Make a bug-report pack",
+    "report": "Report a problem",
+    "logs": "Logs folder",
+    "refresh": "Refresh",
+    "packed": "Pack saved:",
+    "show": "Show in folder"
+  },
+  "journal": {
+    "line": "{{verb}}: {{kind}}{{target}}",
+    "quoted": "“{{name}}”",
+    "verb": {
+      "create": "Created",
+      "delete": "Deleted",
+      "restore": "Restored",
+      "analyze": "Analysed",
+      "translate": "Translated",
+      "dub": "Dubbed",
+      "render": "Rendered",
+      "remix": "Remixed",
+      "align": "Aligned",
+      "resume": "Resumed",
+      "update": "Changed",
+      "export": "Exported",
+      "save": "Saved",
+      "transcribe": "Recognised",
+      "separate": "Voice separated",
+      "detect": "Text found",
+      "add": "Added",
+      "split": "Split",
+      "merge": "Merged",
+      "hide": "Hidden",
+      "keep": "Original kept",
+      "reorder": "Reordered",
+      "regen": "Voiced again",
+      "shorten": "Shortened",
+      "select": "Selected",
+      "pin": "Pinned",
+      "assign": "Assigned",
+      "rename": "Renamed",
+      "download": "Downloaded",
+      "record": "Recorded",
+      "extract": "Terms collected",
+      "apply": "Applied",
+      "set": "Saved",
+      "refresh": "Refreshed",
+      "cancel": "Cancelled",
+      "import": "Imported"
+    },
+    "kind": {
+      "project": "project",
+      "file": "file",
+      "subtitles": "subtitles",
+      "line": "line",
+      "take": "take",
+      "voice": "voice",
+      "voices": "voices",
+      "casting": "casting",
+      "glossary": "glossary",
+      "blur": "blur box",
+      "title": "title",
+      "translation": "translation",
+      "sound": "sound",
+      "model": "model",
+      "download": "download",
+      "setting": "setting",
+      "preset": "preset",
+      "proxy": "proxy",
+      "key": "key",
+      "catalog": "catalog",
+      "tool": "tool",
+      "job": "job"
+    }
+  },
+  "consent": {
+    "title": "Send to {{provider}}?",
+    "allow": "Allow",
+    "once": "The studio asks once for this stage; you can take it back in Settings, Privacy.",
+    "what_recognition": "The video's sound goes to {{provider}} to be recognised, and the text comes back from there; it is paid with your key.",
+    "what_translation": "The lines' text goes to {{provider}} to be translated or shortened, and the translation comes back from there; it is paid with your key.",
+    "what_vision": "Frames of the video go to {{provider}}, whose model reads the subtitle style, titles and scene; it is paid with your key.",
+    "what_voicing": "The translated lines (and, for cloning, the speakers' voice samples) go to {{provider}} to be voiced, and the audio comes back from there; it is paid with your key.",
+    "declined": "Stopped: you kept this stage on this computer. Settings, Models choose where it runs."
+  },
+  "privacyRoutes": {
+    "title": "Where data goes",
+    "hint": "Everything not named cloud stays on this computer. Before a stage first goes to the cloud, the studio asks.",
+    "askAgain": "Ask again",
+    "willAsk": "asks before sending",
+    "stage_recognition": "Recognition",
+    "stage_translation": "Translation and shortening",
+    "stage_vision": "Frames (subtitle style, titles)",
+    "stage_voicing": "Voicing",
+    "cloud": "Now: {{provider}}, so the data goes to the cloud.",
+    "local": "Now: on this computer."
+  },
+  "errors": {
+    "whatToDo": "What to do: copy the text, look at the diagnostics or report the problem.",
+    "copy": "Copy",
+    "diagnostics": "Diagnostics"
   }
 }

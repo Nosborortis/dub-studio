@@ -104,6 +104,7 @@ pub const ENTRY_POINTS: &[(&str, &str)] = &[
     ("llama", "tools/llama/llama-server.exe"),
     ("llama", "tools/llama/ggml-cuda.dll"),
     ("higgs-engine", "models/higgs-engine/audiocpp_engine.dll"),
+    ("drama3", "models/drama-engine/drama_engine.dll"),
     ("onnxruntime", "models/runtime/onnxruntime-win-x64-1.28.2/lib/onnxruntime.dll"),
     ("onnxruntime-gpu", "models/runtime/onnxruntime-win-x64-gpu_cuda13-1.28.2/lib/onnxruntime_providers_cuda.dll"),
     ("cudnn", "models/higgs-engine/cudnn64_9.dll"),
@@ -182,7 +183,13 @@ fn manifest_basenames(root: &Path) -> Vec<(String, PathBuf, &'static str)> {
 /// Недостающее на корне, собранном «Первым запуском»: чего нет в каталогах поиска и что не приносит в них
 /// Bundled-компонент (VC++ runtime кладёт установщик, а не закачка).
 /// seen получает каждую библиотеку, найденную в каталоге поиска (для разбора, откуда что берётся).
+#[cfg(test)]
 pub fn check_root(root: &Path, seen: &mut dyn FnMut(&str, &(String, PathBuf))) -> Result<Vec<String>, String> {
+    check_components(root, &|_| true, seen)
+}
+
+/// The same check for the components `include` names (the diagnostics: those installed on this computer).
+pub fn check_components(root: &Path, include: &dyn Fn(&str) -> bool, seen: &mut dyn FnMut(&str, &(String, PathBuf))) -> Result<Vec<String>, String> {
     let dirs = search_dirs(root);
     let manifest = setup::manifest();
     let bundled: Vec<(String, PathBuf)> = manifest_basenames(root)
@@ -191,7 +198,7 @@ pub fn check_root(root: &Path, seen: &mut dyn FnMut(&str, &(String, PathBuf))) -
         .map(|(n, d, _)| (n, d))
         .collect();
     let mut problems = Vec::new();
-    for (component, rel) in ENTRY_POINTS {
+    for (component, rel) in ENTRY_POINTS.iter().filter(|(component, _)| include(component)) {
         let entry = root.join(rel);
         if !entry.is_file() {
             problems.push(format!("{component}: no {rel} after installation"));
@@ -226,6 +233,7 @@ mod tests {
         ("llama", "cublas64_13.dll", "cuda-runtime", false),
         ("llama", "cublasLt64_13.dll", "cuda-runtime", false),
         ("higgs-engine", "cublas64_13.dll", "cuda-runtime", false),
+        ("drama3", "cublas64_13.dll", "cuda-runtime", false),
         ("bsroformer-engine", "cublas64_13.dll", "cuda-runtime", false),
         ("bsroformer-engine", "cublasLt64_13.dll", "cuda-runtime", false),
         ("onnxruntime-gpu", "cublas64_13.dll", "cuda-runtime", false),

@@ -42,7 +42,7 @@ const JOB_ROUTES: &[&str] = &["analyze", "render", "dub-audio", "export-lang", "
 
 struct Bridge {
     commands: tokio::sync::broadcast::Sender<String>,
-    pending: Mutex<HashMap<String, tokio::sync::oneshot::Sender<Result<Value, String>>>>,
+    pending: Mutex<HashMap<String, (u64, tokio::sync::oneshot::Sender<Result<Value, String>>)>>,
     /// The open windows, the one the person turned to last at the end: a
     /// command goes to that one only, so a second window never runs it again.
     windows: Mutex<Vec<u64>>,
@@ -63,7 +63,7 @@ fn open_windows() -> std::sync::MutexGuard<'static, Vec<u64>> {
     bridge().windows.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-fn pending() -> std::sync::MutexGuard<'static, HashMap<String, tokio::sync::oneshot::Sender<Result<Value, String>>>> {
+fn pending() -> std::sync::MutexGuard<'static, HashMap<String, (u64, tokio::sync::oneshot::Sender<Result<Value, String>>)>> {
     bridge().pending.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
@@ -75,9 +75,20 @@ pub(super) fn windows_open() -> usize {
 /// Keeps the window on the list while its stream is open.
 struct Listening(u64);
 
+/// What a command gets when the window it went to closes before answering.
+const WINDOW_CLOSED: &str = "The studio's window closed before it answered. Call the tool again: it goes to another open window, or says that none is open.";
+
 impl Drop for Listening {
     fn drop(&mut self) {
         open_windows().retain(|window| *window != self.0);
+        // a window that went away answers nothing: its commands fail now, not at their timeout
+        let mut pending = pending();
+        let gone: Vec<String> = pending.iter().filter(|(_, (window, _))| *window == self.0).map(|(id, _)| id.clone()).collect();
+        for id in gone {
+            if let Some((_, sender)) = pending.remove(&id) {
+                let _ = sender.send(Err(WINDOW_CLOSED.into()));
+            }
+        }
     }
 }
 
@@ -112,7 +123,7 @@ pub struct WindowAnswer {
 pub async fn window_result(Json(answer): Json<WindowAnswer>) -> StatusCode {
     let waiting = pending().remove(&answer.id);
     match waiting {
-        Some(sender) => {
+        Some((_, sender)) => {
             let _ = sender.send(match answer.error {
                 Some(error) => Err(error),
                 None => Ok(answer.result),
@@ -154,7 +165,12 @@ pub(super) async fn ask_window(command: &str, args: Value, seconds: u64) -> Resu
     };
     let id = format!("w{}", bridge().sequence.fetch_add(1, Ordering::Relaxed));
     let (sender, receiver) = tokio::sync::oneshot::channel();
-    pending().insert(id.clone(), sender);
+    pending().insert(id.clone(), (window, sender));
+    // the window may have closed after it was chosen: its Listening went before this entry was there to fail
+    if !open_windows().contains(&window) {
+        pending().remove(&id);
+        return Err(WINDOW_CLOSED.into());
+    }
     if bridge().commands.send(json!({ "id": id, "window": window, "command": command, "args": args }).to_string()).is_err() {
         pending().remove(&id);
         return Err(NO_WINDOW.into());
@@ -278,6 +294,11 @@ pub(crate) fn carry<T>(work: impl FnOnce() -> T + Send + 'static) -> impl FnOnce
 pub(crate) fn carry_job(job: JobFn) -> JobFn {
     let actor = REQUEST.try_with(|scope| scope.actor.clone()).unwrap_or_else(|_| "studio".into());
     Box::new(move |progress| REQUEST.sync_scope(Scope::of_job(actor), move || job(progress)))
+}
+
+/// Who the current request or job is for: `window:<mark>`, `agent`, `api`, or `studio` outside both.
+pub(crate) fn current_actor() -> String {
+    REQUEST.try_with(|scope| scope.actor.clone()).unwrap_or_else(|_| "studio".into())
 }
 
 /// Writes a project through `write` as its next revision and tells the windows who saved it: the
@@ -693,6 +714,23 @@ pub(super) fn tools() -> Vec<Tool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_command_to_a_window_that_closed_fails_at_once() {
+        let _turn = TURN.lock().await;
+        // a command is sent only while some window listens: without a receiver it would fail as "not open"
+        let _commands = bridge().commands.subscribe();
+        let window = bridge().sequence.fetch_add(1, Ordering::Relaxed);
+        open_windows().push(window);
+        let listening = Listening(window);
+        let asked = tokio::spawn(ask_window("read_page", json!({}), 300));
+        while !bridge().pending.lock().unwrap().values().any(|(to, _)| *to == window) {
+            tokio::task::yield_now().await;
+        }
+        drop(listening);
+        let answer = tokio::time::timeout(Duration::from_secs(5), asked).await.expect("an answer before the timeout").unwrap();
+        assert!(answer.unwrap_err().contains("closed"));
+    }
 
     /// The bridge is one for the whole process: tests that open windows or wait for answers take turns.
     static TURN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());

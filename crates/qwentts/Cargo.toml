@@ -1,0 +1,11 @@
+[package]
+name = "qwentts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "FFI-обвязка над qwen.dll (Qwen3-TTS 1.7B через qwentts.cpp, ServeurpersoCom)"
+
+[dependencies]
+libloading = "0.9"
+blake3 = "1"
+thiserror = { workspace = true }

@@ -128,6 +128,10 @@ pub fn component_selection(id: &str) -> Vec<(&'static str, String)> {
         "higgs" => vec![("tts", "q8_0".into())],
         "higgs-q6_k" => vec![("tts", "q6_k".into())],
         "higgs-q4_k_m" => vec![("tts", "q4_k_m".into())],
+        "drama3" => vec![("tts", DRAMA_TTS.into())],
+        "qwen3-tts" => vec![("tts", "qwen3-tts".into())],
+        "qwen3-tts-q8_0" => vec![("tts", "qwen3-tts-q8_0".into())],
+        SUPERTONIC_TTS => vec![("tts", SUPERTONIC_TTS.into())],
         "parakeet" => vec![("asr_engine", "parakeet".into()), ("asr", "int8".into())],
         "parakeet-fp32" => vec![("asr_engine", "parakeet".into()), ("asr", "fp32".into())],
         "parakeet-ultra" => vec![("asr_engine", "parakeet".into()), ("asr", "ultra".into())],
@@ -160,7 +164,7 @@ pub fn component_selection(id: &str) -> Vec<(&'static str, String)> {
 /// Разрешённые слоты для прямой установки через POST /engine/select {key,value} (без скачивания):
 /// переключение движка/модели/кванта + видимые в настройках лимиты RAM. Возврат true, если слот допустим.
 pub fn is_selection_key(key: &str) -> bool {
-    matches!(
+    crate::checks::is_switch(key) || matches!(
         key,
         "tts" | "asr" | "mt" | "sep" | "asr_engine" | "whisper_model" | "whisper_compute" | "whisper_device"
             // Backend КАЖДОЙ локальной стадии независимо (auto|gpu|cpu): любой движок на любой инстанс.
@@ -172,13 +176,13 @@ pub fn is_selection_key(key: &str) -> bool {
             | "higgs_ref_secs"  // длина реф-клипа клона голоса (меньше = меньше prefill Higgs; <12с спасает 32ГБ)
             | "bench"           // пер-стадийный бенчмарк (bench.json + ⏱ в журнале); галка в настройках, ВЫКЛ по умолчанию
             | "duck_on"         // дакинг фона под дубляжом (приглушать фон под речью); ВЫКЛ по умолчанию — не всем нужен
-            | "qc_asr"          // "1" -> авто-проверка услышанного текста через Whisper ASR; "0" -> выкл (быстрый синтез)
             | "qc_duration"     // "1" -> строгий контроль длительности/растяжения; "0" -> без ограничений
             | "multitake"       // "1" -> генерировать 3 дубля каждой фразы и выбирать лучший по таймингу; "0" -> один дубль (быстро)
             | "breath_on"       // "1" -> авто-вставка легких вдохов в паузах между фразами; "0" -> выкл
             | "speech_rate_on"  // "1" -> адаптация темпа генерации TTS под длину текста/слота; "0" -> дефолт темп
             | "lead_into_silence" // "1" -> не влезшая фраза начинается раньше, в тишину перед репликой, вместо ускорения
             | "emo_ref_on"      // "1" -> эмоциональный референс сцены (перенос эмоций из оригинального вокала); "0" -> выкл
+            | "drama_vram_gb"   // видеопамять для Drama 3, ГБ; "0" (по умолчанию) — авто, см. drama_vram_limit_mb
             | "auto_shorten"    // "1" (по умолчанию) -> не влезшие в слот фразы рендер сокращает через LLM и озвучивает заново
             // Провайдер перевода и отдельно vision: local (своя Gemma) | server (локальный OpenAI-совместимый
             // сервер: Ollama, LM Studio, vLLM) | openrouter. Значение проверяет select_model.
@@ -200,6 +204,7 @@ pub fn is_selection_key(key: &str) -> bool {
             | "or_tts_voice"    // голос по умолчанию для облачного TTS (напр. "alloy")
             | "or_tts_autocast" // БЕТА: автокастинг голосов по полу спикера (муж->муж/жен->жен); ВКЛ по умолчанию
             | "or_asr_on"       // "1" -> транскрипция (ASR) через OpenRouter вместо локального Parakeet/Whisper
+            | "cloud_ok_recognition" | "cloud_ok_translation" | "cloud_ok_vision" | "cloud_ok_voicing" // разрешил ли человек отправлять стадию в облако
             | "or_asr"          // id STT-модели OpenRouter (напр. "openai/whisper-large-v3")
             | "or_concurrency"  // число параллельных облачных запросов (чанки в N потоков; OpenRouter ~50 конкур.)
             // Прокси (режим, тип, адрес) меняется только через /engine/proxy/settings: там пароль уходит в хранилище
@@ -212,6 +217,8 @@ pub fn is_selection_value(key: &str, value: &str) -> bool {
     match key {
         "llm_provider" | "vision_provider" => LlmBackend::parse(value).is_some(),
         "tts_provider" => matches!(value, "local" | "openrouter" | "google"),
+        "cloud_ok_recognition" | "cloud_ok_translation" | "cloud_ok_vision" | "cloud_ok_voicing" => matches!(value, "0" | "1"),
+        "drama_vram_gb" => value.parse::<u32>().is_ok_and(|gb| gb == 0 || (DRAMA_MIN_LIMIT_GB..=256).contains(&gb)),
         "google_tts_mode" => matches!(value, "standard" | "batch"),
         "google_tts_model" => {
             !value.is_empty()
@@ -357,6 +364,9 @@ pub enum LlmBackend {
     Server,
     /// OpenRouter.
     OpenRouter,
+    /// Агент, подключённый по MCP: студия спрашивает его то же, что спросила бы свою модель, с теми же
+    /// инструкциями и схемой ответа (YuE2 `AssistantProvider::Agent`).
+    Agent,
 }
 
 impl LlmBackend {
@@ -365,6 +375,7 @@ impl LlmBackend {
             LlmBackend::Local => "local",
             LlmBackend::Server => "server",
             LlmBackend::OpenRouter => "openrouter",
+            LlmBackend::Agent => "agent",
         }
     }
 
@@ -373,6 +384,7 @@ impl LlmBackend {
             "local" => Some(LlmBackend::Local),
             "server" => Some(LlmBackend::Server),
             "openrouter" => Some(LlmBackend::OpenRouter),
+            "agent" => Some(LlmBackend::Agent),
             _ => None,
         }
     }
@@ -691,7 +703,8 @@ pub fn build_engine(choice: &AsrChoice) -> Box<dyn dub_asr::AsrEngine> {
 }
 
 /// Higgs TTS: папки higgs-{q8_0,q6_k,q4_k_m}, внутри файл {q}.gguf. Возврат (каталог, квант-строка
-/// для audiocpp load_model). Env DUB_STUDIO_HIGGS_MODEL (портатив) имеет приоритет.
+/// для audiocpp load_model). Env DUB_STUDIO_HIGGS_MODEL (портатив) имеет приоритет. Выбранная Drama 3 —
+/// (`drama3`, [`DRAMA_TTS`]) и без скачанных файлов: её загрузка скажет, чего нет, а не подменит её Higgs.
 pub fn resolve_tts(mroot: &Path, sel: &Value) -> (PathBuf, String) {
     if let Ok(env) = std::env::var("DUB_STUDIO_HIGGS_MODEL") {
         let d = PathBuf::from(env);
@@ -702,6 +715,15 @@ pub fn resolve_tts(mroot: &Path, sel: &Value) -> (PathBuf, String) {
             .unwrap_or("q8_0")
             .to_string();
         return (d, q);
+    }
+    if pick(sel, "tts") == Some(DRAMA_TTS) {
+        return (mroot.join(DRAMA_TTS), DRAMA_TTS.to_string());
+    }
+    if pick(sel, "tts") == Some(SUPERTONIC_TTS) {
+        return (crate::supertonic::dir(mroot), SUPERTONIC_TTS.to_string());
+    }
+    if let Some(choice) = pick(sel, "tts").filter(|choice| qwen_quant(choice).is_some()) {
+        return (qwentts::dir(mroot), choice.to_string());
     }
     let has = |q: &str| {
         mroot.join(format!("higgs-{q}")).join(format!("{q}.gguf")).is_file()
@@ -718,6 +740,82 @@ pub fn resolve_tts(mroot: &Path, sel: &Value) -> (PathBuf, String) {
         }
     }
     ret("q8_0") // дефолт-fallback (может ещё не быть скачан)
+}
+
+/// Supertonic 3 в слоте `tts`: десять готовых голосов, без клона.
+pub const SUPERTONIC_TTS: &str = "supertonic3";
+
+/// Квант Qwen3-TTS по значению слота `tts` (`qwen3-tts` — Q4_K_M, `qwen3-tts-q8_0`); None — выбран не Qwen.
+pub fn qwen_quant(tts: &str) -> Option<&'static str> {
+    match tts {
+        "qwen3-tts" => Some("Q4_K_M"),
+        "qwen3-tts-q8_0" => Some("Q8_0"),
+        _ => None,
+    }
+}
+
+/// Почему Qwen3-TTS на этой машине не пойдёт: его ggml считает на CUDA 13 (cuBLAS из models/higgs-engine).
+pub fn qwen_unavailable() -> Option<String> {
+    if cfg!(not(windows)) {
+        return Some(t!("qwen-no-linux"));
+    }
+    let gpu = crate::hw::gpu_report();
+    if gpu.cuda13_ok {
+        return None;
+    }
+    Some(t!("qwen-needs-cuda", card = gpu.summary().unwrap_or_else(|| "-".to_string())))
+}
+
+/// Значение слота `tts` и папка весов Drama 3 (apiplant/drama-q4) в каталоге моделей.
+pub const DRAMA_TTS: &str = "drama3";
+
+/// Видеопамять, в которую Drama 3 входит целиком: карты «24 ГБ» проходят, 20-гиговые — нет. На меньшей карте эксперты
+/// модели (18 ГБ из 21) живут в оперативной памяти, а видеокарта держит кэш нужных сейчас (движок engine-0.1.3+).
+pub const DRAMA_FULL_VRAM: u64 = 23 << 30;
+/// Карта «6 ГБ»: остальной модели нужно около 4,8 ГБ, кэшу экспертов остаётся немного; карта «4 ГБ» не годится.
+pub const DRAMA_MIN_VRAM: u64 = 11 << 29;
+/// Наименьший лимит видеопамяти в настройках, ГБ: меньше — кэшу экспертов рядом с остальной моделью места нет.
+pub const DRAMA_MIN_LIMIT_GB: u32 = 5;
+/// Эксперты в оперативной памяти — 18 ГБ закреплённой памяти: машинам «32 ГБ» хватает, «16 ГБ» — нет.
+pub const DRAMA_MIN_RAM: u64 = 28 << 30;
+
+/// Видеопамять для Drama 3 из настроек (`drama_vram_gb`), МБ; 0 — авто: вся модель, если входит в свободную
+/// видеопамять, иначе свободная без шестнадцатой доли (256 МБ–1 ГБ). Лимит не меньше полной модели держит её целиком.
+pub fn drama_vram_limit_mb(mroot: &Path) -> u32 {
+    pick(&load_selection(mroot), "drama_vram_gb").and_then(|v| v.parse::<u32>().ok()).map_or(0, |gb| gb.saturating_mul(1024))
+}
+
+/// Веса и движок Drama 3 на месте (последний слой весов и DLL).
+pub fn drama_installed(mroot: &Path) -> bool {
+    mroot.join(DRAMA_TTS).join("layer39.safetensors").is_file() && drama_dll(mroot).is_file()
+}
+
+pub fn drama_dll(mroot: &Path) -> PathBuf {
+    mroot.join("drama-engine").join(if cfg!(windows) { "drama_engine.dll" } else { "libdrama_engine.so" })
+}
+
+/// Почему Drama 3 на этой машине не пойдёт: None — карта NVIDIA с CUDA 13 не меньше [`DRAMA_MIN_VRAM`], и если модель
+/// не входит в видеопамять целиком (карта меньше [`DRAMA_FULL_VRAM`] или такой лимит в настройках), оперативной
+/// памяти не меньше [`DRAMA_MIN_RAM`].
+pub fn drama_unavailable(mroot: &Path) -> Option<String> {
+    let gpu = crate::hw::gpu_report();
+    let card = gpu.summary().unwrap_or_else(|| "-".to_string());
+    if !gpu.cuda13_ok {
+        return Some(t!("drama-needs-cuda", card = card));
+    }
+    let gb = |bytes: u64| format!("{:.0}", bytes as f64 / (1u64 << 30) as f64);
+    let vram = crate::hw::total_vram();
+    if vram < DRAMA_MIN_VRAM {
+        return Some(t!("drama-needs-vram", card = card, gb = gb(vram)));
+    }
+    let limit = drama_vram_limit_mb(mroot) as u64 * (1 << 20);
+    if vram < DRAMA_FULL_VRAM || (limit > 0 && limit < DRAMA_FULL_VRAM) {
+        let ram = crate::hw::total_ram();
+        if ram < DRAMA_MIN_RAM {
+            return Some(t!("drama-needs-ram", gb = gb(ram)));
+        }
+    }
+    None
 }
 
 /// Roformer сепарация: models/bsroformer/voc_fv6-{Q8_0,Q5_0,Q4_0}.gguf (все в одном каталоге).
@@ -996,6 +1094,33 @@ mod secret_tests {
 
 #[cfg(test)]
 mod provider_tests {
+    #[test]
+    fn drama_runs_below_24_gb_with_its_experts_in_ram_and_is_refused_without_enough_of_either() {
+        let root = scratch("drama-limits");
+        let why = |vram: &str, ram: &str| {
+            std::env::set_var("DUB_STUDIO_SIMULATE_VRAM_GB", vram);
+            std::env::set_var("DUB_STUDIO_SIMULATE_RAM_GB", ram);
+            let why = drama_unavailable(&root);
+            std::env::remove_var("DUB_STUDIO_SIMULATE_VRAM_GB");
+            std::env::remove_var("DUB_STUDIO_SIMULATE_RAM_GB");
+            why
+        };
+        if !crate::hw::gpu_report().cuda13_ok {
+            assert!(why("16", "64").is_some(), "no CUDA 13 card: refused");
+            return;
+        }
+        assert_eq!(why("16", "64"), None, "16 GB card, 64 GB of RAM: the experts go to RAM");
+        assert_eq!(why("24", "8"), None, "24 GB card: the whole model on it, RAM does not matter");
+        assert_eq!(why("6", "64"), None, "6 GB card, 64 GB of RAM: a small expert cache");
+        assert!(why("4", "64").expect("4 GB card: no room for the expert cache").contains('4'));
+        assert!(why("16", "16").expect("16 GB card, 16 GB of RAM: the experts do not fit in RAM").contains("16"));
+        set_selection(&root, "drama_vram_gb", "8").unwrap();
+        assert_eq!(drama_vram_limit_mb(&root), 8192);
+        assert!(why("24", "16").is_some(), "8 GB limit on a 24 GB card puts the experts in RAM: 16 GB of RAM is too little");
+        assert!(is_selection_value("drama_vram_gb", "0") && is_selection_value("drama_vram_gb", "6") && !is_selection_value("drama_vram_gb", "4"));
+        std::fs::remove_dir_all(&root).ok();
+    }
+
     use super::*;
     use dub_llm::net::{ProxyKind, ProxyMode};
     use serde_json::json;

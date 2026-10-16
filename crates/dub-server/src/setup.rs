@@ -207,6 +207,25 @@ mod platform {
         markers: &[Marker { rel: "models/higgs-engine/audiocpp_engine.dll", expect: 129_390_080 }],
     };
 
+    // Движок Drama 3 (C ABI форка timoncool/drama-rs, capi), CUDA 13.3, sm 75/80/86/89/90/100/120 без PTX:
+    // импортирует cublas64_13.dll (ставит cuda-runtime), cudart слинкован статически.
+    pub const DRAMA_ENGINE: FileSpec = FileSpec { url: "https://github.com/timoncool/drama-rs/releases/download/engine-0.1.3/drama_engine.dll", dest_rel: "models/drama-engine/drama_engine.dll", size: 32_075_264, sha256: "677133f63605d72e3eceb148eb1fd3eee72f0aae02b65750da59bf60d041793f", extract: Extract::None };
+
+    // Движок Qwen3-TTS (форк timoncool/qwentts.cpp, ветка studio, ABI 7), CUDA 13, sm 75/80/86/89/90/100/120 без PTX;
+    // библиотеки ggml лежат рядом с qwen.dll, cudart и cuBLAS ставит cuda-runtime.
+    pub const QWEN_ENGINE: Parts = Parts {
+        size: 434_153_248,
+        files: &[
+            super::QWEN_CODEC,
+            FileSpec { url: "https://github.com/timoncool/qwentts.cpp/releases/download/engine-0.1.0/qwen.dll", dest_rel: "models/qwen3-tts/qwen.dll", size: 425_984, sha256: "273bf728327071096d762d07ce798f6e26d933a9fba0d997ab8d3f02aee8224a", extract: Extract::None },
+            FileSpec { url: "https://github.com/timoncool/qwentts.cpp/releases/download/engine-0.1.0/ggml.dll", dest_rel: "models/qwen3-tts/ggml.dll", size: 62_976, sha256: "7606ca3960bb9797cdc1e28666eba96092619ad49db6df210f54ce0841fe238c", extract: Extract::None },
+            FileSpec { url: "https://github.com/timoncool/qwentts.cpp/releases/download/engine-0.1.0/ggml-base.dll", dest_rel: "models/qwen3-tts/ggml-base.dll", size: 693_760, sha256: "9c81caefcca1646f67958d8f3c8d84fc59c5009dc922faae6bd7170a50547c41", extract: Extract::None },
+            FileSpec { url: "https://github.com/timoncool/qwentts.cpp/releases/download/engine-0.1.0/ggml-cpu.dll", dest_rel: "models/qwen3-tts/ggml-cpu.dll", size: 1_010_176, sha256: "ecff58f5d620c827d02361562512e4611a01ad7b1251bde13ff3dea97e52c80c", extract: Extract::None },
+            FileSpec { url: "https://github.com/timoncool/qwentts.cpp/releases/download/engine-0.1.0/ggml-cuda.dll", dest_rel: "models/qwen3-tts/ggml-cuda.dll", size: 140_809_728, sha256: "30fe1b38ca87499506313841fda1bf064b09422c3d9bc1506b94ec0063d9d1ce", extract: Extract::None },
+        ],
+        markers: &[Marker { rel: super::QWEN_CODEC.dest_rel, expect: super::QWEN_CODEC.size }, Marker { rel: "models/qwen3-tts/qwen.dll", expect: 425_984 }, Marker { rel: "models/qwen3-tts/ggml-cuda.dll", expect: 140_809_728 }],
+    };
+
     pub const WHISPER_ENGINE: Parts = Parts {
         size: 87_654_143,
         files: &[
@@ -329,6 +348,13 @@ mod platform {
         ],
         markers: &[Marker { rel: "models/higgs-engine/libaudiocpp_engine.so", expect: 136_774_464 }],
     };
+
+    // Движок Drama 3 (форк timoncool/drama-rs, capi/build-linux-docker.sh: CUDA 13.3, Ubuntu 22.04, sm 75/80/86/89/90/
+    // 100/120): RUNPATH $ORIGIN и ../higgs-engine, где libcudart и libcublas ставит cuda-runtime.
+    pub const DRAMA_ENGINE: FileSpec = FileSpec { url: "https://github.com/timoncool/drama-rs/releases/download/engine-0.1.3/libdrama_engine.so", dest_rel: "models/drama-engine/libdrama_engine.so", size: 32_642_032, sha256: "b9beb23321fd63025facb2fa1d90087d3dd03069475aa60ad60c3fb3c97892b4", extract: Extract::None };
+
+    // Сборки Qwen3-TTS для Linux пока нет: компонент ставит только кодек, движок остаётся недоступным с причиной.
+    pub const QWEN_ENGINE: Parts = Parts { size: super::QWEN_CODEC.size, files: &[super::QWEN_CODEC], markers: &[Marker { rel: super::QWEN_CODEC.dest_rel, expect: super::QWEN_CODEC.size }] };
 
     // Purfview faster-whisper r189.1 для Linux (последняя Linux-сборка не-XXL, CTranslate2 под CUDA 11).
     pub const WHISPER_ENGINE: Parts = Parts {
@@ -453,6 +479,113 @@ pub const NVIDIA_DRIVER_URL: &str = "https://www.nvidia.com/Download/index.aspx"
 // ═══════════════════════════════════════════════════════════════════════════
 //  МАНИФЕСТ
 // ═══════════════════════════════════════════════════════════════════════════
+
+/// Fish Audio Drama 3: веса apiplant/drama-q4 закреплённой ревизии и её движок одним компонентом (одно без другого
+/// не работает). Целиком — 21 ГБ видеопамяти; на меньшей карте эксперты живут в оперативной памяти (`models::drama_unavailable`).
+const DRAMA3_FILES: &[FileSpec] = &[
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/.gitattributes", dest_rel: "models/drama3/.gitattributes", size: 1_570, sha256: "34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/LICENSE", dest_rel: "models/drama3/LICENSE", size: 19_685, sha256: "733a32442087acbda12ecafe8e71eb8ee5890c89b50ce7ac4ea3777faa3c823e", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/NOTICE", dest_rel: "models/drama3/NOTICE", size: 1_121, sha256: "a513aae85e0f74a5d0a7a6ca4fe2627fd5556bdc0e0076412f21a2296e5d3fe0", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/README.md", dest_rel: "models/drama3/README.md", size: 3_137, sha256: "e3c9172d892f7031663cb60c9fc616d8dca799b9d5b5c896dbfd1df0bc9551e8", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/codec.safetensors", dest_rel: "models/drama3/codec.safetensors", size: 837_939_684, sha256: "84bb73df0d9fe192018ecd5e5cddffebcad21b3c2f28e30ec2e1d5fc15083a41", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/drama.json", dest_rel: "models/drama3/drama.json", size: 5_307, sha256: "4fe5640dd94e208e696935aeb19710b073caf3aafb726a4b3e667ee7f1f92a3f", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/globals.safetensors", dest_rel: "models/drama3/globals.safetensors", size: 1_050_177_916, sha256: "1b3dbea1286ac4a0cb9f75671c1aed6e0d51da2e0218c1586a8ffa9fb179f886", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer00.safetensors", dest_rel: "models/drama3/layer00.safetensors", size: 491_594_072, sha256: "6541d5e1bd20cacd532a78ac46d19f5a3ef9c4ec880ada97f0eaa7f3f5db5c05", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer01.safetensors", dest_rel: "models/drama3/layer01.safetensors", size: 491_594_072, sha256: "7000cc6aead0bffd686dcfd7c94d4e3cb8d04ec37d16576c42c883371725d0de", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer02.safetensors", dest_rel: "models/drama3/layer02.safetensors", size: 491_594_072, sha256: "383b9d5afbedfcf058a63cebbb98130418b2015b3b408e8d02946d6fc4b4ec84", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer03.safetensors", dest_rel: "models/drama3/layer03.safetensors", size: 484_941_240, sha256: "4734df7ad21bcedaa0566a730d932db54a08dd7a501937a693f07e87c15f833b", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer04.safetensors", dest_rel: "models/drama3/layer04.safetensors", size: 491_594_072, sha256: "9a40ac54d3aba510eebc0956952e4e1c266e3796b9cf509c974023c5b529a532", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer05.safetensors", dest_rel: "models/drama3/layer05.safetensors", size: 491_594_072, sha256: "bd0c8c665a7fcd31bdc8b1d0d7c0b7a2176d04b245234b13c2812189330495bd", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer06.safetensors", dest_rel: "models/drama3/layer06.safetensors", size: 491_594_072, sha256: "a90d446c3a3f919da83002b871f132521064164b433b506becfdc6021b709caf", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer07.safetensors", dest_rel: "models/drama3/layer07.safetensors", size: 484_941_240, sha256: "265ad99ec624e82f513d2263593b8bbc5fd51067f8eef948fed101f6dbee76d7", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer08.safetensors", dest_rel: "models/drama3/layer08.safetensors", size: 491_594_072, sha256: "d428ad1704c59adfc9f4a703c3c1090dfb8acf925c4def6df2d8ce3ae427eae3", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer09.safetensors", dest_rel: "models/drama3/layer09.safetensors", size: 491_594_072, sha256: "8a4650096f0ebf418bf348c2a12605bf552656c9497a0d5b5de9ed33c5a9eb32", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer10.safetensors", dest_rel: "models/drama3/layer10.safetensors", size: 491_594_072, sha256: "2ec2fa321ff483b962be2db48369d0e867fb3bb853ba476867108ef9bbb8027e", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer11.safetensors", dest_rel: "models/drama3/layer11.safetensors", size: 484_941_240, sha256: "2c734336b700fdf43cd4c5da21ffce819669b291b0f282482b4741d1e174c987", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer12.safetensors", dest_rel: "models/drama3/layer12.safetensors", size: 491_594_072, sha256: "584c5c6c126c6c02247688afb7d8bdc20b62cb8318504e151a1f4f20431fb422", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer13.safetensors", dest_rel: "models/drama3/layer13.safetensors", size: 491_594_072, sha256: "2b93cddc4718a0801d18153e6254f932df53bb65f923a454c63e22553d0d2998", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer14.safetensors", dest_rel: "models/drama3/layer14.safetensors", size: 491_594_072, sha256: "3e2b5bcd065e2a3a8f23db7442fcc0ed2def45b9a45ef7733cb5cf5dcd567017", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer15.safetensors", dest_rel: "models/drama3/layer15.safetensors", size: 484_941_240, sha256: "7ae3cd1138be5741c854bb5833a79b45f3a075da38da4d3091d05323a0f6f65c", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer16.safetensors", dest_rel: "models/drama3/layer16.safetensors", size: 491_594_072, sha256: "c2a1f91e6dad93feaac77f2bfced4cb11eab64917cccc5b90da893c8cceb9303", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer17.safetensors", dest_rel: "models/drama3/layer17.safetensors", size: 491_594_072, sha256: "9963861e30334e6e338af27fadbe09edac6a5e5a8e497703d0389b04d65fc7b9", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer18.safetensors", dest_rel: "models/drama3/layer18.safetensors", size: 491_594_072, sha256: "a59bd2b492afdaaea1f8839dbf3917a61af7da9decccd3df95fa9762fdec9827", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer19.safetensors", dest_rel: "models/drama3/layer19.safetensors", size: 484_941_240, sha256: "ab0aebd5f49d357e257f363dec847fd8a2acf1e9a9dd4b00673a20a1df6026aa", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer20.safetensors", dest_rel: "models/drama3/layer20.safetensors", size: 491_594_072, sha256: "fad98d824c1a48fbd695b1478339d366bbec776ff2b81187ea6092103eb76c89", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer21.safetensors", dest_rel: "models/drama3/layer21.safetensors", size: 491_594_072, sha256: "b9cfc9357749d2917601cbc46a36c21f2e6421071e26525a58bfb1219160ce1e", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer22.safetensors", dest_rel: "models/drama3/layer22.safetensors", size: 491_594_072, sha256: "8047125966fae6c68c5877d32143468b0d1356315b4ad884085f12354bab2cef", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer23.safetensors", dest_rel: "models/drama3/layer23.safetensors", size: 484_941_240, sha256: "2fb6032e99495b69c88f696f7b394cd173b4f6653c2e8821ea906f0c3b6ce6d4", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer24.safetensors", dest_rel: "models/drama3/layer24.safetensors", size: 491_594_072, sha256: "8ab72775ec73f6a6d4c03563b5247a206ca43d68cc5a15d6b49866642ee4e829", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer25.safetensors", dest_rel: "models/drama3/layer25.safetensors", size: 491_594_072, sha256: "7adb4c2e25aab02979a2a66f9e722750a81bc81b952759323a304fa50155051e", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer26.safetensors", dest_rel: "models/drama3/layer26.safetensors", size: 491_594_072, sha256: "3183953c8f728446f070459f5339fe15ac97cb8d58a3dad3e4e035096ed39467", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer27.safetensors", dest_rel: "models/drama3/layer27.safetensors", size: 484_941_240, sha256: "3bd9566925b16fdaebbafcfca7f87933388410eeefeeacbcc694b9f19c8c8c77", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer28.safetensors", dest_rel: "models/drama3/layer28.safetensors", size: 491_594_072, sha256: "2095bc8e0b53ec8737605d73f41b392ddae53332d99cc6ca18c72c9c9c5967d4", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer29.safetensors", dest_rel: "models/drama3/layer29.safetensors", size: 491_594_072, sha256: "ff9133c5fb2510d44bc86ff47861e8c7cab992b27be33768fb36c8c0754bdf54", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer30.safetensors", dest_rel: "models/drama3/layer30.safetensors", size: 491_594_072, sha256: "31a56962fba00360cc4f8785d4530321bc65217ea9adc69e294edc85e09cd256", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer31.safetensors", dest_rel: "models/drama3/layer31.safetensors", size: 484_941_240, sha256: "d6fb33473b61f81457318b2de4de5d6ff102a4db13fa27a42a7415a23232f909", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer32.safetensors", dest_rel: "models/drama3/layer32.safetensors", size: 491_594_072, sha256: "d958faa82b5a713dbd0fc4d52b6190c23ce4bbb0b33a554c958bd96b2b4e58ab", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer33.safetensors", dest_rel: "models/drama3/layer33.safetensors", size: 491_594_072, sha256: "9ae3497ec8f5098b86ab3449364476bf950b01c12b25334ba1af105705f65712", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer34.safetensors", dest_rel: "models/drama3/layer34.safetensors", size: 491_594_072, sha256: "9d4b0aee182f40c2747708d3b8a6a05c5a93364a664e215559c63197d86d5a6d", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer35.safetensors", dest_rel: "models/drama3/layer35.safetensors", size: 484_941_240, sha256: "1ef286bbb7bdf15cae350dc45dc43f89e8de435f88d8f18290d3c965c44b9eba", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer36.safetensors", dest_rel: "models/drama3/layer36.safetensors", size: 491_594_072, sha256: "e097425a075c208948e558ded50c85fb3b680581d6c654e81ce1b657cbe385b5", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer37.safetensors", dest_rel: "models/drama3/layer37.safetensors", size: 491_594_072, sha256: "050478806fbe737cf84a4ee57a1f99ebd8908e4b5dc474396079b6980118d7ae", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer38.safetensors", dest_rel: "models/drama3/layer38.safetensors", size: 491_594_072, sha256: "16c4d89cf6421a66ab818bd70ae6ebb865f10fbb064b1bea7e4d55a13d92c77a", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/layer39.safetensors", dest_rel: "models/drama3/layer39.safetensors", size: 484_941_240, sha256: "efadbb0557562ee96b1cdd0551b11c2cb390b31bbeb713e3fc33d4b76465ae0d", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/tokenizer.json", dest_rel: "models/drama3/tokenizer.json", size: 20_791_070, sha256: "0e9b9db76b2f0389b04b6ef057a2ac3b89100b7e96f2dd7034d19580a09654d6", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/apiplant/drama-q4/resolve/1fce9bd21d46a0311294aebfad19f994df90902f/tower.safetensors", dest_rel: "models/drama3/tower.safetensors", size: 1_432_245_128, sha256: "52b5ad6ff0b85375e7ab30c84fe46828b17dfe390b8548024e304305102c6908", extract: Extract::None },
+    platform::DRAMA_ENGINE,
+];
+const DRAMA3_WEIGHTS: u64 = 22_938_419_178;
+const DRAMA3_MARKERS: &[Marker] = &[
+    Marker { rel: "models/drama3/layer39.safetensors", expect: 484_941_240 },
+    Marker { rel: "models/drama3/tokenizer.json", expect: 20_791_070 },
+    Marker { rel: platform::DRAMA_ENGINE.dest_rel, expect: platform::DRAMA_ENGINE.size },
+];
+
+/// Qwen3-TTS 1.7B GGUF (Serveurperso/Qwen3-TTS-GGUF, Apache 2.0): кодек 12 Гц и талкеры CustomVoice и Base каждого кванта.
+/// Пути и SHA — как у Speech Studio, чтобы файлы брались у неё.
+const QWEN_CODEC: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-tokenizer-12hz-Q8_0.gguf", dest_rel: "models/qwen3-tts/qwen-tokenizer-12hz-Q8_0.gguf", size: 291_150_624, sha256: "1883beeed99348fc35e23dd225e9082f93f6f8c109330a33d935baa8acdbfd94", extract: Extract::None };
+const QWEN_Q4_K_M: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-1.7b-customvoice-Q4_K_M.gguf", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-customvoice-Q4_K_M.gguf", size: 1_182_631_296, sha256: "cc328834a631bc08bf9f43e62fa23f8a1383d9b429864ce6690cfb172077fc4a", extract: Extract::None };
+const QWEN_BASE_Q4_K_M: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-1.7b-base-Q4_K_M.gguf", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-base-Q4_K_M.gguf", size: 1_219_245_248, sha256: "ea393ebaf2167ea23ce9fc18b093822851358a950d7075cd47ab4f6ce23e887d", extract: Extract::None };
+const QWEN_Q8_0: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-1.7b-customvoice-Q8_0.gguf", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-customvoice-Q8_0.gguf", size: 2_042_834_304, sha256: "cab2cff67a0a557310febe558dc83076b28ed790e491867eb2751759f4cd89fa", extract: Extract::None };
+// HF: RUAccent (ruaccent/accentuator, MIT), ревизия закреплена sha коммита.
+const HF_RUACCENT_ACCENT: &str = "https://huggingface.co/ruaccent/accentuator/resolve/b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855/nn/nn_accent/model.onnx";
+const HF_RUACCENT_ACCENT_CONFIG: &str = "https://huggingface.co/ruaccent/accentuator/resolve/b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855/nn/nn_accent/config.json";
+const HF_RUACCENT_ACCENT_VOCAB: &str = "https://huggingface.co/ruaccent/accentuator/resolve/b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855/nn/nn_accent/vocab.txt";
+const HF_RUACCENT_OMOGRAPH: &str = "https://huggingface.co/ruaccent/accentuator/resolve/b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855/nn/nn_omograph/tiny2/model.onnx";
+const HF_RUACCENT_OMOGRAPH_TOKENIZER: &str = "https://huggingface.co/ruaccent/accentuator/resolve/b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855/nn/nn_omograph/tiny2/tokenizer.json";
+const HF_RUACCENT_ACCENTS: &str = "https://huggingface.co/ruaccent/accentuator/resolve/b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855/dictionary/accents.json.gz";
+const HF_RUACCENT_OMOGRAPHS: &str = "https://huggingface.co/ruaccent/accentuator/resolve/b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855/dictionary/omographs.json.gz";
+const HF_RUACCENT_YO_WORDS: &str = "https://huggingface.co/ruaccent/accentuator/resolve/b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855/dictionary/yo_words.json.gz";
+const HF_RUACCENT_YO_HOMOGRAPHS: &str = "https://huggingface.co/ruaccent/accentuator/resolve/b78ae5ea1e62beaf138bed1865cd8c3b0b5ca855/dictionary/yo_homographs.json.gz";
+/// Supertonic 3 int8 (askurios8, weight-only int8 of Supertone/supertonic-3; Open RAIL-M): four ONNX graphs, the text
+/// indexer and the ten preset voices.
+const SUPERTONIC3_FILES: &[FileSpec] = &[
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/LICENSE", dest_rel: "models/supertonic3/LICENSE", size: 15_007, sha256: "0d944a9110fed9a9602d60e0423a272903e7bd21ab060490774efc77c2275e9f", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/onnx/duration_predictor.onnx", dest_rel: "models/supertonic3/onnx/duration_predictor.onnx", size: 3_700_147, sha256: "c3eb91414d5ff8a7a239b7fe9e34e7e2bf8a8140d8375ffb14718b1c639325db", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/onnx/text_encoder.onnx", dest_rel: "models/supertonic3/onnx/text_encoder.onnx", size: 9_734_378, sha256: "67b0975e50689f599a7834255d53a7cfd72a9f028b0f56e0040ba7dc5007d9cf", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/onnx/vector_estimator.onnx", dest_rel: "models/supertonic3/onnx/vector_estimator.onnx", size: 65_769_855, sha256: "f903a5ed046bb92cf1e557393623d7e709b527d338b042cc0bf9bce417185e5a", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/onnx/vocoder.onnx", dest_rel: "models/supertonic3/onnx/vocoder.onnx", size: 25_820_373, sha256: "ab337d1a10ed54c24cb42e0ea9be3733603149517fa0a8f54d07ef816cb766df", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/onnx/tts.json", dest_rel: "models/supertonic3/onnx/tts.json", size: 8_253, sha256: "42078d3aef1cd43ab43021f3c54f47d2d75ceb4e75f627f118890128b06a0d09", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/onnx/unicode_indexer.json", dest_rel: "models/supertonic3/onnx/unicode_indexer.json", size: 277_676, sha256: "9bf7346e43883a81f8645c81224f786d43c5b57f3641f6e7671a7d6c493cb24f", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/voice_styles/F1.json", dest_rel: "models/supertonic3/voice_styles/F1.json", size: 292_046, sha256: "bbdec6ee00231c2c742ad05483df5334cab3b52fda3ba38e6a07059c4563dbc2", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/voice_styles/F2.json", dest_rel: "models/supertonic3/voice_styles/F2.json", size: 292_423, sha256: "7c722c6a72707b1a77f035d67f0d1351ba187738e06f7683e8c72b1df3477fc6", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/voice_styles/F3.json", dest_rel: "models/supertonic3/voice_styles/F3.json", size: 290_794, sha256: "12f6ef2573baa2defa1128069cb59f203e3ab67c92af77b42df8a0e3a2f7c6ab", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/voice_styles/F4.json", dest_rel: "models/supertonic3/voice_styles/F4.json", size: 291_808, sha256: "c2fa764c1225a76dfc3e2c73e8aa4f70d9ee48793860eb34c295fff01c2e032b", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/voice_styles/F5.json", dest_rel: "models/supertonic3/voice_styles/F5.json", size: 291_479, sha256: "45966e73316415626cf41a7d1c6f3b4c70dbc1ba2bee5c1978ef0ce33244fc8d", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/voice_styles/M1.json", dest_rel: "models/supertonic3/voice_styles/M1.json", size: 291_748, sha256: "e35604687f5d23694b8e91593a93eec0e4eca6c0b02bb8ed69139ab2ea6b0a5b", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/voice_styles/M2.json", dest_rel: "models/supertonic3/voice_styles/M2.json", size: 292_055, sha256: "b76cbf62bac707c710cf0ae5aba5e31eea1a6339a9734bfae33ab98499534a50", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/voice_styles/M3.json", dest_rel: "models/supertonic3/voice_styles/M3.json", size: 290_198, sha256: "ea1ac35ccb91b0d7ecad533a2fbd0eec10c91513d8951e3b25fbba99954e159b", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/voice_styles/M4.json", dest_rel: "models/supertonic3/voice_styles/M4.json", size: 291_522, sha256: "ca8eefad4fcd989c9379032ff3e50738adc547eeb5e221b82593a6d7b3bac303", extract: Extract::None },
+    FileSpec { url: "https://huggingface.co/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/voice_styles/M5.json", dest_rel: "models/supertonic3/voice_styles/M5.json", size: 291_469, sha256: "dd22b92740314321f8ae11c5e87f8dd60d060f15dd3a632b5adf77f471f77af2", extract: Extract::None },
+];
+const SUPERTONIC3_SIZE: u64 = 108_241_231;
+const SUPERTONIC3_MARKERS: &[Marker] = &[
+    Marker { rel: "models/supertonic3/onnx/vector_estimator.onnx", expect: 65_769_855 },
+    Marker { rel: "models/supertonic3/onnx/vocoder.onnx", expect: 25_820_373 },
+    Marker { rel: "models/supertonic3/voice_styles/M5.json", expect: 291_469 },
+];
+const QWEN_RU_STRESS: FileSpec = FileSpec { url: "https://huggingface.co/siriusfreak/qwen3-tts-12hz-1.7b-ru-stress-cf/resolve/c16b3af3db3095120efc1ebb73f6522442bcb3b1/lora/adapter.safetensors", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-base-ru-stress-lora.safetensors", size: 34_908_456, sha256: "88a94c0fbe85800d309f94bb9c28d698bf9c86d9494617b6cf4dd996cc13648b", extract: Extract::None };
+const QWEN_BASE_Q8_0: FileSpec = FileSpec { url: "https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/b7ee2e8c7459c3bea99da23e3d178125a7d1713c/qwen-talker-1.7b-base-Q8_0.gguf", dest_rel: "models/qwen3-tts/qwen-talker-1.7b-base-Q8_0.gguf", size: 2_079_448_256, sha256: "4b9a33a236908dd9435a42f7a396e38038329d053b704342a6413c08544c4fda", extract: Extract::None };
 
 /// Полный список компонентов. Порядок = порядок показа в панели «Первый запуск».
 pub fn manifest() -> Vec<Component> {
@@ -607,6 +740,116 @@ pub fn manifest() -> Vec<Component> {
                 FileSpec { url: "https://huggingface.co/drbaph/Higgs-Audio-v3-Studio/resolve/c6e9db5a2062c15accc1b9bfa54d927bbdb124dc/models/higgs-q4_k_m/higgs_audio_v2_tokenizer_config.json", dest_rel: "models/higgs-q4_k_m/higgs_audio_v2_tokenizer_config.json", size: 2_251, sha256: "1f96f10516c2bb59d5a127e04e659a331a50fb1684217b1492fabd1dc94def26", extract: Extract::None },
             ],
             markers: &[Marker { rel: "models/higgs-q4_k_m/q4_k_m.gguf", expect: 4_086_922_976 }, Marker { rel: "models/higgs-q4_k_m/tokenizer.json", expect: 11_433_924 }],
+            external_url: None,
+        },
+        // Второй движок озвучки (выбор в настройках, тот же слот tts, что у квантов Higgs).
+        Component {
+            id: "drama3",
+            name: "Fish Audio Drama 3 (Q4)".into(),
+            purpose: t!("setup-comp-drama3-purpose"),
+            requirement: Requirement::Optional,
+            delivery: Delivery::Download,
+            size: DRAMA3_WEIGHTS + platform::DRAMA_ENGINE.size,
+            files: DRAMA3_FILES,
+            markers: DRAMA3_MARKERS,
+            external_url: None,
+        },
+        // Третий движок озвучки: клон по эталону (талкер Base) и девять голосов модели (CustomVoice), тот же слот tts.
+        // Движок — библиотека и кодек, общие для обоих квантов; кванты — пары талкеров.
+        Component {
+            id: "qwen3-tts-engine",
+            name: t!("setup-comp-qwen3-tts-engine-name"),
+            purpose: t!("setup-comp-qwen3-tts-engine-purpose"),
+            requirement: Requirement::Optional,
+            delivery: Delivery::Download,
+            size: platform::QWEN_ENGINE.size,
+            files: platform::QWEN_ENGINE.files,
+            markers: platform::QWEN_ENGINE.markers,
+            external_url: None,
+        },
+        Component {
+            id: "qwen3-tts",
+            name: "Qwen3-TTS 1.7B (Q4_K_M)".into(),
+            purpose: t!("setup-comp-qwen3-tts-purpose"),
+            requirement: Requirement::Optional,
+            delivery: Delivery::Download,
+            size: QWEN_Q4_K_M.size + QWEN_BASE_Q4_K_M.size,
+            files: &[QWEN_Q4_K_M, QWEN_BASE_Q4_K_M],
+            markers: &[
+                Marker { rel: QWEN_Q4_K_M.dest_rel, expect: QWEN_Q4_K_M.size },
+                Marker { rel: QWEN_BASE_Q4_K_M.dest_rel, expect: QWEN_BASE_Q4_K_M.size },
+            ],
+            external_url: None,
+        },
+        Component {
+            id: "qwen3-tts-q8_0",
+            name: "Qwen3-TTS 1.7B (Q8_0)".into(),
+            purpose: t!("setup-comp-qwen3-tts-purpose"),
+            requirement: Requirement::Optional,
+            delivery: Delivery::Download,
+            size: QWEN_Q8_0.size + QWEN_BASE_Q8_0.size,
+            files: &[QWEN_Q8_0, QWEN_BASE_Q8_0],
+            markers: &[
+                Marker { rel: QWEN_Q8_0.dest_rel, expect: QWEN_Q8_0.size },
+                Marker { rel: QWEN_BASE_Q8_0.dest_rel, expect: QWEN_BASE_Q8_0.size },
+            ],
+            external_url: None,
+        },
+        Component {
+            id: "qwen3-tts-ru-stress",
+            name: t!("setup-comp-qwen3-tts-ru-stress-name"),
+            purpose: t!("setup-comp-qwen3-tts-ru-stress-purpose"),
+            requirement: Requirement::Optional,
+            delivery: Delivery::Download,
+            size: QWEN_RU_STRESS.size,
+            files: &[QWEN_RU_STRESS],
+            markers: &[Marker { rel: QWEN_RU_STRESS.dest_rel, expect: QWEN_RU_STRESS.size }],
+            external_url: None,
+        },
+        Component {
+            id: "supertonic3",
+            name: t!("setup-comp-supertonic3-name"),
+            purpose: t!("setup-comp-supertonic3-purpose"),
+            requirement: Requirement::Optional,
+            delivery: Delivery::Download,
+            size: SUPERTONIC3_SIZE,
+            files: SUPERTONIC3_FILES,
+            markers: SUPERTONIC3_MARKERS,
+            external_url: None,
+        },
+        Component {
+            id: "ruaccent",
+            name: "RUAccent".into(),
+            purpose: t!("setup-comp-ruaccent-purpose"),
+            requirement: Requirement::Optional,
+            delivery: Delivery::Download,
+            size: 33_942_783,
+            files: &[
+                FileSpec { url: HF_RUACCENT_ACCENT, dest_rel: "models/ruaccent/nn/nn_accent/model.onnx", size: 803_402, sha256: "4e393144e45626f6f1062a0784ef06f921b97321a8e7b87ac2a09a892286500a", extract: Extract::None },
+                FileSpec { url: HF_RUACCENT_ACCENT_CONFIG, dest_rel: "models/ruaccent/nn/nn_accent/config.json", size: 841, sha256: "e377f159a8fc8673e211f100d4a237d5fe3dceb3b6789a5a738bf50bda23be49", extract: Extract::None },
+                FileSpec { url: HF_RUACCENT_ACCENT_VOCAB, dest_rel: "models/ruaccent/nn/nn_accent/vocab.txt", size: 140, sha256: "242882b2f27800e49a6babf46867dabf6dc9b6535b600776a68815fe4d4f4382", extract: Extract::None },
+                FileSpec { url: HF_RUACCENT_OMOGRAPH, dest_rel: "models/ruaccent/nn/nn_omograph/tiny2/model.onnx", size: 10_528_004, sha256: "c28840ab333be5870451a57b28839d3896e3332b791e8be29e75eb1c13338882", extract: Extract::None },
+                FileSpec { url: HF_RUACCENT_OMOGRAPH_TOKENIZER, dest_rel: "models/ruaccent/nn/nn_omograph/tiny2/tokenizer.json", size: 882_532, sha256: "d39943ce113bf88db2556a096c7929080b8c6afedfeefa7e3c3c736ac1eb0090", extract: Extract::None },
+                FileSpec { url: HF_RUACCENT_ACCENTS, dest_rel: "models/ruaccent/dictionary/accents.json.gz", size: 20_954_156, sha256: "aa460ebba90de00fbbf3d41d121961f605b98667e45efb7920f127473b15515e", extract: Extract::None },
+                FileSpec { url: HF_RUACCENT_OMOGRAPHS, dest_rel: "models/ruaccent/dictionary/omographs.json.gz", size: 219_047, sha256: "04a9e81c68d65f65ba493fe0110f99e79087548c2beeec3032e2b66e28706f36", extract: Extract::None },
+                FileSpec { url: HF_RUACCENT_YO_WORDS, dest_rel: "models/ruaccent/dictionary/yo_words.json.gz", size: 548_914, sha256: "a19fa89a964a0691d9fe4ee384783e3934904891843d8f59a1c480d67947a82a", extract: Extract::None },
+                FileSpec { url: HF_RUACCENT_YO_HOMOGRAPHS, dest_rel: "models/ruaccent/dictionary/yo_homographs.json.gz", size: 5_747, sha256: "c4ee777bbbab87f9eac838f370ad92974e079d02b21903e480c54b5f0c8c60d1", extract: Extract::None },
+            ],
+            markers: &[Marker { rel: "models/ruaccent/dictionary/accents.json.gz", expect: 20_954_156 }],
+            external_url: None,
+        },
+        Component {
+            id: "ruaccent-omograph-big",
+            name: t!("setup-comp-ruaccent-omograph-big-name"),
+            purpose: t!("setup-comp-ruaccent-omograph-big-purpose"),
+            requirement: Requirement::Optional,
+            delivery: Delivery::Download,
+            size: 181_553_054 + 3_715_061,
+            files: &[
+                FileSpec { url: "https://huggingface.co/nerualdreming/ruaccent-omograph-int8/resolve/d5c4eb6864d55cfc24ae45530eb4ef96843efb2b/big_poetry/model.onnx", dest_rel: "models/ruaccent/nn/nn_omograph/big_poetry/model.onnx", size: 181_553_054, sha256: "028407ff85d499b56efd25c31c326ecb7bd6496399f52a002b11789a7fc63964", extract: Extract::None },
+                FileSpec { url: "https://huggingface.co/nerualdreming/ruaccent-omograph-int8/resolve/d5c4eb6864d55cfc24ae45530eb4ef96843efb2b/big_poetry/tokenizer.json", dest_rel: "models/ruaccent/nn/nn_omograph/big_poetry/tokenizer.json", size: 3_715_061, sha256: "0f120fc8462d8684194e7fff76bd43a3b8535bb63df158ee7cd37b8ba5c92f03", extract: Extract::None },
+            ],
+            markers: &[Marker { rel: "models/ruaccent/nn/nn_omograph/big_poetry/model.onnx", expect: 181_553_054 }],
             external_url: None,
         },
         // Альтернативный квант ASR: fp32 (точнее, тяжелее int8). Отдельная папка (fp32 приоритетнее int8).
@@ -1081,6 +1324,8 @@ pub struct ComponentStatus {
     pub vram: u64,
     /// Влезает ли модель в видеопамять карты; None — модель без весов, карты нет или стадии идут на CPU.
     pub fits_vram: Option<bool>,
+    /// Id программы (yue2, minimax, dungeon...), у которой компонент взят в этом запуске, вместо закачки.
+    pub taken_from: Option<String>,
 }
 
 /// Оценка VRAM загруженной модели по id (движки/рантаймы = 0). Грубо, для показа в UI.
@@ -1090,6 +1335,12 @@ fn vram_estimate(id: &str) -> u64 {
         "higgs" => gb(5.6),
         "higgs-q6_k" => gb(5.1),
         "higgs-q4_k_m" => gb(4.2),
+        // наименьшая карта, на которой Drama 3 идёт с экспертами в оперативной памяти; целиком модель занимает 22,6
+        "drama3" => gb(5.0),
+        "qwen3-tts" => gb(2.8),
+        "qwen3-tts-q8_0" => gb(3.7),
+        "qwen3-tts-ru-stress" => gb(0.1),
+        "supertonic3" => gb(0.6),
         "gemma" => gb(8.5),
         "gemma-q5_0" => gb(9.9),
         "gemma-q6_k" => gb(11.2),
@@ -1104,6 +1355,11 @@ fn vram_estimate(id: &str) -> u64 {
         "roformer-q4" => gb(0.4),
         _ => 0,
     }
+}
+
+/// Компонент — модель (весам нужна видеопамять), а не движок, рантайм или инструмент.
+pub fn is_model(id: &str) -> bool {
+    vram_estimate(id) > 0
 }
 
 /// Файл на месте и (если размер задан) ровно этого размера. Ревизии закреплены, поэтому допуска нет:
@@ -1345,6 +1601,7 @@ fn status_with_system_dir(repo_root: &Path, c: &Component, system: Option<&Path>
         external_url: c.external_url.map(|s| s.to_string()),
         vram: vram_estimate(c.id),
         fits_vram: None,
+        taken_from: if installed { lock(taken()).get(c.id).cloned() } else { None },
     }
 }
 
@@ -1388,16 +1645,18 @@ pub struct ImportReport {
 }
 
 /// Положить src на место dest: жёсткая ссылка (тот же том — мгновенно и без второй копии гигабайт), иначе
-/// копия через .part + rename (частичной копии под финальным именем не бывает).
-fn adopt_file(src: &Path, dest: &Path) -> std::io::Result<()> {
+/// копия через .part + rename (частичной копии под финальным именем не бывает). Без `copy` — только ссылка:
+/// автоподхват у соседних программ не тратит гигабайты места молча.
+fn adopt_file(src: &Path, dest: &Path, copy: bool) -> std::io::Result<()> {
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)?;
     }
     if dest.exists() {
         std::fs::remove_file(dest)?;
     }
-    if std::fs::hard_link(src, dest).is_ok() {
-        return Ok(());
+    let linked = std::fs::hard_link(src, dest);
+    if linked.is_ok() || !copy {
+        return linked;
     }
     let tmp = with_suffix(dest, ".import");
     std::fs::copy(src, &tmp)?;
@@ -1407,7 +1666,7 @@ fn adopt_file(src: &Path, dest: &Path) -> std::io::Result<()> {
 /// Импорт готовых весов из папки без закачки: для каждого недостающего ПРЯМОГО файла компонента ищем в src_dir
 /// файл того же имени и ТОЧНО того же размера. Архивные компоненты (движки, CUDA) не импортируются: по россыпи
 /// файлов не проверить, что это закреплённая версия, — их докачивает «Первый запуск».
-pub fn import_from_dir(repo_root: &Path, src_dir: &Path, only: Option<&str>) -> ImportReport {
+pub fn import_from_dir(repo_root: &Path, src_dir: &Path, only: Option<&str>, copy: bool, same_folder: bool) -> ImportReport {
     let mut map = std::collections::HashMap::new();
     let mut budget = 200_000usize;
     index_dir(src_dir, &mut map, 0, &mut budget);
@@ -1422,18 +1681,22 @@ pub fn import_from_dir(repo_root: &Path, src_dir: &Path, only: Option<&str>) -> 
             if file_ok(&dest, f.size) {
                 continue;
             }
+            // у соседней программы — ещё и та же папка модели: config.json и словари совпадают по имени и размеру у
+            // разных моделей, а контрольной суммы, которая отличила бы их, здесь нет
+            let folder = dest.parent().and_then(Path::file_name);
+            let in_place = |p: &Path| !same_folder || p.parent().and_then(Path::file_name) == folder;
             let src = match c.markers.iter().find(|m| m.rel == f.dest_rel) {
-                Some(m) => pick_import_source(&c, m, &map).filter(|p| file_len(p) == f.size),
+                Some(m) => pick_import_source(&c, m, &map).filter(|p| file_len(p) == f.size && in_place(p)),
                 None => Path::new(f.dest_rel)
                     .file_name()
                     .and_then(|s| s.to_str())
                     .map(|s| s.to_lowercase())
                     .and_then(|base| map.get(&base))
-                    .and_then(|cands| cands.iter().find(|(_, sz)| *sz == f.size))
+                    .and_then(|cands| cands.iter().find(|(p, sz)| *sz == f.size && in_place(p)))
                     .map(|(p, _)| p),
             };
             let Some(src) = src else { continue };
-            match adopt_file(src, &dest) {
+            match adopt_file(src, &dest, copy) {
                 Ok(()) => {
                     let part = part_path(repo_root, f);
                     let _ = std::fs::remove_file(done_manifest_path(&part));
@@ -1451,6 +1714,31 @@ pub fn import_from_dir(repo_root: &Path, src_dir: &Path, only: Option<&str>) -> 
         }
     }
     report
+}
+
+/// Компоненты, взятые в этом запуске у соседних программ: id → программа, для пометки в «Первом запуске».
+fn taken() -> &'static Mutex<std::collections::BTreeMap<String, String>> {
+    static TAKEN: OnceLock<Mutex<std::collections::BTreeMap<String, String>>> = OnceLock::new();
+    TAKEN.get_or_init(Default::default)
+}
+
+/// Недостающие веса из папок соседних программ (YuE2, MiniMax, Dungeon...) тем же импортом, что и из папки
+/// пользователя: имя файла и точный размер. При старте — только жёсткие ссылки (место не тратится); перед закачкой
+/// и копией, если программа на другом диске, — это всё равно быстрее сети, но только для того, что человек качает
+/// (`only`). Отдаёт (компонент, программа).
+pub fn import_from_neighbors(repo_root: &Path, neighbors: &[(String, PathBuf)], copy: bool, only: Option<&[String]>) -> Vec<(String, String)> {
+    let mut took = Vec::new();
+    for (app, dir) in neighbors {
+        let reports: Vec<ImportReport> = match only {
+            None => vec![import_from_dir(repo_root, dir, None, copy, true)],
+            Some(ids) => ids.iter().map(|id| import_from_dir(repo_root, dir, Some(id), copy, true)).collect(),
+        };
+        for id in reports.into_iter().flat_map(|report| report.imported) {
+            lock(taken()).insert(id.clone(), app.clone());
+            took.push((id, app.clone()));
+        }
+    }
+    took
 }
 
 // ── Место на диске ───────────────────────────────────────────────────────────
@@ -2423,6 +2711,9 @@ fn finish(repo_root: &Path, selected: &[&Component]) -> Value {
         let st = component_status(repo_root, c);
         if st.installed {
             for (engine, variant) in crate::models::component_selection(c.id) {
+                if variant == crate::models::DRAMA_TTS && crate::models::drama_unavailable(&mroot).is_some() {
+                    continue;
+                }
                 if let Err(e) = crate::models::set_selection(&mroot, engine, &variant) {
                     tracing::warn!("active.json: the choice {engine}={variant} was not written: {e}");
                 }
@@ -2919,6 +3210,7 @@ mod tests {
             external_url: None,
             vram: (gb * 1024.0 * 1024.0 * 1024.0) as u64,
             fits_vram: None,
+            taken_from: None,
         }
     }
 
@@ -2952,6 +3244,17 @@ mod tests {
         let mut comps = models();
         installed_variant_covers_group(&mut comps);
         assert_eq!(required(&comps), ["higgs", "gemma", "higgs-engine"], "nothing downloaded keeps every default");
+    }
+
+    #[test]
+    fn drama_can_be_downloaded_from_a_6_gb_card_and_not_from_a_4_gb_one() {
+        let drama = || vec![ComponentStatus { vram: vram_estimate("drama3"), ..model("drama3", 0.0, Requirement::Optional) }];
+        let mut comps = drama();
+        fit_to_vram(&mut comps, 6 << 30);
+        assert_eq!(comps[0].fits_vram, Some(true), "6 GB card: Drama runs with its experts in RAM");
+        let mut comps = drama();
+        fit_to_vram(&mut comps, 4 << 30);
+        assert_eq!(comps[0].fits_vram, Some(false), "4 GB card: no room for the expert cache");
     }
 
     #[test]
@@ -3407,7 +3710,7 @@ mod tests {
         }
         sized(&src.join(".hidden").join("model.bin"), 1);
         sized(&src.join("other").join("config.json"), 7);
-        let r = import_from_dir(&root, &src, Some("whisper-tiny"));
+        let r = import_from_dir(&root, &src, Some("whisper-tiny"), true, false);
         assert_eq!(r.imported, vec!["whisper-tiny".to_string()]);
         assert_eq!(r.files, tiny.files.len());
         assert!(r.errors.is_empty(), "{:?}", r.errors);
@@ -3423,6 +3726,39 @@ mod tests {
         assert!(try_claim(&["roformer-q5".to_string()]).is_some(), "другой компонент качается параллельно");
         drop(a);
         assert!(try_claim(&["roformer-q4".to_string()]).is_some());
+    }
+
+    #[test]
+    fn a_model_another_program_has_is_linked_in_and_says_where_from() {
+        let root = temp_root("neighbor-dst");
+        let other = temp_root("neighbor-src");
+        let tiny = manifest().into_iter().find(|c| c.id == "whisper-tiny").unwrap();
+        // the neighbour keeps the model in a folder of the same name, under its own layout
+        let in_neighbor = |rel: &str| {
+            let rel = Path::new(rel);
+            other.join("karaoke").join(rel.parent().unwrap().file_name().unwrap()).join(rel.file_name().unwrap())
+        };
+        for f in tiny.files {
+            sized(&in_neighbor(f.dest_rel), f.size);
+        }
+        // the same names and sizes in another model's folder are not taken: nothing proves they are this model
+        let decoy = temp_root("neighbor-decoy");
+        for f in tiny.files {
+            sized(&decoy.join("other-model").join(Path::new(f.dest_rel).file_name().unwrap()), f.size);
+        }
+        assert!(import_from_neighbors(&root, &[("ace".to_string(), decoy.clone())], false, None).is_empty());
+
+        let took = import_from_neighbors(&root, &[("yue2".to_string(), other.clone())], false, None);
+        assert!(took.contains(&("whisper-tiny".to_string(), "yue2".to_string())));
+        let status = component_status(&root, &tiny);
+        assert!(status.installed);
+        assert_eq!(status.taken_from.as_deref(), Some("yue2"));
+        let dest = root.join(tiny.files[0].dest_rel);
+        std::fs::write(in_neighbor(tiny.files[0].dest_rel), vec![7u8; tiny.files[0].size as usize]).unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap()[0], 7, "a hard link: one file on disk for both programs");
+        std::fs::remove_dir_all(&root).ok();
+        std::fs::remove_dir_all(&other).ok();
+        std::fs::remove_dir_all(&decoy).ok();
     }
 
     /// Заголовок в том виде, в каком его шлёт Hugging Face.

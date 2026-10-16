@@ -204,6 +204,8 @@ impl Localize for Reject {
             Reject::TooLong { got, max } => t!("line-too-long", got = *got, max = *max),
             Reject::Loop(gram) => t!("line-loop", gram = gram.clone()),
             Reject::Term(term) => t!("line-term-missing", term = term.clone()),
+            Reject::Gender(form) => t!("line-gender", form = form.clone()),
+            Reject::Latin(word) => t!("line-latin", word = word.clone()),
         }
     }
 }

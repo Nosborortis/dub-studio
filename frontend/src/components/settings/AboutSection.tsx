@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Bug, Check, CodeXml, Copy, ExternalLink, FolderOpen, Scale, Tag } from "lucide-react";
-import { api, type AppPaths } from "../../lib/api";
-import { DONATE, LINKS } from "../../lib/links";
+import { api, type AppPaths, type GpuReport } from "../../lib/api";
+import { DONATE, LINKS, issueReportUrl } from "../../lib/links";
 
 function PathRow({ label, path }: { label: string; path: string }) {
   const { t } = useTranslation();
@@ -38,6 +38,10 @@ export default function AboutSection() {
   const { t } = useTranslation();
   const [paths, setPaths] = useState<AppPaths | null>(null);
   const [pathsError, setPathsError] = useState<string | null>(null);
+  const [gpu, setGpu] = useState<GpuReport | null>(null);
+  useEffect(() => {
+    api.setupStatus().then((status) => setGpu(status.gpu)).catch(() => setGpu(null));
+  }, []);
   useEffect(() => {
     api.appPaths()
       .then(setPaths)
@@ -60,7 +64,7 @@ export default function AboutSection() {
         <h4 className={heading}>{t("prefs.links")}</h4>
         <div className="flex flex-wrap gap-2">
           <a href={LINKS.repo} target="_blank" rel="noreferrer" className={link}><CodeXml size={13} />{t("prefs.repo")}</a>
-          <a href={LINKS.issues} target="_blank" rel="noreferrer" className={link}><Bug size={13} />{t("prefs.issues")}</a>
+          <a href={issueReportUrl(__APP_VERSION__, gpu)} target="_blank" rel="noreferrer" className={link}><Bug size={13} />{t("prefs.issues")}</a>
           <a href={LINKS.releases} target="_blank" rel="noreferrer" className={link}><Tag size={13} />{t("prefs.releases")}</a>
           <a href={LINKS.license} target="_blank" rel="noreferrer" className={link}><Scale size={13} />{t("prefs.license")}</a>
           <a href={LINKS.modelLicenses} target="_blank" rel="noreferrer" className={link}><ExternalLink size={13} />{t("prefs.modelLicenses")}</a>

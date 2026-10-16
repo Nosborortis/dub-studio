@@ -32,7 +32,8 @@ fn fill_ref_texts(
     ref_texts: &mut std::collections::BTreeMap<String, String>,
 ) {
     for (spk, refp) in refs {
-        if ref_texts.contains_key(spk) {
+        // голос модели Qwen3-TTS или Supertonic — не запись: расшифровывать нечего
+        if ref_texts.contains_key(spk) || refp.to_string_lossy().starts_with(QWEN_VOICE) || refp.to_string_lossy().starts_with(SUPERTONIC_VOICE) {
             continue;
         }
         if let Ok(rsegs) = asr.transcribe(refp, "auto") {
@@ -538,7 +539,7 @@ const ENGINE_STUCK: &str = "ENGINE_STUCK";
 /// обрывает рендер (НЕ гоняет движок параллельно с зависшим потоком). Так воркер не блокируется навечно и
 /// не ловит гонку FFI.
 fn voice_clone_guarded(
-    engine: &Arc<AudiocppEngine>,
+    engine: &Arc<TtsEngine>,
     text: &str,
     ref_wav: &str,
     ref_text: Option<&str>,
@@ -554,9 +555,7 @@ fn voice_clone_guarded(
         opts.to_string(),
     );
     std::thread::spawn(move || {
-        let r = eng
-            .voice_clone(&t, &rw, rt.as_deref(), &op)
-            .map_err(|e| e.localize());
+        let r = eng.voice_clone(&t, &rw, rt.as_deref(), &op);
         let _ = tx.send(r); // получателя уже нет по таймауту — send вернёт Err, не паникуем
     });
     // Ждём порциями, чтобы отмена джобы доходила до движка, не дожидаясь таймаута синтеза.
@@ -565,7 +564,7 @@ fn voice_clone_guarded(
     let cancelled = loop {
         let left = deadline.saturating_duration_since(std::time::Instant::now());
         match rx.recv_timeout(left.min(Duration::from_millis(200))) {
-            Ok(r) => return r,
+            Ok(r) => return r.map(within_full_scale),
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 return Err(t!("render-synth-thread-ended"));
             }
@@ -589,7 +588,7 @@ fn voice_clone_guarded(
     }
 }
 
-fn load_higgs(paths: &RenderPaths) -> Result<Arc<AudiocppEngine>, String> {
+fn load_higgs(paths: &RenderPaths) -> Result<AudiocppEngine, String> {
     if paths.higgs_backend == "cuda" {
         let gpu = crate::hw::gpu_report();
         if !gpu.cuda13_ok {
@@ -601,8 +600,7 @@ fn load_higgs(paths: &RenderPaths) -> Result<Arc<AudiocppEngine>, String> {
             });
         }
     }
-    let e = Arc::new(AudiocppEngine::load(&paths.higgs_dll).map_err(|e| t!("render-higgs-load-failed", error = e.localize()))?,
-    );
+    let e = AudiocppEngine::load(&paths.higgs_dll).map_err(|e| t!("render-higgs-load-failed", error = e.localize()))?;
     e.load_model(
         &paths.higgs_model_root,
         &paths.higgs_backend,
@@ -612,6 +610,399 @@ fn load_higgs(paths: &RenderPaths) -> Result<Arc<AudiocppEngine>, String> {
     )
     .map_err(|e| t!("render-higgs-model-failed", error = e.localize()))?;
     Ok(e)
+}
+
+/// Drama 3 только на CUDA и карте 24 ГБ+; не та карта или нет файлов — ошибка с причиной, Higgs её не подменяет.
+/// cuBLAS она находит в models/higgs-engine, который augment_path_for_tools кладёт в PATH на старте.
+fn load_drama(paths: &RenderPaths) -> Result<drama::DramaEngine, String> {
+    if let Some(why) = crate::models::drama_unavailable(&paths.models_root) {
+        return Err(why);
+    }
+    let dll = crate::models::drama_dll(&paths.models_root);
+    if !crate::models::drama_installed(&paths.models_root) {
+        return Err(t!("render-drama-missing"));
+    }
+    drama::DramaEngine::load_limited(&dll, &[], &paths.higgs_model_root, DRAMA_MAX_LEN, crate::models::drama_vram_limit_mb(&paths.models_root))
+        .map_err(|e| t!("render-drama-load-failed", error = e.to_string()))
+}
+
+/// Строк промпта Drama 3 на одну фразу: реф (~22 кадра на секунду) + текст + сгенерированное.
+const DRAMA_MAX_LEN: u32 = 2048;
+
+/// Голос персонажа из десяти голосов Supertonic 3: `supertonic:<F1..M5>` вместо записи; Supertonic не клонирует.
+pub const SUPERTONIC_VOICE: &str = "supertonic:";
+
+/// Ударения и «ё» RUAccent для русской озвучки движком, который их читает; ручные «+» остаются. Без RUAccent текст
+/// уходит как есть.
+fn auto_stress(models_root: &Path, lang: &str, text: &str) -> Result<String, String> {
+    if !crate::stress::is_russian(lang) || !crate::stress::installed(models_root) {
+        return Ok(text.to_string());
+    }
+    crate::stress::shared(models_root)
+        .and_then(|s| s.annotate(text))
+        .map(|s| s.text)
+        .map_err(|e| t!("render-stress-failed", error = e))
+}
+
+/// Часть ключа кэша озвучки от RUAccent: какая сеть омографов расставила ударения.
+fn stress_tag(models_root: &Path, lang: &str) -> String {
+    if crate::stress::is_russian(lang) && crate::stress::installed(models_root) {
+        format!("+ruaccent-{}", crate::stress::omograph_tag(models_root))
+    } else {
+        String::new()
+    }
+}
+
+/// Supertonic 3: десять готовых голосов, читает ударение знаком U+0301 после гласной.
+pub struct SupertonicVoices {
+    model: crate::supertonic::Model,
+    models_root: PathBuf,
+    lang: String,
+}
+
+impl SupertonicVoices {
+    fn speak(&self, text: &str, ref_wav: &str, opts: &str) -> Result<(Vec<f32>, i32), String> {
+        let voice = ref_wav.strip_prefix(SUPERTONIC_VOICE).ok_or_else(|| t!("render-supertonic-no-voice", voice = ref_wav.to_string()))?;
+        let text = qwentts::stress_marks(&auto_stress(&self.models_root, &self.lang, text)?, true);
+        let (seed, _, _) = qwen_params(opts);
+        let lang = self.lang.split(['-', '_']).next().unwrap_or("").to_ascii_lowercase();
+        let gap = vec![0f32; (PHRASE_GAP_SECS * self.model.sample_rate() as f32) as usize];
+        let mut audio = Vec::new();
+        for piece in text_pieces(&text, crate::supertonic::MAX_CHARS) {
+            if !audio.is_empty() {
+                audio.extend_from_slice(&gap);
+            }
+            audio.extend(self.model.speak(&piece, &lang, voice, crate::supertonic::DEFAULT_STEPS, crate::supertonic::DEFAULT_SPEED, seed)?);
+        }
+        Ok((audio, self.model.sample_rate() as i32))
+    }
+}
+
+/// Тишина между кусками длинной фразы Supertonic (как в его `call`).
+const PHRASE_GAP_SECS: f32 = 0.3;
+
+/// Текст кусками не длиннее `max` знаков — алгоритм Supertonic `chunk_text`: по предложениям, у слишком длинного
+/// предложения по запятым, у слишком длинной части по словам.
+fn text_pieces(text: &str, max: usize) -> Vec<String> {
+    let text = text.trim();
+    let len = |s: &str| s.chars().count();
+    if len(text) <= max {
+        return vec![text.to_string()];
+    }
+    let mut out: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let flush = |current: &mut String, out: &mut Vec<String>| {
+        if !current.trim().is_empty() {
+            out.push(current.trim().to_string());
+        }
+        current.clear();
+    };
+    for sentence in sentences(text) {
+        let sentence = sentence.trim();
+        if sentence.is_empty() {
+            continue;
+        }
+        if len(sentence) > max {
+            flush(&mut current, &mut out);
+            for part in sentence.split(',').map(str::trim).filter(|p| !p.is_empty()) {
+                if len(part) > max {
+                    flush(&mut current, &mut out);
+                    let mut words = String::new();
+                    for word in part.split_whitespace() {
+                        if !words.is_empty() && len(&words) + len(word) + 1 > max {
+                            flush(&mut words, &mut out);
+                        }
+                        if !words.is_empty() {
+                            words.push(' ');
+                        }
+                        words.push_str(word);
+                    }
+                    flush(&mut words, &mut out);
+                } else {
+                    if !current.is_empty() && len(&current) + len(part) + 2 > max {
+                        flush(&mut current, &mut out);
+                    }
+                    if !current.is_empty() {
+                        current.push_str(", ");
+                    }
+                    current.push_str(part);
+                }
+            }
+            continue;
+        }
+        if !current.is_empty() && len(&current) + len(sentence) + 1 > max {
+            flush(&mut current, &mut out);
+        }
+        if !current.is_empty() {
+            current.push(' ');
+        }
+        current.push_str(sentence);
+    }
+    flush(&mut current, &mut out);
+    out
+}
+
+/// Предложения: конец — `.`, `!`, `?` или `…` с пробелом после, кроме сокращений.
+fn sentences(text: &str) -> Vec<&str> {
+    const ABBREVIATIONS: &[&str] = &["Dr.", "Mr.", "Mrs.", "Ms.", "Prof.", "Sr.", "Jr.", "St.", "etc.", "vs.", "i.e.", "e.g.", "т.е.", "т.д.", "т.п.", "др.", "г.", "гг.", "им.", "ул.", "св."];
+    let mut out = Vec::new();
+    let mut start = 0;
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    for (i, &(at, c)) in chars.iter().enumerate() {
+        if !matches!(c, '.' | '!' | '?' | '…') || !chars.get(i + 1).is_some_and(|&(_, n)| n.is_whitespace()) {
+            continue;
+        }
+        let end = at + c.len_utf8();
+        let head = &text[start..end];
+        if c == '.' && ABBREVIATIONS.iter().any(|a| head.ends_with(a) && head[..head.len() - a.len()].chars().last().is_none_or(|p| !p.is_alphanumeric())) {
+            continue;
+        }
+        out.push(head);
+        start = end;
+    }
+    if start < text.len() {
+        out.push(&text[start..]);
+    }
+    out
+}
+
+/// Голоса Supertonic говорящим без голоса из пака: по полу, разным говорящим одного пола — разные.
+fn supertonic_cast(genders: &std::collections::HashMap<String, String>) -> std::collections::BTreeMap<String, String> {
+    let (female, male): (Vec<&str>, Vec<&str>) = crate::supertonic::VOICES.iter().partition(|v| v.starts_with('F'));
+    let mut spks: Vec<&String> = genders.keys().collect();
+    spks.sort();
+    let (mut fi, mut mi, mut ai) = (0usize, 0usize, 0usize);
+    spks.into_iter()
+        .map(|spk| {
+            let voice = match genders[spk].as_str() {
+                "female" => { fi += 1; female[(fi - 1) % female.len()] }
+                "male" => { mi += 1; male[(mi - 1) % male.len()] }
+                _ => { ai += 1; crate::supertonic::VOICES[(ai - 1) % crate::supertonic::VOICES.len()] }
+            };
+            (spk.clone(), format!("{SUPERTONIC_VOICE}{voice}"))
+        })
+        .collect()
+}
+
+/// Голос персонажа из девяти голосов Qwen3-TTS: `qwen:<id>` в списке голосов проекта вместо имени записи пака.
+pub const QWEN_VOICE: &str = "qwen:";
+
+/// Qwen3-TTS: талкер Base клонирует эталон, CustomVoice говорит голосами модели. Каждый грузится при первой фразе,
+/// которой он нужен, и остаётся до конца рендера.
+pub struct QwenVoices {
+    models_root: PathBuf,
+    quant: &'static str,
+    lang: String,
+    /// Клон читает русские ударения адаптером: «+» перед гласной уходит в модель знаком U+0301.
+    stress: bool,
+    base: std::sync::Mutex<Option<Arc<qwentts::QwenEngine>>>,
+    custom: std::sync::Mutex<Option<Arc<qwentts::QwenEngine>>>,
+}
+
+impl QwenVoices {
+    fn engine(&self, clone: bool) -> Result<Arc<qwentts::QwenEngine>, String> {
+        let mut slot = if clone { &self.base } else { &self.custom }.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(engine) = slot.as_ref() {
+            return Ok(engine.clone());
+        }
+        let engine = Arc::new(
+            qwentts::QwenEngine::load(&self.models_root, self.quant, clone, clone && self.stress).map_err(|e| t!("render-qwen-load-failed", error = e.to_string()))?,
+        );
+        *slot = Some(engine.clone());
+        Ok(engine)
+    }
+
+    /// Фраза голосом модели (`ref_wav` = `qwen:<id>`) или клоном эталона; эталон приводится к моно 24 кГц рядом с ним.
+    fn speak(&self, text: &str, ref_wav: &str, ref_text: Option<&str>, opts: &str) -> Result<(Vec<f32>, i32), String> {
+        let (seed, temperature, max_new_tokens) = qwen_params(opts);
+        let said = match ref_wav.strip_prefix(QWEN_VOICE) {
+            Some(speaker) => {
+                let text = qwentts::stress_marks(text, false);
+                let say = qwentts::Say { text: &text, lang: &self.lang, speaker: Some(speaker), reference: None, seed, temperature, max_new_tokens };
+                self.engine(false)?.speak(&say)
+            }
+            None => {
+                let at_24k = PathBuf::from(format!("{ref_wav}.24k.wav"));
+                if !converted_after(&at_24k, Path::new(ref_wav)) {
+                    media::extract_audio(Path::new(ref_wav), &at_24k, qwentts::SAMPLE_RATE, 1)?;
+                }
+                let (reference, _) = wavio::read_mono_f32(&at_24k)?;
+                let text = if self.stress { qwentts::stress_marks(&auto_stress(&self.models_root, &self.lang, text)?, true) } else { qwentts::stress_marks(text, false) };
+                let say = qwentts::Say { text: &text, lang: &self.lang, speaker: None, reference: Some((&reference, ref_text)), seed, temperature, max_new_tokens };
+                self.engine(true)?.speak(&say)
+            }
+        };
+        said.map(|audio| (audio, qwentts::SAMPLE_RATE as i32)).map_err(|e| match e {
+            qwentts::QwenError::Cancelled => crate::jobs::CANCELLED.to_string(),
+            other => other.to_string(),
+        })
+    }
+
+    fn cancel(&self) {
+        for slot in [&self.base, &self.custom] {
+            if let Some(engine) = slot.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+                engine.cancel();
+            }
+        }
+    }
+}
+
+/// Копия `converted` сделана не раньше `source`: рефы пересобираются под тем же именем, старая копия — чужой голос.
+fn converted_after(converted: &Path, source: &Path) -> bool {
+    let modified = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    matches!((modified(converted), modified(source)), (Some(c), Some(s)) if c >= s)
+}
+
+/// Параметры Qwen3-TTS из JSON попытки Higgs: seed его или свежий случайный, `max_new_tokens` Higgs (75 токенов/с с
+/// запасом 1.5) -> кадры Qwen (12.5/с с запасом 2), температура Higgs 0.1-0.35 -> 0.6-0.95 (по умолчанию 0.9).
+fn qwen_params(opts: &str) -> (u64, f32, i32) {
+    let v: serde_json::Value = serde_json::from_str(opts).unwrap_or_default();
+    let seed = v.get("seed").and_then(|s| s.as_u64()).unwrap_or_else(|| uuid::Uuid::new_v4().as_u64_pair().0);
+    let tokens = v.get("max_new_tokens").and_then(|t| t.as_u64()).unwrap_or(2048) as f64;
+    let max_new = ((tokens * 12.5 * 2.0 / (75.0 * 1.5)).ceil() as i32).clamp(48, 2048);
+    let temperature = v.get("temperature").and_then(|t| t.as_f64()).map_or(0.9, |t| (0.6 + t).min(0.95)) as f32;
+    (seed, temperature, max_new)
+}
+
+/// Адаптер ударений берётся для русской озвучки, когда он установлен.
+fn qwen_stress(models_root: &Path, lang: &str) -> bool {
+    lang.to_ascii_lowercase().starts_with("ru") && qwentts::stress_installed(models_root)
+}
+
+/// Загрузить локальный TTS, выбранный в настройках, с сообщением в журнал.
+fn load_tts(paths: &RenderPaths, lang: &str, progress: &Progress) -> Result<Arc<TtsEngine>, String> {
+    if let Some(quant) = crate::models::qwen_quant(&paths.higgs_quant) {
+        if let Some(why) = crate::models::qwen_unavailable() {
+            return Err(why);
+        }
+        if !qwentts::installed(&paths.models_root, quant, true) || !qwentts::installed(&paths.models_root, quant, false) {
+            return Err(t!("render-qwen-missing"));
+        }
+        emit(progress, "tts", &t!("render-loading-qwen"));
+        return Ok(Arc::new(TtsEngine::Qwen(QwenVoices {
+            models_root: paths.models_root.clone(),
+            quant,
+            lang: lang.to_string(),
+            stress: qwen_stress(&paths.models_root, lang),
+            base: std::sync::Mutex::new(None),
+            custom: std::sync::Mutex::new(None),
+        })));
+    }
+    if paths.higgs_quant == crate::models::SUPERTONIC_TTS {
+        if !crate::supertonic::installed(&paths.models_root) {
+            return Err(t!("render-supertonic-missing"));
+        }
+        emit(progress, "tts", &t!("render-loading-supertonic"));
+        let gpu = crate::models::local_backend(&paths.models_root) == "gpu";
+        let model = crate::supertonic::Model::load(&paths.models_root, gpu).map_err(|e| t!("render-supertonic-load-failed", error = e))?;
+        return Ok(Arc::new(TtsEngine::Supertonic(SupertonicVoices { model, models_root: paths.models_root.clone(), lang: lang.to_string() })));
+    }
+    if paths.higgs_quant == crate::models::DRAMA_TTS {
+        emit(progress, "tts", &t!("render-loading-drama"));
+        Ok(Arc::new(TtsEngine::Drama(load_drama(paths)?)))
+    } else {
+        emit(progress, "tts", &t!("render-loading-higgs"));
+        Ok(Arc::new(TtsEngine::Higgs(load_higgs(paths)?)))
+    }
+}
+
+/// Локальный TTS дубляжа: на карте одна модель — Higgs Audio v3, Drama 3 или Qwen3-TTS.
+pub enum TtsEngine {
+    Higgs(AudiocppEngine),
+    Drama(drama::DramaEngine),
+    Qwen(QwenVoices),
+    Supertonic(SupertonicVoices),
+}
+
+impl TtsEngine {
+    /// Клон голоса рефа. `opts` — JSON лестницы попыток Higgs; Drama берёт из него seed, потолок длины и
+    /// ступень температуры (у Drama своя шкала: 1.0 по умолчанию, ступени лестницы опускают её до 0.8).
+    fn voice_clone(&self, text: &str, ref_wav: &str, ref_text: Option<&str>, opts: &str) -> Result<(Vec<f32>, i32), String> {
+        if !matches!(self, TtsEngine::Qwen(_)) && ref_wav.starts_with(QWEN_VOICE) {
+            return Err(t!("render-qwen-voice-other-engine", voice = ref_wav.to_string()));
+        }
+        if !matches!(self, TtsEngine::Supertonic(_)) && ref_wav.starts_with(SUPERTONIC_VOICE) {
+            return Err(t!("render-supertonic-voice-other-engine", voice = ref_wav.to_string()));
+        }
+        match self {
+            TtsEngine::Qwen(voices) => voices.speak(text, ref_wav, ref_text, opts),
+            TtsEngine::Supertonic(voices) => voices.speak(text, ref_wav, opts),
+            TtsEngine::Higgs(e) => e.voice_clone(&qwentts::stress_marks(text, false), ref_wav, ref_text, opts).map_err(|e| e.localize()),
+            TtsEngine::Drama(e) => {
+                let text = qwentts::stress_marks(text, false);
+                let text = text.as_str();
+                let ref_text = ref_text.filter(|t| !t.trim().is_empty()).ok_or_else(|| t!("render-drama-no-ref-text"))?;
+                let audio = e.speak(text, Path::new(ref_wav), ref_text, &drama_params(opts)).map_err(|err| match err {
+                    drama::DramaError::Cancelled => crate::jobs::CANCELLED.to_string(),
+                    other => other.to_string(),
+                })?;
+                Ok((audio, e.sample_rate() as i32))
+            }
+        }
+    }
+
+    fn cancel(&self) {
+        match self {
+            TtsEngine::Higgs(e) => e.cancel(),
+            TtsEngine::Drama(e) => e.cancel(),
+            TtsEngine::Qwen(voices) => voices.cancel(),
+            TtsEngine::Supertonic(_) => {}
+        }
+    }
+}
+
+/// Прибавка к seed попыток и дублей фразы от её метки перегенерации: движок, который seed соблюдает (Drama 3),
+/// на «Перегенерировать» даёт новые дубли, а не копии прежних. Без метки — 0. Сумма с seed остаётся меньше 2^31:
+/// поле seed в опциях Higgs не должно выйти за знаковое 32-битное.
+fn regen_seed(s: &dub_core::Segment) -> u64 {
+    s.extra.get(REGEN_NONCE).and_then(|v| v.as_str()).map_or(0, |nonce| {
+        nonce.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3)) % 1_000_000_000
+    })
+}
+
+/// Параметры Drama 3 из JSON попытки Higgs: seed — его, а у попытки без seed свежий случайный (как сэмплинг Higgs:
+/// перегенерация фразы даёт новый дубль, а не тот же файл), `max_new_tokens` Higgs (75 токенов/с с запасом 1.5) ->
+/// кадры Drama (21.5/с с запасом 2), температура Higgs 0.1-0.35 -> 0.8-1.0.
+fn drama_params(opts: &str) -> drama::Params {
+    let v: serde_json::Value = serde_json::from_str(opts).unwrap_or_default();
+    let seed = v.get("seed").and_then(|s| s.as_u64()).unwrap_or_else(|| uuid::Uuid::new_v4().as_u64_pair().0);
+    let tokens = v.get("max_new_tokens").and_then(|t| t.as_u64()).unwrap_or(2048) as f64;
+    let max_new = ((tokens * drama::FRAMES_PER_SECOND * 2.0 / (75.0 * 1.5)).ceil() as u32).clamp(64, 2048);
+    let temperature = v.get("temperature").and_then(|t| t.as_f64()).map_or(1.0, |t| (0.7 + t).min(1.0)) as f32;
+    drama::Params { temperature, seed, max_new, ..Default::default() }
+}
+
+#[cfg(test)]
+mod qwen_params_tests {
+    use super::qwen_params;
+
+    #[test]
+    fn the_attempt_ladder_reaches_qwen_on_its_own_scales() {
+        let (seed, temperature, max_new) = qwen_params(r#"{"temperature":0.30,"max_new_tokens":365,"seed":2002}"#);
+        assert_eq!(seed, 2002);
+        assert!((temperature - 0.9).abs() < 1e-6);
+        assert_eq!(max_new, 82);
+        let (first, _, _) = qwen_params(r#"{"temperature":0.10}"#);
+        let (second, _, _) = qwen_params(r#"{"temperature":0.10}"#);
+        assert_ne!(first, second, "regenerating a line must give a new take");
+        assert!((qwen_params("{}").1 - 0.9).abs() < 1e-6);
+    }
+}
+
+#[cfg(test)]
+mod drama_params_tests {
+    use super::drama_params;
+
+    #[test]
+    fn a_seedless_attempt_draws_a_new_seed_and_a_seeded_one_keeps_it() {
+        let first = r#"{"temperature":0.30,"max_new_tokens":365}"#;
+        assert_ne!(drama_params(first).seed, drama_params(first).seed, "regenerating a line must give a new take");
+        let seeded = r#"{"temperature":0.10,"max_new_tokens":365,"seed":2002}"#;
+        assert_eq!(drama_params(seeded).seed, 2002);
+        assert_eq!(drama_params(seeded).max_new, 140);
+        assert!((drama_params(seeded).temperature - 0.8).abs() < 1e-6);
+        assert!((drama_params(first).temperature - 1.0).abs() < 1e-6);
+    }
 }
 
 /// Ошибка синтеза, после которой лестницу ретраев не продолжают: движок завис или джобу отменили.
@@ -674,29 +1065,103 @@ fn synth_defect(samples: &[f32], sr: i32, tgt_chars: usize) -> Option<&'static s
     None
 }
 
-/// The window's name of a synthesis defect `synth_defect` reports.
+/// Дефект синтеза дубля текста `text`: признаки `synth_defect`, затем включённые признаки `tts_audit`.
+fn take_defect(samples: &[f32], sr: i32, text: &str, judge: crate::tts_audit::Judge) -> Option<&'static str> {
+    let chars = text.chars().filter(|c| c.is_alphanumeric()).count();
+    synth_defect(samples, sr, chars).or_else(|| {
+        if !judge.any() || sr <= 0 {
+            return None;
+        }
+        crate::tts_audit::defect(&crate::tts_audit::audit(samples, sr as u32), text, judge)
+    })
+}
+
+/// Клип с пиком выше полной шкалы — тише до 0,99, а не со срезанными пиками при записи в PCM16: громкость
+/// реплики потом всё равно выравнивается.
+fn within_full_scale((mut samples, sr): (Vec<f32>, i32)) -> (Vec<f32>, i32) {
+    let peak = samples.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+    if peak > 1.0 {
+        let k = 0.99 / peak;
+        samples.iter_mut().for_each(|v| *v *= k);
+    }
+    (samples, sr)
+}
+
+/// Брак облачного дубля — в журнал: облачный синтез платный и сам не повторяется, реплику перегенерирует
+/// пользователь.
+fn note_cloud_defect(raw: &Path, line: usize, text: &str, judge: crate::tts_audit::Judge, progress: &Progress) -> Result<(), String> {
+    if !judge.any() {
+        return Ok(());
+    }
+    let (x, sr) = wavio::read_mono_f32(raw)?;
+    if let Some(kind) = take_defect(&x, sr as i32, text, judge) {
+        emit(progress, "tts", &t!("render-cloud-defect", line = line, defect = defect_name(kind)));
+    }
+    Ok(())
+}
+
+/// Озвученных реплик спикера, по которым меряется пол его голоса в дубляже (самые длинные).
+const VOICE_GENDER_PROBES: usize = 5;
+
+/// Пол голоса дубляжа против пола говорящего в оригинале: медиана F0 самых длинных озвученных реплик
+/// каждого спикера. Расхождение — в журнал (голос каталога с неверным полом, клон с чужого рефа).
+fn check_voice_gender(work_dir: &Path, proj: &Project, voiced: &[(String, PathBuf, f64)], progress: &Progress) -> Result<(), String> {
+    let mut spks: Vec<String> = voiced.iter().map(|v| v.0.clone()).collect();
+    spks.sort();
+    spks.dedup();
+    if spks.is_empty() {
+        return Ok(());
+    }
+    let want = crate::casting::speaker_genders_wd(work_dir, proj, &spks);
+    for spk in &spks {
+        let Some(want) = want.get(spk) else { continue };
+        let mut lines: Vec<&(String, PathBuf, f64)> = voiced.iter().filter(|v| &v.0 == spk).collect();
+        lines.sort_by(|a, b| b.2.total_cmp(&a.2));
+        let mut f0s: Vec<f64> = Vec::new();
+        for (_, path, _) in lines.into_iter().take(VOICE_GENDER_PROBES) {
+            let (x, sr) = wavio::read_mono_f32(path)?;
+            f0s.extend(crate::f0::median_f0(&x, sr));
+        }
+        if f0s.is_empty() {
+            continue;
+        }
+        f0s.sort_by(f64::total_cmp);
+        let name = |g: &str| if g == "male" { t!("render-gender-male") } else { t!("render-gender-female") };
+        if let Some(got) = crate::casting::gender_label(f0s[f0s.len() / 2]).filter(|g| g != want) {
+            emit(progress, "tts", &t!("render-voice-gender", speaker = spk.clone(), want = name(want), got = name(got)));
+        }
+    }
+    Ok(())
+}
+
 fn defect_name(kind: &str) -> String {
     match kind {
         "runaway" => t!("render-defect-runaway"),
         "cutoff" => t!("render-defect-cutoff"),
         "silence" => t!("render-defect-silence"),
         "hum" => t!("render-defect-hum"),
+        "repeat" => t!("render-defect-repeat"),
+        "end_burst" => t!("render-defect-end-burst"),
+        "padding" => t!("render-defect-padding"),
+        "whistle" => t!("render-defect-whistle"),
+        "hiss" => t!("render-defect-hiss"),
         other => other.to_string(),
     }
 }
 
-/// Похожесть ожидаемого перевода и услышанного ASR: нормализация (lowercase, ё→е, только буквы/цифры)
-/// + доля общих слов от максимума. Мягкая метрика: ловим «совсем не то/тишину», не орфографию.
+/// Похожесть ожидаемого перевода и услышанного ASR: нормализация (lowercase, ё→е, только буквы/цифры,
+/// иероглиф — отдельное слово) + доля общих слов от максимума. Мягкая метрика: ловим «совсем не то/тишину», не орфографию.
 fn qc_similarity(expected: &str, heard: &str) -> f64 {
     let norm = |s: &str| -> Vec<String> {
-        s.to_lowercase()
-            .replace('ё', "е")
-            .chars()
-            .map(|c| if c.is_alphanumeric() { c } else { ' ' })
-            .collect::<String>()
-            .split_whitespace()
-            .map(|w| w.to_string())
-            .collect()
+        let mut spaced = String::new();
+        for c in s.to_lowercase().replace('ё', "е").chars() {
+            if crate::analyze::is_cjk(c) {
+                spaced.extend([' ', c, ' ']);
+            } else {
+                spaced.push(if c.is_alphanumeric() { c } else { ' ' });
+            }
+        }
+        spaced.split_whitespace().map(str::to_string).collect()
     };
     let a = norm(expected);
     let b = norm(heard);
@@ -726,6 +1191,54 @@ fn qc_similarity(expected: &str, heard: &str) -> f64 {
     let bs: std::collections::HashSet<&str> = b.iter().map(|s| s.as_str()).collect();
     let hit = a.iter().filter(|w| bs.contains(w.as_str())).count();
     hit as f64 / a.len().max(b.len()) as f64
+}
+
+/// Сходство букв ожидаемого и услышанного без пробелов и знаков: «на хер» и «нахер», «Гос-споди» и
+/// «Господи» близки, хотя слова не совпали.
+fn qc_letter_similarity(expected: &str, heard: &str) -> f64 {
+    let letters = |s: &str| -> String {
+        s.chars().filter(|c| c.is_alphabetic()).flat_map(char::to_lowercase).map(|c| if c == 'ё' { 'е' } else { c }).collect()
+    };
+    let (a, b) = (letters(expected), letters(heard));
+    if a.is_empty() || b.is_empty() {
+        return 0.0;
+    }
+    strsim::normalized_levenshtein(&a, &b)
+}
+
+/// Слово текста (от 3 букв), которое в тексте одно, услышано больше раза, и всего услышано больше слов:
+/// модель повторила кусок. Протяжные междометия («э-э-э», «мм») не считаются.
+fn qc_heard_repeat(expected: &str, heard: &str) -> bool {
+    let words = |s: &str| -> Vec<String> {
+        s.to_lowercase()
+            .replace('ё', "е")
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .map(str::to_string)
+            .collect()
+    };
+    let drawn = |w: &str| w.chars().all(|c| "аоуэиыеяюaeiouм".contains(c));
+    let stems = |ws: &[String]| -> std::collections::HashMap<String, usize> {
+        let mut m = std::collections::HashMap::new();
+        for w in ws.iter().filter(|w| w.chars().count() >= 3 && !drawn(w)) {
+            *m.entry(w.chars().take(4).collect::<String>()).or_insert(0) += 1;
+        }
+        m
+    };
+    let (a, b) = (words(expected), words(heard));
+    if b.len() <= a.len() {
+        return false;
+    }
+    let (ta, hb) = (stems(&a), stems(&b));
+    hb.iter().any(|(w, &n)| n > 1 && ta.get(w) == Some(&1))
+}
+
+/// Брак по сверке распознаванием: слова не сошлись (и буквы тоже, если сверка по буквам включена) или
+/// услышан лишний повтор слова.
+fn qc_mismatch(expected: &str, heard: &str, letters: bool, repeat: bool) -> bool {
+    let words_off = qc_similarity(expected, heard) < 0.35;
+    let letters_off = !letters || qc_letter_similarity(expected, heard) < 0.5;
+    (words_off && letters_off) || (repeat && qc_heard_repeat(expected, heard))
 }
 
 /// Текст i-й фразы пакета распознавания; None — фраза не распознана, причина добавлена в `failed`.
@@ -784,7 +1297,7 @@ fn build_dub(
     regen_dub: bool,
     progress: &Progress,
 ) -> Result<(PathBuf, Option<Project>), String> {
-    let mut engine: Option<Arc<AudiocppEngine>> = None;
+    let mut engine: Option<Arc<TtsEngine>> = None;
     let first = PassCfg { shorten: crate::fitplan::auto_shorten_on(&paths.models_root), kept: Default::default(),
     };
     let over = match build_dub_pass(proj, paths, total, keep_music, voiceover, regen_dub, &first, &mut engine, progress,
@@ -827,11 +1340,11 @@ fn build_dub_pass(
     voiceover: bool,
     regen_dub: bool,
     pass: &PassCfg,
-    engine: &mut Option<Arc<AudiocppEngine>>,
+    engine: &mut Option<Arc<TtsEngine>>,
     progress: &Progress,
 ) -> Result<DubPass, String> {
     let shown = proj;
-    let tts_view = crate::tts_text::synthesis_view(proj, progress);
+    let tts_view = crate::tts_text::synthesis_view(proj, crate::tts_text::Speak::load(&paths.models_root), progress);
     let proj = &tts_view;
     let wd = &paths.work_dir;
     // Сегменты с непустым tgt (как в питоне: только строки с текстом синтезируются). Несём индекс в
@@ -909,6 +1422,10 @@ fn build_dub_pass(
     // оригинальных реплик и микса.
     let (ref_src, ref_from_mix) = ref_source(wd, &audio_hq);
 
+    // Qwen3-TTS клонирует по рефу, который кончается концом фразы и не длиннее QWEN_REF_SECS: обрезанный посреди
+    // фразы реф ломает и Base, на более длинном адаптер ударений обрывает речь.
+    let qwen_refs = crate::models::qwen_quant(&paths.higgs_quant).is_some();
+    let ref_secs = if qwen_refs { paths.ref_secs.min(QWEN_REF_SECS) } else { paths.ref_secs };
     // 3) клон-референс. voice.mode="voice" -> реф из пака/записи (voices/<name>.wav|mp3) НА КАЖДОГО спикера.
     //    Имя — CSV; позиция = отсортированный спикер (как во фронте: speaker ?? "0", лексикографически),
     //    пустой слот берёт первое непустое имя. Иначе (clone) — длиннейшая реплика спикера из вокала.
@@ -939,12 +1456,16 @@ fn build_dub_pass(
                     clone_slot_spks.insert(spk.clone()); // спикер на клоне — identity-реф ниже
                     continue;
                 }
+                if nm.starts_with(QWEN_VOICE) || nm.starts_with(SUPERTONIC_VOICE) {
+                    map.insert(spk.clone(), PathBuf::from(nm)); // голос модели Qwen3-TTS: записи нет, имя идёт в синтез
+                    continue;
+                }
                 let src = ["wav", "mp3"].iter().map(|e| paths.voices_dir.join(format!("{nm}.{e}"))).find(|p| p.is_file());
                 if let Some(src) = src {
                     let out = wd.join(format!("ref_pack_{i}.wav"));
                     // реф КАПИТСЯ до paths.ref_secs (дефолт 12с; на слабой RAM юзер уменьшает в настройках —
                     // длинный реф раздувает prefill-граф Higgs -> OOM на 32ГБ).
-                    if media::trim_ref(&src, &out, 0.0, paths.ref_secs).is_ok() {
+                    if media::trim_ref(&src, &out, 0.0, ref_secs).is_ok() {
                         map.insert(spk.clone(), out);
                     }
                 }
@@ -955,6 +1476,19 @@ fn build_dub_pass(
         std::collections::BTreeMap::new()
     };
     let use_pack = !pack_refs.is_empty();
+    // Supertonic не клонирует: без голосов из пака говорящим раздаются его голоса по полу, рефы не строятся.
+    let supertonic_on = paths.higgs_quant == crate::models::SUPERTONIC_TTS;
+    let supertonic_voices = if supertonic_on && !use_pack {
+        let mut spk_ids: Vec<String> = proj.segments.iter().map(|s| s.speaker.clone().unwrap_or_else(|| "0".into())).collect();
+        spk_ids.sort();
+        spk_ids.dedup();
+        let cast = supertonic_cast(&crate::casting::speaker_genders_wd(&paths.work_dir, proj, &spk_ids));
+        let desc: Vec<String> = cast.iter().map(|(k, v)| format!("{k}→{}", &v[SUPERTONIC_VOICE.len()..])).collect();
+        emit(progress, "tts", &t!("render-supertonic-voices", voices = desc.join(", ")));
+        cast
+    } else {
+        std::collections::BTreeMap::new()
+    };
     // Облачный TTS (OpenRouter) вместо локального Higgs: клон-рефы ему не нужны.
     let cloud_tts_on = crate::models::cloud_tts_on(&paths.models_root);
     if mix_ref_noted(ref_from_mix, cloud_tts_on, !use_pack || !clone_slot_spks.is_empty(),
@@ -965,7 +1499,9 @@ fn build_dub_pass(
     // ref_texts: расшифровка реф-клипа НА СПИКЕРА (Higgs клонирует качественнее с ref_text). Клон-режим —
     // src_text выбранного сегмента; пак-режим — АВТОТРАНСКРИПЦИЯ 12с-клипа (как Higgs build_speaker_reference;
     // пак-.txt = полный 3-мин транскрипт, к 12с не подходит). ASR best-effort: сбой -> None (не хуже прежнего).
-    let (spk_refs, mut ref_texts, alt_refs) = if use_pack {
+    let (spk_refs, mut ref_texts, alt_refs) = if supertonic_on && !use_pack {
+        (std::collections::BTreeMap::new(), std::collections::BTreeMap::new(), std::collections::BTreeMap::new())
+    } else if use_pack {
         if clone_slot_spks.is_empty() {
             (std::collections::BTreeMap::new(), std::collections::BTreeMap::new(), std::collections::BTreeMap::new(),
             )
@@ -978,14 +1514,14 @@ fn build_dub_pass(
                 .cloned()
                 .collect();
             let mut asr = crate::models::build_engine(&paths.asr);
-            build_speaker_refs(&segs_clone, &ref_src, wd, paths.ref_secs, asr.as_mut(), progress,
+            build_speaker_refs(&segs_clone, &ref_src, wd, ref_secs, qwen_refs, asr.as_mut(), progress,
             )?
         }
     } else {
         // Скоринг кандидатов + REF-QC (транскрипт каждого кандидата сверяется с текстом его окна,
         // брак -> следующий) — ref_text выставляется ВНУТРИ по фактически услышанному.
         let mut asr = crate::models::build_engine(&paths.asr);
-        build_speaker_refs(&segs, &ref_src, wd, paths.ref_secs, asr.as_mut(), progress)?
+        build_speaker_refs(&segs, &ref_src, wd, ref_secs, qwen_refs, asr.as_mut(), progress)?
     };
     if use_pack {
         // Реф-транскрипция выбранным движком (Parakeet/Whisper), а НЕ захардкоженным Parakeet — иначе у
@@ -1001,6 +1537,9 @@ fn build_dub_pass(
         .unwrap_or_else(|| wd.join("ref.wav"));
     let ref_of = |s: &dub_core::Segment| -> PathBuf {
         let key = s.speaker.as_deref().unwrap_or("0");
+        if let Some(voice) = supertonic_voices.get(key) {
+            return PathBuf::from(voice);
+        }
         if use_pack {
             // клон-слот "-" (#114): спикер вне pack_refs берёт свой identity-реф из вокала (spk_refs).
             return pack_refs
@@ -1053,8 +1592,10 @@ fn build_dub_pass(
         // оверлап чужого спикера -> не чистый эмоц-реф.
         emo_enabled
             && !use_pack
+            && !supertonic_on
             && (s.end - s.start) >= REF_MIN_AFTER_TRIM
             && seg_is_clean(s, s.speaker.as_deref().unwrap_or("0"), &segs)
+            && (!qwen_refs || s.end - s.start <= ref_secs)
     };
     // Эмоц-реф и его ref_text: текст — ровно то, что звучит в окне (ref_window), либо None.
     let emo_ref_of = |s: &dub_core::Segment, sid: &str| -> Option<(PathBuf, Option<String>)> {
@@ -1063,7 +1604,7 @@ fn build_dub_pass(
         }
         let out = wd.join(format!("emoref_{sid}.wav"));
         // кап длины сверху ref_secs (не раздувать prefill-граф Higgs), как для identity-рефа.
-        let cap = paths.ref_secs.min(REF_IDEAL_HI).max(REF_MIN_AFTER_TRIM);
+        let cap = ref_secs.min(REF_IDEAL_HI).max(REF_MIN_AFTER_TRIM);
         let (a, b, text) = ref_window(s, s.start, s.end.min(s.start + cap));
         match media::trim_ref(&ref_src, &out, a, b.max(a + 0.05)) {
             Ok(()) => Some((out, text)),
@@ -1176,6 +1717,14 @@ fn build_dub_pass(
         .and_then(|v| v.as_str())
         .map(|v| v != "0")
         .unwrap_or(true);
+    let checks_sel = crate::models::load_selection(&paths.models_root);
+    let judge = crate::tts_audit::Judge {
+        repeat: crate::checks::on(&checks_sel, "qc_repeat"),
+        end: crate::checks::on(&checks_sel, "qc_end"),
+        silence: crate::checks::on(&checks_sel, "qc_silence"),
+        cloud: false,
+    };
+    let cloud_judge = crate::tts_audit::Judge { cloud: crate::checks::on(&checks_sel, "qc_cloud"), ..judge };
     // Ключ синтеза каждого сегмента: совпал с записанным в seg_ckpt.json и файл на месте -> озвучка
     // переиспользуется (продолжение после сбоя, отката правки, смены голоса туда-обратно).
     let engine_tag = if cloud_tts_on {
@@ -1198,6 +1747,16 @@ fn build_dub_pass(
             crate::models::openrouter_tts_voice(&paths.models_root)
         )
     }
+    } else if let Some(quant) = crate::models::qwen_quant(&paths.higgs_quant) {
+        if qwen_stress(&paths.models_root, &proj.tgt_lang) {
+            format!("qwen:{quant}+ru-stress{}", stress_tag(&paths.models_root, &proj.tgt_lang))
+        } else {
+            format!("qwen:{quant}")
+        }
+    } else if paths.higgs_quant == crate::models::SUPERTONIC_TTS {
+        format!("{}{}", crate::models::SUPERTONIC_TTS, stress_tag(&paths.models_root, &proj.tgt_lang))
+    } else if paths.higgs_quant == crate::models::DRAMA_TTS {
+        format!("drama:{}", crate::models::DRAMA_TTS)
     } else {
         format!(
             "higgs:{}:{}",
@@ -1210,7 +1769,7 @@ fn build_dub_pass(
         u8::from(speech_rate_on),
         u8::from(multitake_on),
         u8::from(emo_enabled),
-        paths.ref_secs
+        ref_secs
     );
     let ref_tags: std::cell::RefCell<std::collections::HashMap<PathBuf, String>> = Default::default();
     let key_of = |s: &dub_core::Segment| -> String {
@@ -1314,7 +1873,7 @@ fn build_dub_pass(
             jobs.push(crate::cloud_tts::Job {
                 out: raw,
                 key: format!("{}:{}", sid, keys[idx]),
-                text: tgt.to_string(), voice,
+                text: qwentts::stress_marks(tgt, false), voice,
                 style: crate::cloud_tts::style(s).into(),
             });
             job_segs.push(idx);
@@ -1329,9 +1888,11 @@ fn build_dub_pass(
             let mut ok = 0usize;
             for (&idx, &good) in job_segs.iter().zip(&done.ok) {
                 if good {
-                    ckpts.set(&sid_of(segs[idx].0, segs[idx].1), &keys[idx])?;
+                    let (fi, s) = segs[idx];
+                    ckpts.set(&sid_of(fi, s), &keys[idx])?;
                     batch_new.insert(idx);
                     ok += 1;
+                    note_cloud_defect(&wd.join(format!("seg_{}.wav", sid_of(fi, s))), fi, s.tgt_text.trim(), cloud_judge, progress)?;
                 }
             }
             emit(progress, "tts", &t!("render-cloud-tts-ready", count = ok),
@@ -1354,6 +1915,8 @@ fn build_dub_pass(
     let prior_timing = crate::dub_timing::DubTiming::load(wd)?;
     // Дубль истории, озвученный в этом проходе, для каждой записи qc_list.
     let mut qc_takes: Vec<Option<u32>> = Vec::new();
+    // Озвученные в этом проходе реплики по спикерам: (спикер, файл, длительность) — для сверки пола голоса.
+    let mut voiced_lines: Vec<(String, PathBuf, f64)> = Vec::new();
     for (idx, &(fi, s)) in segs.iter().enumerate() {
         crate::jobs::check_cancelled()?;
         // Кэш-файл сегмента — ПО ЕГО ID, не по индексу fi. Кэш переиспользуется между рендерами (не-dirty
@@ -1480,6 +2043,7 @@ fn build_dub_pass(
                 ) {
                 Ok(wav) => {
                     dub_core::atomic::write(&raw, &wav).map_err(|e| t!("render-write-cloud-segment", line = fi, error = e.to_string()))?;
+                    note_cloud_defect(&raw, fi, tgt, cloud_judge, progress)?;
                 }
                 Err(e) => {
                     emit(progress, "tts", &t!("render-cloud-tts-failed", line = fi, error = e.to_string()),
@@ -1495,8 +2059,7 @@ fn build_dub_pass(
             // identity-рефа — заранее посчитанный reftext_of. Считаем ТОЛЬКО при
             // синтезе (не тратить ffmpeg-обрезку на закэшированные не-dirty сегменты).
             if engine.is_none() {
-                emit(progress, "tts", &t!("render-loading-higgs"));
-                *engine = Some(load_higgs(paths)?);
+                *engine = Some(load_tts(paths, &proj.tgt_lang, progress)?);
             }
             let (ref_wav, ref_text): (PathBuf, Option<String>) = match emo_ref_of(s, &sid) {
                 Some(emo) => emo,
@@ -1535,7 +2098,17 @@ fn build_dub_pass(
             let mut retried = false;
             // Лучшая из ДЕФЕКТНЫХ попыток (по размаху) — на случай полного провала лестницы.
             let mut best_bad: Option<(Vec<f32>, i32, f64)> = None;
-            let (samples, sr) = loop {
+            // Drama клонирует голос только по рефу с расшифровкой; реф без речи (ASR не дал текста) — оригинал
+            // реплики сразу, без лестницы попыток, которые все кончились бы той же ошибкой.
+            let drama_no_text = matches!(engine.as_deref(), Some(TtsEngine::Drama(_)))
+                && ref_text.is_none()
+                && alt.is_none_or(|(_, t)| t.is_none());
+            let (samples, sr) = if drama_no_text {
+                media::trim(&vocals, &raw, s.start, s.end, 24_000)?;
+                kept_original = true;
+                emit(progress, "tts", &t!("render-drama-kept-original", line = fi));
+                (Vec::new(), 24_000)
+            } else { loop {
                 // Лестница (ENGINES_FINDINGS §1.3/1.8: на КВАНТЕ temperature ВНИЗ 0.3→0.1, НЕ вверх;
                 // офиц. voice-clone примеры = 0.3): 0 — temp 0.3 + кап + RAS7; 1 — жёстче RAS (repeat=1),
                 // temp 0.2, seed; 2 — temp 0.1, top_p 0.9, seed; 3-4 — АЛЬТ-РЕФ спикера (0.3 / 0.15+RAS1).
@@ -1546,7 +2119,7 @@ fn build_dub_pass(
                 } else {
                     (&ref_wav, ref_text.as_deref())
                 };
-                let seed = (fi as u64) * 1000 + attempt as u64;
+                let seed = ((fi as u64) * 1000 + attempt as u64).wrapping_add(regen_seed(s));
                 let opts = match attempt {
                     0 | 3 => format!(
                         "{{\"temperature\":{base_temp:.2},\"top_p\":0.95,\"top_k\":50,\"max_new_tokens\":{tok_cap},\"ras_win_len\":7{base_ras_rep},\"return_audio_in_tokens\":true}}"
@@ -1596,7 +2169,7 @@ fn build_dub_pass(
                         continue;
                     }
                 };
-                match synth_defect(&samples, sr, tgt_chars) {
+                match take_defect(&samples, sr, tgt, judge) {
                     None => break (samples, sr), // дефектов не видно — берём
                     Some(kind) => {
                         let rng = hum_range_db(&samples, sr);
@@ -1620,13 +2193,16 @@ fn build_dub_pass(
                                 break (Vec::new(), sr);
                             }
                         }
-                        retried = true;
-                        total_retries += 1;
+                        // Признаки tts_audit — брак отдельной фразы, а не сбой движка: в счёт обрыва рендера не идут.
+                        if !crate::tts_audit::is_take_sign(kind) {
+                            retried = true;
+                            total_retries += 1;
+                        }
                         let via = if attempt >= 3 { t!("render-retry-alt-ref") } else { t!("render-retry-temperature") };
                         emit(progress, "tts", &t!("render-defect-regenerating", line = fi, defect = defect_name(kind), via = via, attempt = attempt + 1, attempts = MAX_TTS_ATTEMPTS));
                     }
                 }
-            };
+            } };
             if !kept_original {
                 let wav = AudiocppEngine::encode_wav(&samples, sr, 1);
                 dub_core::atomic::write(&raw, &wav).map_err(|e| t!("render-write-segment", line = fi, error = e.to_string()))?;
@@ -1694,7 +2270,7 @@ fn build_dub_pass(
             for take_i in 1..=2u64 {
                 crate::jobs::check_cancelled()?;
                 let take_path = wd.join(format!("seg_{sid}_take{take_i}.wav"));
-                let seed = (fi as u64) * 10000 + take_i * 100 + 77;
+                let seed = ((fi as u64) * 10000 + take_i * 100 + 77).wrapping_add(regen_seed(s));
                 let temp = if take_i == 1 { 0.25 } else { 0.35 };
                 let opts = format!(
                     "{{\"temperature\":{temp:.2},\"top_p\":0.95,\"top_k\":50,\"max_new_tokens\":{tok_cap},\"ras_win_len\":7,\"return_audio_in_tokens\":true,\"seed\":{seed}}}"
@@ -1705,8 +2281,7 @@ fn build_dub_pass(
                 match voice_clone_guarded(eng, tgt, &ref_wav_mt.to_string_lossy(), rt_mt, &opts, vc_to,
                 ) {
                     Ok((samples, sr)) => {
-                        if synth_defect(&samples, sr, tgt.chars().filter(|c| c.is_alphanumeric()).count(),
-                        ).is_none() {
+                        if take_defect(&samples, sr, tgt, judge).is_none() {
                             let wav = AudiocppEngine::encode_wav(&samples, sr, 1);
                             dub_core::atomic::write(&take_path, &wav)?;
                             let td = media::duration(&take_path)?;
@@ -1826,6 +2401,9 @@ fn build_dub_pass(
         // язык, ASR-QC счёл бы его браком и пересинтезировал обратно в артефакт.
         // Higgs-QC (ASR-сверка + пересинтез) — только для локального движка; облачный TTS артефактов-гула
         // не даёт, а его валидация покрытия идёт отдельным гейтом.
+        if synthesized {
+            voiced_lines.push((s.speaker.clone().unwrap_or_else(|| "0".into()), raw.clone(), raw_dur));
+        }
         if !cloud_tts_on && need_synth && !kept_original && !s.tgt_text.trim().is_empty() {
             qc_list.push((
                 fi,
@@ -1863,12 +2441,14 @@ fn build_dub_pass(
         );
     }
 
+    if crate::checks::on(&checks_sel, "qc_voice_gender") {
+        check_voice_gender(&paths.work_dir, proj, &voiced_lines, progress)?;
+    }
+
     // ── QC: ASR-верификация синтеза (выполняется только если qc_asr="1" в настройках) ──
-    let run_qc_asr = crate::models::load_selection(&paths.models_root)
-        .get("qc_asr")
-        .and_then(|v| v.as_str())
-        .map(|v| v == "1")
-        .unwrap_or(false);
+    let run_qc_asr = crate::checks::on(&checks_sel, "qc_asr");
+    let qc_letters = crate::checks::on(&checks_sel, "qc_asr_letters");
+    let qc_repeat = crate::checks::on(&checks_sel, "qc_asr_repeat");
     if run_qc_asr && !qc_list.is_empty() {
         emit(progress, "tts", &t!("render-qc-start", count = qc_list.len()),
         );
@@ -1889,9 +2469,8 @@ fn build_dub_pass(
             // ложные капризы ASR на коротких гасит префикс-режим qc_similarity (0.5 на пустом ASR).
             let Some(h) = heard_text(&heard, i, &mut unheard) else { continue;
             };
-            let sim = qc_similarity(&q.3, h);
-            qc_note(q.0, qc_takes[i], sim)?;
-            if sim < 0.35 {
+            qc_note(q.0, qc_takes[i], qc_similarity(&q.3, h))?;
+            if qc_mismatch(&q.3, h, qc_letters, qc_repeat) {
                 bad_idx.push(i);
             }
         }
@@ -1903,8 +2482,7 @@ fn build_dub_pass(
             emit(progress, "tts", &t!("render-qc-mismatch", count = bad_idx.len()),
             );
             if engine.is_none() {
-                emit(progress, "tts", &t!("render-loading-higgs"));
-                *engine = Some(load_higgs(paths)?);
+                *engine = Some(load_tts(paths, &proj.tgt_lang, progress)?);
             }
             for &i in &bad_idx {
                 crate::jobs::check_cancelled()?;
@@ -1913,7 +2491,6 @@ fn build_dub_pass(
                 let main_rw = ref_of(s);
                 let main_rt = reftext_of(s);
                 let alt = alt_refs.get(spk);
-                let tgt_chars = tgtq.chars().filter(|c| c.is_alphanumeric()).count();
                 // до 3 свежих попыток (низкая temperature по ENGINES_FINDINGS §1.3 + кап токенов §1.1):
                 // альт-реф 0.3 → альт-реф 0.15+RAS1 → основной 0.10 с новым seed
                 let e_dur = (s.end - s.start).max(0.6);
@@ -1938,7 +2515,7 @@ fn build_dub_pass(
                         Err(e) if synth_abort(&e) => return Err(e), // движок завис или отмена — обрыв, не гоняем параллельно
                         Err(_) => continue,
                     };
-                    if synth_defect(&smp, r, tgt_chars).is_some() {
+                    if take_defect(&smp, r, tgtq, judge).is_some() {
                         continue;
                     }
                     let wav = AudiocppEngine::encode_wav(&smp, r, 1);
@@ -1988,9 +2565,8 @@ fn build_dub_pass(
             for (j, &i) in bad_idx.iter().enumerate() {
                 let Some(h) = heard_text(&heard2, j, &mut unheard2) else { continue;
                 };
-                let sim = qc_similarity(&qc_list[i].3, h);
-                qc_note(qc_list[i].0, qc_takes[i], sim)?;
-                if sim < 0.35 {
+                qc_note(qc_list[i].0, qc_takes[i], qc_similarity(&qc_list[i].3, h))?;
+                if qc_mismatch(&qc_list[i].3, h, qc_letters, qc_repeat) {
                     // Отключён сброс на оригинальное аудио. Сгенерированный TTS-звук ВСЕГДА остаётся
                     // на таймлайне, даже если QC (сверка через ASR) не подтвердил совпадение текста.
                     still += 1;
@@ -2254,6 +2830,8 @@ type SpkRefs = (
 /// (мало тембра) или очень длинном (крик/оверлап, раздувает prefill-граф Higgs). Верх капится ref_secs.
 const REF_IDEAL_LO: f64 = 7.0;
 const REF_IDEAL_HI: f64 = 12.0;
+/// Потолок рефа Qwen3-TTS: на 7-10.75 с клон чист, с 12.3 с адаптер ударений обрывает фразы, на 18.7 с молчит.
+const QWEN_REF_SECS: f64 = 10.0;
 /// ±1с внутренняя обрезка полей реф-клипа: края реплики часто с придыханием/захватом соседней речи.
 /// Применяем только если после обрезки остаётся достаточно (≥ ~2.5с) — иначе берём клип как есть.
 const REF_EDGE_TRIM: f64 = 1.0;
@@ -2334,6 +2912,21 @@ fn ref_window(s: &dub_core::Segment, a: f64, b: f64) -> (f64, f64, Option<String
         Some((na, nb, text)) => (na, nb, Some(text)),
         None => (a, b, None),
     }
+}
+
+/// Окно от начала реплики `s` до последнего конца предложения не дальше `cap` с и его слова; None — такого нет.
+fn sentence_window(s: &dub_core::Segment, cap: f64) -> Option<(f64, f64, Option<String>)> {
+    let words = seg_words(s)?;
+    let ends_sentence = |w: &str| w.trim().trim_end_matches(['"', '\'', '»', ')']).ends_with(['.', '!', '?', '…']);
+    let last = words
+        .iter()
+        .rposition(|w| w.2 <= s.start + cap + REF_WORD_EPS && w.2 - s.start >= REF_MIN_AFTER_TRIM && ends_sentence(&w.0))?;
+    let end = match words.get(last + 1) {
+        Some(next) => words[last].2 + ((next.1 - words[last].2) / 2.0).clamp(0.0, REF_WORD_PAD),
+        None => words[last].2,
+    };
+    let text = words[..=last].iter().map(|w| w.0.trim()).collect::<Vec<_>>().join(" ");
+    Some((s.start, end.min(s.start + cap), Some(text)))
 }
 
 /// Почему голос из реплики спикера не сделан. `NoSeparator` пользователь исправляет сам (ставит компонент
@@ -2453,6 +3046,7 @@ fn build_speaker_refs(
     ref_src: &Path,
     wd: &Path,
     ref_secs: f64,
+    sentences: bool,
     asr: &mut dyn dub_asr::AsrEngine,
     progress: &Progress,
 ) -> Result<SpkRefs, String> {
@@ -2544,7 +3138,10 @@ fn build_speaker_refs(
         let mut wins: Vec<(f64, String)> = Vec::with_capacity(good.len());
         for (i, c) in good.iter().enumerate() {
             let p = wd.join(format!("ref_cand_spk{spk}_{i}.wav"));
-            let (a, b, text) = ref_window(c, c.start, c.end.min(c.start + ref_secs));
+            let (a, b, text) = (sentences && c.end - c.start > ref_secs)
+                .then(|| sentence_window(c, ref_secs))
+                .flatten()
+                .unwrap_or_else(|| ref_window(c, c.start, c.end.min(c.start + ref_secs)));
             media::trim_ref(ref_src, &p, a, b.max(a + 0.05))?;
             batch.push(p);
             wins.push((b - a, text.unwrap_or_else(|| c.src_text.trim().to_string())));
@@ -3320,6 +3917,13 @@ fn map_sub_style(s: &CoreSubStyle) -> CapSubStyle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chinese_is_compared_character_by_character() {
+        let s = qc_similarity("床前明月光，疑是地上霜。", "床前明月光, 仪式地上霜");
+        assert!((s - 0.8).abs() < 1e-9, "{s}");
+        assert_eq!(qc_similarity("Qwen3 说：你好", "qwen3 说 你好"), 1.0);
+    }
     use dub_core::{BlurBox as CoreBlurBox, Segment};
 
     fn bb(x: i64, y: i64, w: i64, h: i64, t0: f64, t1: f64, band: bool) -> CoreBlurBox {
@@ -3515,7 +4119,7 @@ mod tests {
             seg("s1", 2.5, 3.0, "[музыка]"),
             seg("s2", 4.0, 5.0, "Всё"),
         ];
-        let view = crate::tts_text::synthesis_view(&shown, &|_| {});
+        let view = crate::tts_text::synthesis_view(&shown, crate::tts_text::Speak { caps: true, symbols: true }, &|_| {});
         assert_ne!(view.segments[0].tgt_text, shown.segments[0].tgt_text, "текст для синтеза очищен");
         let segs: Vec<(usize, &Segment)> =
             view.segments.iter().enumerate().filter(|(_, s)| !s.tgt_text.trim().is_empty()).collect();
@@ -3699,6 +4303,50 @@ mod tests {
         let ws: Vec<Value> = words.iter().map(|(w, a, b)| json!({ "word": w, "start": a, "end": b })).collect();
         s.extra.insert("words".into(), Value::Array(ws));
         s
+    }
+
+    #[test]
+    fn supertonic_gets_pieces_within_its_limit_cut_at_sentences_then_commas_then_words() {
+        assert_eq!(text_pieces("Коротко.", 20), vec!["Коротко."]);
+        assert_eq!(text_pieces("Раз два три. Четыре пять! Шесть семь восемь?", 26), vec!["Раз два три. Четыре пять!", "Шесть семь восемь?"]);
+        assert_eq!(text_pieces("Он пришёл в т.е. другой дом. Вот так.", 30), vec!["Он пришёл в т.е. другой дом.", "Вот так."]);
+        assert_eq!(text_pieces("один два три четыре, пять шесть семь восемь", 22), vec!["один два три четыре", "пять шесть семь восемь"]);
+        let long = "слово ".repeat(40);
+        let cut = text_pieces(&long, 50);
+        assert!(cut.len() > 1 && cut.iter().all(|p| p.chars().count() <= 50), "{cut:?}");
+        assert_eq!(cut.join(" "), long.trim());
+    }
+
+    #[test]
+    fn supertonic_casts_by_gender_and_gives_two_women_two_voices() {
+        let genders: std::collections::HashMap<String, String> =
+            [("0", "female"), ("1", "male"), ("2", "female"), ("3", "")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let cast = supertonic_cast(&genders);
+        assert_eq!(cast["0"], "supertonic:F1");
+        assert_eq!(cast["1"], "supertonic:M1");
+        assert_eq!(cast["2"], "supertonic:F2");
+        assert_eq!(cast["3"], "supertonic:F1");
+    }
+
+    #[test]
+    fn a_long_line_gives_qwen_its_last_whole_sentence_within_the_cap() {
+        let words = [
+            ("Я", 0.10, 0.30),
+            ("пришёл", 0.40, 1.20),
+            ("домой.", 1.30, 2.90),
+            ("Потом", 3.20, 4.00),
+            ("лёг", 4.10, 5.00),
+            ("спать!", 5.10, 7.80),
+            ("А", 8.10, 8.40),
+            ("утром", 8.50, 11.00),
+            ("ушёл.", 11.10, 12.50),
+        ];
+        let s = with_words(seg("s0", 0.0, 13.0, "x"), "Я пришёл домой. Потом лёг спать! А утром ушёл.", &words);
+        let (a, b, text) = sentence_window(&s, 10.0).unwrap();
+        assert_eq!(a, 0.0);
+        assert!(b > 7.80 && b < 8.10, "конец в паузе после «спать!»: {b}");
+        assert_eq!(text.as_deref(), Some("Я пришёл домой. Потом лёг спать!"));
+        assert!(sentence_window(&s, 2.0).is_none(), "ни одно предложение не кончается к 2 с");
     }
 
     #[test]

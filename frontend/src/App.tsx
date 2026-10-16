@@ -1,13 +1,17 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { FolderOpen } from "lucide-react";
-import { DONATE } from "./lib/links";
+import { DONATE, PROGRAM_NAMES } from "./lib/links";
 import { OPEN_SETTINGS_EVENT, SETTINGS_SECTIONS, openSettings } from "./lib/settingsNav";
 import { createLaunchSaver, loadWithMigration } from "./lib/launchDefaults";
 import SettingsModal from "./components/settings/SettingsModal";
 import ProjectsList, { MODE_KEYS } from "./components/ProjectsList";
 import ConfirmDialog from "./components/ConfirmDialog";
+import ErrorNote from "./components/ErrorNote";
+import { ConsentDeclined, requireCloud } from "./lib/cloudConsent";
+import UndoToast from "./components/UndoToast";
+import CloudConsentHost from "./components/CloudConsentHost";
 import ServerOffline from "./components/ServerOffline";
 import { motion } from "motion/react";
 import { Upload, Languages, AudioLines, Sparkles, ArrowRight, ShieldCheck, Download, Loader2, Trash2, Plus, Captions, Columns2, FolderDown, ExternalLink, X, Undo2, Redo2, Settings, Eye, EyeOff, Play, Pause, RotateCw, RefreshCw, Square, Droplet, Check, HelpCircle, Copy, Star, Music, Move, Minimize2, FileText, Users, Mic2, AlignLeft, AlignCenter, AlignRight, ChevronFirst, ChevronLast, ArrowLeftToLine, ArrowRightToLine, ChevronDown, ChevronUp, GripVertical, ScrollText, Clock, Keyboard, Save, ZoomIn, ZoomOut, Sliders, Merge, Scissors, Bot, History, Pin } from "lucide-react";
@@ -15,7 +19,8 @@ import { createPortal } from "react-dom";
 import { useFloatable, dockSlot } from "./lib/useFloatable";
 import { api, llmProviderOf, slot, ApiError, SetupError, JobCancelledError, type Selection, type AnalyzePost, type AnalyzeResult, type JobKind, type Project, type Capabilities, type SetupStatus, type SetupComponent, type ProjectListing, type LaunchDefaults, type Character, type DownloadJob, type UrlFetch, type ShortenResult } from "./lib/api";
 import { LANGS, DUB_LANGS, setLang, type Lang } from "./lib/i18n";
-import { useStore } from "./store";
+import { useStore, type Activity } from "./store";
+import en from "./locales/en.json";
 import PreviewCanvas from "./components/PreviewCanvas";
 import SubsContentControl from "./components/SubsContentControl";
 import { subtitleText } from "./lib/subtitleText";
@@ -52,7 +57,7 @@ import LlmProviders from "./components/LlmProviders";
 import OpenRouterModelSelect, { OpenRouterCatalogRow } from "./components/OpenRouterModelSelect";
 import BridgeHost from "./components/BridgeHost";
 import { useChanged, useEditorBridge, useProjectSync, useTranscriptBridge, type Draft } from "./components/editorBridge";
-import { CASTING_CHANGED, PROJECTS_CHANGED, SETTINGS_CHANGED, VOICES_CHANGED, bridgeError, takeArgs, textArg, useBridgeCommand } from "./lib/mcpBridge";
+import { CASTING_CHANGED, JOURNAL_CHANGED, PROJECTS_CHANGED, SETTINGS_CHANGED, VOICES_CHANGED, bridgeError, takeArgs, textArg, useBridgeCommand } from "./lib/mcpBridge";
 import { named } from "./lib/a11y";
 import { goHome, openProject as openProjectIn } from "./lib/openProject";
 import { GlossaryButton } from "./components/GlossaryPanel";
@@ -105,7 +110,8 @@ function LanguageSwitcher() {
 // показать в дропдауне РЕАЛЬНО активный вариант (а не «первый установленный»), совпадая с тем, что
 // резолвится при генерации.
 const VARIANT_SLOT: Record<string, [string, string]> = {
-  higgs: ["tts", "q8_0"], "higgs-q6_k": ["tts", "q6_k"], "higgs-q4_k_m": ["tts", "q4_k_m"],
+  higgs: ["tts", "q8_0"], "higgs-q6_k": ["tts", "q6_k"], "higgs-q4_k_m": ["tts", "q4_k_m"], drama3: ["tts", "drama3"],
+  "qwen3-tts": ["tts", "qwen3-tts"], "qwen3-tts-q8_0": ["tts", "qwen3-tts-q8_0"], supertonic3: ["tts", "supertonic3"],
   parakeet: ["asr", "int8"], "parakeet-fp32": ["asr", "fp32"], "parakeet-ultra": ["asr", "ultra"],
   "parakeet-ultra-int8": ["asr", "ultra-int8"],
   gemma: ["mt", "q4_0"], "gemma-q5_0": ["mt", "q5_0"], "gemma-q6_k": ["mt", "q6_k"], "gemma-q8_0": ["mt", "q8_0"],
@@ -118,7 +124,16 @@ const VARIANT_SLOT: Record<string, [string, string]> = {
 const activeVariantId = (ids: string[], sel: Selection): string | undefined =>
   ids.find((id) => { const m = VARIANT_SLOT[id]; return !!m && sel[m[0]] === m[1]; });
 
-type VariantI18n = Record<string, { label: "asrVariant.int8" | "asrVariant.fp32" | "asrVariant.ultra" | "asrVariant.ultraInt8"; hint: "asrVariant.int8Hint" | "asrVariant.fp32Hint" | "asrVariant.ultraHint" | "asrVariant.ultraInt8Hint" }>;
+type VariantI18n = Record<string, { label: "asrVariant.int8" | "asrVariant.fp32" | "asrVariant.ultra" | "asrVariant.ultraInt8" | "ttsVariant.drama3" | "ttsVariant.qwen" | "ttsVariant.qwenQ8" | "ttsVariant.supertonic"; hint: "asrVariant.int8Hint" | "asrVariant.fp32Hint" | "asrVariant.ultraHint" | "asrVariant.ultraInt8Hint" | "ttsVariant.drama3Hint" | "ttsVariant.qwenHint" | "ttsVariant.supertonicHint" }>;
+// Drama 3 — второй движок озвучки в том же слоте tts, что и кванты Higgs: выбирается из того же списка.
+const TTS_IDS = ["higgs", "higgs-q6_k", "higgs-q4_k_m", "drama3", "qwen3-tts", "qwen3-tts-q8_0", "supertonic3"];
+const TTS_VARIANT_I18N: VariantI18n = {
+  drama3: { label: "ttsVariant.drama3", hint: "ttsVariant.drama3Hint" },
+  "qwen3-tts": { label: "ttsVariant.qwen", hint: "ttsVariant.qwenHint" },
+  "qwen3-tts-q8_0": { label: "ttsVariant.qwenQ8", hint: "ttsVariant.qwenHint" },
+  supertonic3: { label: "ttsVariant.supertonic", hint: "ttsVariant.supertonicHint" },
+};
+const isQwenTts = (v: string | undefined) => v === "qwen3-tts" || v === "qwen3-tts-q8_0";
 // Варианты Parakeet: int8 и fp32 — базовая модель NVIDIA, Ultra — её дообученная Moondream версия.
 const ASR_VARIANT_I18N: VariantI18n = {
   parakeet: { label: "asrVariant.int8", hint: "asrVariant.int8Hint" },
@@ -169,7 +184,11 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
   const selv = (k: string) => slot(cap?.selection, k) ?? "";
   const hasOrKey = cap?.selection?.or_key_set === true;
   const setSel = (k: string, v: string) => api.setSelection(k, v).then(loadCap).catch(() => {});
+  // Видеопамять Drama 3 из списка: сохранения по очереди, при быстрой смене последним на сервер приходит последнее значение.
+  const [dramaVram, setDramaVram] = useState<string | null>(null);
+  const dramaSaves = useRef<Promise<unknown>>(Promise.resolve());
   // Голоса выбранной облачной TTS-модели (пол/возраст/русский) для дропдауна + предупреждения о русском.
+  const ttsPick = picks[TTS_IDS[0]] ?? activeVariantId(TTS_IDS, cap?.selection ?? {});
   const ttsProvider = slot(cap?.selection, "tts_provider") ?? (selv("or_tts_on") === "1" ? "openrouter" : "local");
   const orTtsModel = slot(cap?.selection, ttsProvider === "google" ? "google_tts_model" : "or_tts_model") ?? "";
   useEffect(() => {
@@ -179,10 +198,27 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
     return () => { active = false; };
   }, [orTtsModel]);
   const setupErr = (e: unknown) => setErr(e instanceof SetupError ? `${errText(e.code)} · ${e.detail}` : e instanceof Error ? e.message : String(e));
-  const dl = async (ids: string[]) => {
-    if (downloading) return;
+  const [asking, setAsking] = useState<string[] | null>(null);
+  const dl = (ids: string[]) => { if (!downloading) setAsking(ids); };
+  const startDownload = async (ids: string[]) => {
+    setAsking(null);
     setErr(null);
     try { await api.setupDownload(ids); await refreshStatus(); } catch (e) { setupErr(e); }
+  };
+  const confirmDownload = () => {
+    if (!asking || !status) return null;
+    const comps = asking.map((id) => status.components.find((c) => c.id === id)).filter((c): c is SetupComponent => !!c);
+    const size = comps.reduce((n, c) => n + Math.max(0, c.size - c.bytesOnDisk), 0);
+    const need = comps.reduce((n, c) => n + c.spaceNeeded, 0);
+    const vram = Math.max(0, ...comps.map((c) => c.vram ?? 0));
+    const fits = status.freeBytes == null || need <= status.freeBytes;
+    const message = [
+      t("settings.dlSize", { size: fmtBytes(size), need: fmtBytes(need) }),
+      status.freeBytes != null ? t(fits ? "settings.dlFree" : "settings.dlNoSpace", { free: fmtBytes(status.freeBytes) }) : "",
+      vram ? t("settings.dlVram", { vram: fmtBytes(vram) }) : "",
+    ].filter(Boolean).join(" ");
+    return <ConfirmDialog title={t("settings.dlTitle", { name: comps.map((c) => c.name).join(", ") })} message={message} confirmLabel={t("setup.downloadOne")}
+      disabled={!fits} onConfirm={() => startDownload(asking)} onCancel={() => setAsking(null)} />;
   };
   const pause = () => { api.setupCancel().then(() => refreshStatus()).catch(setupErr); };
   useChanged(SETTINGS_CHANGED, () => { loadCap(); refreshStatus().catch(setupErr); });
@@ -247,10 +283,12 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
           <div className="flex items-center gap-1.5 shrink-0">
             <RemoveComponent c={c} disabled={!!prog} onDone={(s) => { adopt(s); loadCap(); }} onError={setErr} />
             <BrowseBtn id={c.id} />
-            <button onClick={() => dl([c.id])} disabled={!!prog}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[12px] border border-[var(--color-border)] text-[var(--color-accent-2)] hover:border-[var(--color-accent)] disabled:opacity-40">
-              {c.installed ? <RefreshCw size={12} /> : <Download size={12} />}{c.installed ? t("settings.redownload") : t("setup.downloadOne")}
-            </button>
+            {c.fitsVram === false && !c.installed
+              ? <span className="text-[11px] text-[var(--color-warn)]">{t("setup.noVramShort")}</span>
+              : <button onClick={() => dl([c.id])} disabled={!!prog}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[12px] border border-[var(--color-border)] text-[var(--color-accent-2)] hover:border-[var(--color-accent)] disabled:opacity-40">
+                  {c.installed ? <RefreshCw size={12} /> : <Download size={12} />}{c.installed ? t("settings.redownload") : t("setup.downloadOne")}
+                </button>}
           </div>
         )}
       </div>
@@ -352,11 +390,12 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
 
   return (
     <div>
+      {confirmDownload()}
       <div className="mb-3 space-y-2">
         <ModelsFolder status={status} />
         <GpuNotice gpu={status.gpu} driverUrl={driverUrl} />
         {status.active && status.active.status !== "completed" && (
-          <DownloadProgress job={status.active} onPause={pause} onResume={(ids) => { dl(ids); }} />
+          <DownloadProgress job={status.active} onPause={pause} onResume={(ids) => { void startDownload(ids); }} />
         )}
       </div>
       <button onClick={browse} disabled={!!prog}
@@ -397,8 +436,29 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
           </div>
         ) : (
           <>
-            <VariantPicker base="Higgs Audio v3" ids={["higgs", "higgs-q6_k", "higgs-q4_k_m"]} />
-            {rowOf("higgs-engine")}
+            <VariantPicker base={ttsPick === "drama3" ? "Fish Audio Drama 3" : isQwenTts(ttsPick) ? "Qwen3-TTS 1.7B" : ttsPick === "supertonic3" ? "Supertonic 3" : "Higgs Audio v3"} ids={TTS_IDS} i18n={TTS_VARIANT_I18N} />
+            {ttsPick === "drama3" && (
+              <div className="px-2.5 py-2 rounded-lg bg-[var(--color-surface-2)] border border-[var(--color-border)]">
+                <div className="flex items-center gap-2">
+                  <label htmlFor="drama-vram" className="text-[12px] flex-1">{t("ttsVariant.dramaVram")}</label>
+                  <select id="drama-vram" value={dramaVram ?? (selv("drama_vram_gb") || "0")} onChange={(e) => {
+                      const v = e.target.value;
+                      setDramaVram(v);
+                      dramaSaves.current = dramaSaves.current.then(() => api.setSelection("drama_vram_gb", v)).catch((er) => { setErr(er instanceof Error ? er.message : String(er)); setDramaVram(null); loadCap(); });
+                    }}
+                    className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md px-2 py-1 text-[12px] focus:border-[var(--color-accent)] focus:outline-none">
+                    <option value="0">{t("settings.auto")}</option>
+                    {[5, 6, 8, 10, 12, 16, 20, 24].map((gb) => <option key={gb} value={String(gb)}>{gb} {t("units.gb")}</option>)}
+                  </select>
+                </div>
+                <div className="mt-1 text-[10px] leading-snug text-[var(--color-muted)]">{t("ttsVariant.dramaVramHint")}</div>
+              </div>
+            )}
+            {ttsPick !== "drama3" && !isQwenTts(ttsPick) && ttsPick !== "supertonic3" && rowOf("higgs-engine")}
+            {isQwenTts(ttsPick) && rowOf("qwen3-tts-engine")}
+            {isQwenTts(ttsPick) && rowOf("qwen3-tts-ru-stress")}
+            {(isQwenTts(ttsPick) || ttsPick === "supertonic3") && rowOf("ruaccent")}
+            {(isQwenTts(ttsPick) || ttsPick === "supertonic3") && rowOf("ruaccent-omograph-big")}
           </>
         )}
       </Group>
@@ -626,6 +686,21 @@ function HelpModal({ onClose }: { onClose: () => void }) {
 function StatusBar() {
   const { t } = useTranslation();
   const activities = useStore((s) => s.activities);
+  const loadJournal = useStore((s) => s.loadJournal);
+  const reload = useCallback(() => {
+    loadJournal().catch((problem: unknown) => {
+      useStore.setState((s) => ({ activities: [...s.activities, { t: Date.now(), text: t("status.journalFailed", { error: problem instanceof Error ? problem.message : String(problem) }), kind: "error" }] }));
+    });
+  }, [loadJournal, t]);
+  useEffect(reload, [reload]);
+  useChanged(JOURNAL_CHANGED, reload);
+  // an agent's change is kept as facts and put into words of the window's language
+  const words = (a: Activity) => {
+    if (!a.verb) return a.text;
+    const verb = a.verb in en.journal.verb ? t(`journal.verb.${a.verb as keyof typeof en.journal.verb}`) : a.verb;
+    const kind = a.noun && a.noun in en.journal.kind ? t(`journal.kind.${a.noun as keyof typeof en.journal.kind}`) : (a.noun ?? "");
+    return t("journal.line", { verb, kind, target: a.target ? ` ${t("journal.quoted", { name: a.target })}` : "" });
+  };
   const progress = useStore((s) => s.progress);
   const rendering = useStore((s) => s.rendering);
   const jobSteps = useStore((s) => s.jobSteps);
@@ -633,7 +708,7 @@ function StatusBar() {
   const [open, setOpen] = useState(false);
   const last = activities[activities.length - 1];
   const busy = rendering || progress.pct != null || (!!progress.stage && !["", "done", "error"].includes(progress.stage));
-  const text = busy ? (stageLabel(progress.stage, t, jobSteps) || progress.msg || last?.text || t("status.working")) : (last?.text || t(firstRun ? "status.setupNeeded" : "status.idle"));
+  const text = busy ? (stageLabel(progress.stage, t, jobSteps) || progress.msg || (last ? words(last) : "") || t("status.working")) : (last ? words(last) : t(firstRun ? "status.setupNeeded" : "status.idle"));
   const errored = !busy && last?.kind === "error";
   const fmt = (ms: number) => new Date(ms).toLocaleTimeString();
   return (
@@ -653,7 +728,7 @@ function StatusBar() {
           <div role="log" aria-label={t("status.log")} className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-50 w-[min(560px,92vw)] max-h-[60vh] overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl p-1.5">
             <div className="flex items-center justify-between px-2 py-1 mb-1 border-b border-[var(--color-border)]">
               <span className="text-[11px] uppercase tracking-wide text-[var(--color-muted)] inline-flex items-center gap-1.5"><ScrollText size={13} />{t("status.log")}</span>
-              {activities.length > 0 && <button onClick={() => useStore.setState({ activities: [] })} className="text-[11px] text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors">{t("status.clear")}</button>}
+              {activities.length > 0 && <button onClick={() => { useStore.getState().clearJournal().catch((problem: unknown) => useStore.setState((s) => ({ activities: [...s.activities, { t: Date.now(), text: problem instanceof Error ? problem.message : String(problem), kind: "error" }] }))); }} className="text-[11px] text-[var(--color-muted)] hover:text-[var(--color-text)] transition-colors">{t("status.clear")}</button>}
             </div>
             {activities.length === 0 && <div className="text-[11px] text-[var(--color-muted)]/60 py-3 text-center">—</div>}
             {[...activities].reverse().map((a, i) => (
@@ -662,7 +737,7 @@ function StatusBar() {
                 {a.kind === "agent"
                   ? <Bot size={12} aria-label={t("bridge.agent")} className="shrink-0 mt-[3px] text-[var(--color-accent)]" />
                   : <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 ${a.kind === "error" ? "bg-[var(--color-warn)]" : a.kind === "done" ? "bg-[var(--color-accent)]" : "bg-[var(--color-muted)]"}`} />}
-                <span className={`leading-snug break-words min-w-0 ${a.kind === "error" ? "text-[var(--color-warn)]" : "text-[var(--color-text)]"}`}>{a.text}</span>
+                <span className={`leading-snug break-words min-w-0 ${a.kind === "error" ? "text-[var(--color-warn)]" : "text-[var(--color-text)]"}`}>{words(a)}</span>
               </div>
             ))}
           </div>
@@ -770,7 +845,11 @@ function resolveTrStyle(choice: string, custom: string): string {
   return choice === "custom" ? custom.trim() : (TR_STYLE_PRESETS[choice] ?? "");
 }
 // Красивое имя голоса для списка: срезаем префиксы RU_Male_/RU_Female_ и подчёркивания (значение — полное имя).
-const prettyVoice = (n: string) => n.replace(/^[A-Z]{2}_(Female|Male)_/i, "").replace(/_/g, " ");
+// "qwen:uncle_fu" и "supertonic:F1" — голоса моделей Qwen3-TTS и Supertonic 3: имя голоса и движок, у которого он есть.
+const prettyVoice = (n: string) => n.startsWith("qwen:")
+  ? `${n.slice(5).split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")} · Qwen3-TTS`
+  : n.startsWith("supertonic:") ? `${n.slice(11)} · Supertonic 3`
+  : n.replace(/^[A-Z]{2}_(Female|Male)_/i, "").replace(/_/g, " ");
 
 // Динамический список слотов голосов одного пола (#114): строки [селект голоса][▶ сэмпл][× удалить] + «+ добавить».
 // Порядок строк = приоритет спикеров. Значение слота — полное имя файла без расширения (как в GET /voices).
@@ -998,7 +1077,9 @@ function DropZone() {
   // список и даём открыть прошлый проект в один клик. Автообновление URL (?pid=) — чтобы перезагрузка держала.
   const [recent, setRecent] = useState<ProjectListing[]>([]);
   const [allProjects, setAllProjects] = useState(false);                        // экран «Все проекты»
-  const [deleting, setDeleting] = useState<{ pid: string; video: string } | null>(null);   // проект в диалоге удаления
+  const [removed, setRemoved] = useState<{ pid: string; video: string } | null>(null);   // проект, только что ушедший в корзину: его можно вернуть
+  // одна функция на всё время: заметка держит свой таймер, пока её onClose тот же
+  const closeRemoved = useCallback(() => setRemoved(null), []);
   useEffect(() => {
     api.listProjects().then((r) => setRecent(r.projects))
       .catch((e: unknown) => useStore.getState().pushActivity(t("projects.loadFailed", { error: e instanceof Error ? e.message : String(e) }), "error"));
@@ -1007,15 +1088,25 @@ function DropZone() {
     api.listProjects().then((r) => setRecent(r.projects))
       .catch((err: unknown) => useStore.getState().pushActivity(t("bridge.syncFailed", { error: err instanceof Error ? err.message : String(err) }), "error"));
   });
-  // Удалить проект: DELETE /projects/<pid> стирает workspace/<pid>; из списка убираем только после ответа
-  // сервера, ошибка остаётся в диалоге подтверждения.
+  // Удалить проект: DELETE /projects/<pid> кладёт workspace/<pid> в корзину системы без вопроса, а заметка
+  // внизу 10 секунд предлагает вернуть его; из списка убираем только после ответа сервера.
   const deleteProject = async (pid: string) => {
-    await api.deleteProject(pid);
-    setRecent((r) => r.filter((x) => x.pid !== pid));
+    const video = recent.find((x) => x.pid === pid)?.video ?? pid;
+    try {
+      await api.deleteProject(pid);
+      setRecent((r) => r.filter((x) => x.pid !== pid));
+      setRemoved({ pid, video });
+    } catch (err: unknown) {
+      useStore.getState().pushActivity(t("undoDelete.failed", { video, error: err instanceof Error ? err.message : String(err) }), "error");
+    }
   };
-  const deleteRecent = (e: React.MouseEvent, pid: string, video: string) => {
+  const restoreProject = async (pid: string) => {
+    await api.restoreProject(pid);
+    setRecent((await api.listProjects()).projects);
+  };
+  const deleteRecent = (e: React.MouseEvent, pid: string) => {
     e.stopPropagation();
-    setDeleting({ pid, video });
+    void deleteProject(pid);
   };
   const rtf = new Intl.RelativeTimeFormat((i18n.language as string) || "en", { numeric: "auto" });
   function fmtAgo(sec: number) {
@@ -1173,7 +1264,7 @@ function DropZone() {
                       </div>
                     </button>
                     <ContinueJobButton p={p} onOpen={openProject} />
-                    <button onClick={(e) => deleteRecent(e, p.pid, p.video)} title={t("recent.delete")}
+                    <button onClick={(e) => deleteRecent(e, p.pid)} title={t("recent.delete")}
                       className="shrink-0 mr-1 p-1.5 rounded-md text-[var(--color-muted)] opacity-0 group-hover:opacity-100 hover:text-[#ef4444] hover:bg-white/5 transition"><Trash2 size={15} /></button>
                   </div>
                 ))}
@@ -1541,10 +1632,9 @@ function DropZone() {
         <ProjectsList projects={recent} onOpen={(pid) => { setAllProjects(false); void openProject(pid); }}
           onDelete={deleteProject} onClose={() => setAllProjects(false)} />
       )}
-      {deleting && (
-        <ConfirmDialog danger title={t("recent.delete")} message={t("recent.deleteConfirm", { video: deleting.video })} confirmLabel={t("projects.deleteConfirm")}
-          onCancel={() => setDeleting(null)}
-          onConfirm={async () => { await deleteProject(deleting.pid); setDeleting(null); }} />
+      {removed && (
+        <UndoToast key={removed.pid} text={t("undoDelete.deleted", { video: removed.video })}
+          onUndo={() => restoreProject(removed.pid)} onClose={closeRemoved} />
       )}
       {deletingCast && (
         <ConfirmDialog danger title={t("castingLib.delete")} message={t("castingLib.deleteConfirm")} confirmLabel={t("castingLib.delete")}
@@ -2010,7 +2100,7 @@ function CastingPanel({ pid, characters, voices, onChange }: {
                   ) : (
                     <div className="w-full h-full grid place-items-center"
                       style={{ background: `color-mix(in oklab, ${avatarColor(i)} 22%, var(--color-surface))` }}>
-                      <span className="text-[40px] font-bold leading-none" style={{ color: avatarColor(i) }}>{initialOf(d.name)}</span>
+                      <span className="text-[40px] font-bold leading-none" style={{ color: `color-mix(in oklab, ${avatarColor(i)} 60%, var(--color-text))` }}>{initialOf(d.name)}</span>
                     </div>
                   )}
                   {/* Пол — бейдж поверх аватара. */}
@@ -2656,6 +2746,7 @@ function Editor() {
   // a patch/PUT rejected (4xx/5xx/offline) -> surface it in the Files panel (like doExport) and re-sync from
   // the server so the optimistic local echo can't silently diverge from persisted truth
   async function surfaceErr(err: unknown) {
+    if (err instanceof ConsentDeclined) { pushActivity(err.message, "done"); return; }
     // PUT снимка (undo, импорт субтитров) на проект, который после него сохранили агент или другое окно: сервер
     // его не принял — показываем актуальный проект, а старые снимки undo больше не годятся.
     const changed = err instanceof ApiError && err.code === "project_changed";
@@ -2707,6 +2798,7 @@ function Editor() {
     if (regenId) return;
     setRegenId(segId); pushActivity(t("seg.regen"));
     try {
+      await requireCloud(["voicing"]);
       await api.patch(pid, { op: "regen", id: segId });
       const { job_id } = await enqueueWhenFree(() => api.dubAudio(pid), waitNote);   // ре-TTS ТОЛЬКО dirty-сегмент -> свежая озвучка (без сборки видео; финал — на Экспорте)
       await watchDub(job_id);
@@ -2925,6 +3017,8 @@ function Editor() {
       if (err instanceof JobCancelledError) {
         updateExport(exId, { status: "error", msg: t("jobs.state.cancelled") });
         pushActivity(t("jobs.cancelledKind", { kind: t("jobs.kind.render") }), "done");
+      } else if (err instanceof ConsentDeclined) {
+        useStore.getState().removeExport(exId); pushActivity(err.message, "done");
       } else {
         updateExport(exId, { status: "error", msg: String(err) }); pushActivity(String(err), "error"); playSfx("error");
       }
@@ -3657,7 +3751,7 @@ function Editor() {
               const pick = (cur: string, on: (v: string) => void) => (
                 <div className="flex items-center gap-1.5 min-w-0 flex-1">
                   <Combobox value={cur} onChange={on}
-                    options={voiceList.map((v) => ({ value: v, label: v }))}
+                    options={voiceList.map((v) => ({ value: v, label: prettyVoice(v) }))}
                     placeholder={voiceList.length ? t("voice.search") : t("voice.packMissing")}
                     noResults={t("voice.noMatch")} allowClear className="flex-1 min-w-0" />
                   <button type="button" disabled={!cur} onClick={() => toggleVoicePreview(cur)} title={t("voice.preview")}
@@ -4017,7 +4111,7 @@ function FilesPanel() {
                     </button>
                   </div>
                 )}
-                {e.status === "error" && <div className="mt-1 mono text-[10px] text-[var(--color-warn)] truncate">{e.msg}</div>}
+                {e.status === "error" && <div className="mt-1.5"><ErrorNote text={e.msg} onClose={() => useStore.getState().removeExport(e.id)} /></div>}
               </div>
             ))}
           </div>
@@ -4180,7 +4274,7 @@ function FirstRun() {
                               {isDefault
                                 ? <span className="text-[9px] px-1.5 py-0.5 rounded bg-[color-mix(in_oklab,var(--color-accent)_16%,transparent)] text-[var(--color-accent)] uppercase tracking-wide shrink-0">{t("setup.default")}</span>
                                 : <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--color-surface-2)] text-[var(--color-muted)] uppercase tracking-wide shrink-0">{t("setup.alt")}</span>}
-                              {c.installed && <span className="text-[10px] text-[var(--color-accent)] shrink-0">{t("setup.installed")}</span>}
+                              {c.installed && <span className="text-[10px] text-[var(--color-accent)] shrink-0">{c.takenFrom ? t("setup.takenFrom", { app: PROGRAM_NAMES[c.takenFrom] ?? c.takenFrom }) : t("setup.installed")}</span>}
                             </div>
                             {ASR_VARIANT_I18N[c.id] && <div className="text-[11px] leading-snug text-[var(--color-muted)]">{t(ASR_VARIANT_I18N[c.id].hint)}</div>}
                             {c.fitsVram === false && !c.installed && <div className="text-[11px] leading-snug text-[var(--color-warn)]">{t("setup.noVram")}</div>}
@@ -4781,7 +4875,8 @@ export default function App() {
     const asrLabel = sel.asr_engine === "whisper" ? `whisper ${sel.whisper_model || "auto"}` : `${c.asr_model}${sel.asr ? ` ${sel.asr}` : ""}`;
     const parts = [c.device, `ASR ${asrLabel}`];
     if (c.models?.llm) parts.push(`MT+vision ${base(c.models.llm)}`);
-    if (c.models?.tts) parts.push(`TTS ${c.models.tts}${c.tts_quant ? ` ${c.tts_quant}` : ""}`);
+    const ttsQuant = sel.tts || c.tts_quant;
+    if (c.models?.tts) parts.push(sel.tts === "drama3" ? "TTS Fish Audio Drama 3 q4" : sel.tts === "supertonic3" ? "TTS Supertonic 3 int8" : isQwenTts(sel.tts) ? `TTS Qwen3-TTS 1.7B ${sel.tts === "qwen3-tts" ? "Q4_K_M" : "Q8_0"}` : `TTS ${c.models.tts}${ttsQuant ? ` ${ttsQuant}` : ""}`);
     parts.push("sep BSRoformer", "diar Nemotron 3", "OCR PP-OCR");   // фикс-движки пайплайна
     setCap(parts.join(" · "));
   }).catch(() => setCapOffline(true)); }, []);
@@ -4814,6 +4909,7 @@ export default function App() {
       </footer>
       <FilesPanel />
       <BridgeHost />
+      <CloudConsentHost />
       {(stage === "editor" || stage === "analyzing" || stage === "multilang" || stage === "batch") && <ResourceMonitor />}
     </div>
   );

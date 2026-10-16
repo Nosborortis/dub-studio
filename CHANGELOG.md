@@ -4,6 +4,43 @@ What changed, newest first. Dates are release dates; the app is versioned by its
 build. Every change a user can see is written here in the commit that makes it, and the
 release notes on GitHub are taken from the release's section.
 
+## 2026-10-16 — 4.3.0
+
+### Added
+
+- **Drama 3 voice** for NVIDIA cards from 6 GB: a local expressive voice that clones each speaker, chosen in Settings like the other voices. On a card under 24 GB its experts (18 GB) live in RAM, so it needs 32 GB of RAM there; Settings set how much video memory it takes (Auto, or 5 to 24 GB by hand). The sound is the same, less video memory is slower: on an RTX 4090 about 8x real time with the whole model, 4.7x at 12 GB, 3x at 8 GB, 2.2x at 6 GB.
+- **Qwen3-TTS voice** (1.7B, Q4_K_M or Q8_0, about 3 GB of video memory): clones each speaker from their own lines, or gives a character one of the model's nine ready voices, picked in the cast list and heard before the dub. Its engine (qwentts.cpp, every NVIDIA card from the RTX 20 series, Windows) is downloaded with it, and its files are taken from Speech Studio when it is installed on the same computer.
+- **Russian stress for Qwen3-TTS**: a small add-on for a Russian dub cloned with Qwen3-TTS. A plus before a vowel in a line (з+амок, зам+ок) puts the stress exactly there; the marks stay out of the subtitles and are dropped for the other voices.
+- **Supertonic 3 voice** (int8, about 0.6 GB): a fast fourth voice engine with ten ready voices in 31 languages. It does not clone: each speaker gets a voice by gender, or the one picked in the cast list.
+- **Russian stress by RUAccent**: Russian lines voiced by Qwen3-TTS with the stress add-on or by Supertonic 3 get their stress and the letter ё placed automatically, homographs read by their meaning (зам+ок / з+амок); a plus you put yourself is kept. An optional larger homograph model in int8 gets more of them right.
+- **The translator knows who speaks.** Each line goes to the translation model with its speaker's gender, measured from the pitch of several of their longest lines, so a woman says «я сказала» and a man «я сказал»; for Russian a line in the other gender's first-person form is asked again. A source word left in Latin in a Russian (or other non-Latin) translation is asked again too; names and brands stay.
+- **More checks of a take's sound.** A take where a piece of the line sounds twice, that ends with a click or an extra word, or that is mostly silence is regenerated; for cloud voicing these and a whistle or hiss in its pauses are named in the log (cloud voicing is paid and is not repeated on its own). A dub voice of the other gender than its speaker gets a warning in the log.
+- **Check by recognition compares letters too.** A take is redone only when neither its words nor its letters match the text («на хер» and «нахер» are no longer a mismatch), and also when a word said once in the text is heard twice.
+- **Looped recognition is dropped.** A recognised line that repeats one word over and over, comes right after itself or three times in a video, or holds a word over 25 letters is hidden when no voice is heard on it and marked when one is.
+- **Text for the voice.** Words in capitals are voiced as words, abbreviations stay; leftover markup signs (`_ | ~ ^ \ { } < > # *`) are not voiced. The shown text does not change.
+- **Settings › Quality by stage**: recognition, translation, voicing, take checks and diagnostics; every check above is its own switch, and a sub-check works only while its check is on.
+- **Your agent as the language model.** Settings › Models has a fourth provider beside Gemma, a local server and OpenRouter: Agent (MCP). Translation, shortening, the glossary and the look at the frames go to the agent connected over MCP (Claude Code, Codex and others on their own subscription), which takes each request with `assistant_requests_wait` and answers with `assistant_request_answer`; frames come to it as files on this computer. Settings show whether an agent is connected and how many requests wait.
+- **Ask before the cloud.** The first time a stage would send the video's sound, text or frames to OpenRouter or Gemini, the studio asks, saying what goes where; the answer is kept for that stage. Settings › Anonymous statistics shows where each stage runs now and lets a stage be asked again; a stage kept on this computer stops the task with a line in the journal.
+- **Deleted projects go to the recycle bin and come back.** Deleting no longer asks first: a note with Restore stays for ten seconds, and a project can also be restored from the system's recycle bin; agents have `project_restore`.
+- **Activity journal across restarts.** The journal in the status bar is kept by the studio, with what an agent changed over MCP worded in the window's language; agents read and add to it with `journal_*`, and the bug report takes it along.
+- **Diagnostics in Settings › Quality**: the graphics card, driver and CUDA, ffmpeg, which components are in place and which libraries are missing, the log folder, and a report pack to attach to an issue (no keys inside); agents have `diagnostics_*`.
+- **Theme**: dark, light or as the system is, in Settings › Language & sounds; lists open in the theme's colours.
+- **Model downloads ask first** with the download size, the space needed on disk and free, and the video memory the model takes; a model that does not fit the card offers no download.
+
+### Fixed
+
+- **Speaker gender from several lines.** The gender shown in the cast list and used to pick cloud and Supertonic voices is measured on up to five of the speaker's longest lines and taken only when two thirds of them agree, instead of on the single longest one.
+- **No clipped peaks in local voicing.** A take louder than full scale is turned down before it is written instead of having its peaks cut.
+- **Closing the window while tasks run asks first.** What is done stays in the project, and Continue goes on from there.
+- **Errors stay until closed.** An error in the files panel shows its whole text with Copy, Diagnostics and Report a problem instead of one cut line.
+- **A dropped connection no longer fails a task.** When the window loses a task's progress stream, it asks the task how it ended instead of reporting it lost.
+- **The studio speaks the window's language from the start.** The language is kept across restarts, so messages before a window opens are in it too.
+- **Chinese, Japanese and Korean takes are checked character by character.** A line with no spaces is no longer one long word that a single misheard sign fails, and a repeated piece is caught in these languages too.
+- **An agent reads the window as you see it**: a button's words come before its tooltip, a collapsed section says it is closed, and a click names the row it was in.
+
+- **An agent's command to a closed window fails at once.** A window that closed without saying so kept the agent waiting for its answer until the timeout; the command now fails as the window goes, and the next call reaches another open window or says none is open.
+- **Analysis downloads ffmpeg when it is missing** instead of stopping on every file with "ffprobe not found". A project opened by its link, or a start when the first-run check did not answer, reached the editor without the first-run screen, and nothing fetched the tools afterwards.
+
 ## 2026-10-11 — 4.2.2
 
 ### Fixed

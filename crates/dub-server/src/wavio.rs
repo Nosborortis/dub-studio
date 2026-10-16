@@ -34,6 +34,34 @@ pub fn read_mono_f32(path: &Path) -> Result<(Vec<f32>, u32), String> {
     Ok((mono, spec.sample_rate))
 }
 
+/// Прочитать отрезок [start, end) секунд WAV -> (mono f32 сэмплы, sample_rate).
+pub fn read_span_mono_f32(path: &Path, start: f64, end: f64) -> Result<(Vec<f32>, u32), String> {
+    let mut r = WavReader::open(path).map_err(|e| format!("open {}: {e}", path.display()))?;
+    let spec = r.spec();
+    let ch = spec.channels.max(1) as usize;
+    let total = r.duration();
+    let from = ((start.max(0.0) * spec.sample_rate as f64) as u32).min(total);
+    let frames = (((end - start).max(0.0) * spec.sample_rate as f64) as u32).min(total - from) as usize;
+    r.seek(from).map_err(|e| format!("seek {}: {e}", path.display()))?;
+    let interleaved: Vec<f32> = match spec.sample_format {
+        SampleFormat::Float => r
+            .samples::<f32>()
+            .take(frames * ch)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("read f32: {e}"))?,
+        SampleFormat::Int => {
+            let max = (1i64 << (spec.bits_per_sample - 1)) as f32;
+            r.samples::<i32>()
+                .take(frames * ch)
+                .map(|s| s.map(|v| v as f32 / max))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("read int: {e}"))?
+        }
+    };
+    let mono = if ch <= 1 { interleaved } else { interleaved.chunks(ch).map(|fr| fr.iter().sum::<f32>() / ch as f32).collect() };
+    Ok((mono, spec.sample_rate))
+}
+
 fn peaks_args(video: &Path) -> Vec<std::ffi::OsString> {
     let mut a: Vec<std::ffi::OsString> = vec!["-v".into(), "quiet".into(), "-i".into(), video.into()];
     a.extend(["-vn", "-af", crate::media::SYNC_AF, "-ac", "1", "-ar", "8000", "-f", "s16le", "-"].map(Into::into));

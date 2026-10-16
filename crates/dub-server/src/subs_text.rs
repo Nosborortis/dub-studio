@@ -20,7 +20,9 @@ pub struct SubLines {
 
 /// Строки субтитра реплики `s`; `translation` — её перевод с учётом правки строки в редакторе.
 /// Пустая основная строка — субтитра у реплики нет.
+/// Ударения «+» перед гласной — разметка для озвучки, в субтитры они не идут.
 pub fn lines(mode: &str, is_dub: bool, s: &Segment, translation: &str) -> SubLines {
+    let translation = qwentts::stress_marks(translation, false);
     let translation = translation.trim();
     let original = s.src_text.trim();
     match mode {
@@ -45,6 +47,13 @@ mod tests {
 
     fn seg(src: &str, tgt: &str) -> Segment {
         Segment { id: "s0".into(), src_text: src.into(), tgt_text: tgt.into(), ..Default::default() }
+    }
+
+    #[test]
+    fn stress_marks_for_the_voice_stay_out_of_the_subtitles() {
+        let s = seg("He locked the old castle.", "Он запер ст+арый зам+ок.");
+        assert_eq!(lines("translate", true, &s, &s.tgt_text).primary, "Он запер старый замок.");
+        assert_eq!(lines("translate", true, &s, "2+2 = 4").primary, "2+2 = 4");
     }
 
     #[test]

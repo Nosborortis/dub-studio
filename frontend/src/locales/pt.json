@@ -205,7 +205,7 @@
       "cloud": "Nuvem",
       "cloudHint": "Chave do OpenRouter e pedidos em paralelo",
       "quality": "Qualidade",
-      "qualityHint": "Verificações de voz, tomadas e diagnóstico",
+      "qualityHint": "Reconhecimento, tradução, locução e verificações",
       "network": "Rede",
       "networkHint": "Proxy para baixar modelos e para a nuvem",
       "interface": "Idioma e sons",
@@ -237,7 +237,15 @@
     "modelsDir": "Modelos e configurações",
     "copyPath": "Copiar caminho",
     "copied": "Copiado",
-    "pathsFailed": "Não foi possível obter a pasta de dados: {{error}}"
+    "pathsFailed": "Não foi possível obter a pasta de dados: {{error}}",
+    "recognitionGroup": "Reconhecimento",
+    "translationGroup": "Tradução",
+    "takesGroup": "Verificação de tomadas",
+    "theme": "Tema",
+    "themeHint": "Escuro, claro ou como o sistema",
+    "theme_system": "Como o sistema",
+    "theme_dark": "Escuro",
+    "theme_light": "Claro"
   },
   "projects": {
     "title": "Todos os projetos",
@@ -305,7 +313,8 @@
     "setupNeeded": "Componentes a baixar",
     "log": "Registro de atividade",
     "clear": "Limpar",
-    "backendOffline": "backend indisponível"
+    "backendOffline": "backend indisponível",
+    "journalFailed": "O diário não carregou: {{error}}"
   },
   "edit": {
     "setStart": "Início no cursor",
@@ -367,7 +376,12 @@
     "auto": "Auto",
     "sec": "s",
     "bench": "Benchmark de etapas",
-    "benchHint": "Mede tempo/GPU/VRAM por etapa -> bench.json + linhas ⏱ no registro. Amostragem leve em segundo plano a cada segundo."
+    "benchHint": "Mede tempo/GPU/VRAM por etapa -> bench.json + linhas ⏱ no registro. Amostragem leve em segundo plano a cada segundo.",
+    "dlTitle": "Baixar “{{name}}”?",
+    "dlSize": "Serão baixados {{size}}; no disco são necessários {{need}} (com a extração).",
+    "dlFree": "Livres: {{free}}.",
+    "dlNoSpace": "Só há {{free}} livres: libere espaço ou escolha outra pasta de modelos.",
+    "dlVram": "O modelo ocupa cerca de {{vram}} de memória de vídeo."
   },
   "secrets": {
     "orTitle": "Chave do OpenRouter",
@@ -419,6 +433,10 @@
     "visionHint": "estilo das legendas, títulos, contexto da cena; sem ela a tradução continua",
     "localGemma": "Gemma-4 12B",
     "server": "Servidor local",
+    "agent": "Agente (MCP)",
+    "agentHint": "A tradução, o encurtamento, o glossário e o olhar sobre os quadros ficam com o agente conectado ao estúdio (Claude Code, Codex e outros, na própria assinatura): ele recebe as mesmas instruções e a mesma forma de resposta que o modelo do estúdio, e os quadros como arquivos de imagem. Não é preciso Gemma. O agente deve estar conectado ao servidor MCP do estúdio e ouvindo pedidos (assistant_requests_wait).",
+    "agentConnected": "Agente conectado: última chamada há {{seconds}} s, pedidos esperando: {{count}}.",
+    "agentMissing": "Nenhum agente está conectado agora: conecte um ao servidor MCP do estúdio (Configurações → Agente), senão essas etapas são recusadas com o motivo.",
     "needKey": "Insira uma chave do OpenRouter abaixo (Configurações da nuvem)",
     "pickTranslateModel": "— escolher um modelo de tradução —",
     "pickVisionModel": "— escolher um modelo de visão —",
@@ -540,6 +558,7 @@
     "downloadOne": "Baixar",
     "cancel": "Cancelar",
     "installed": "Instalado",
+    "takenFrom": "Tirado de {{app}}",
     "missing": "Ausente",
     "downloading": "Baixando…",
     "required": "Obrigatório",
@@ -819,6 +838,17 @@
     "ultraInt8": "Ultra · int8",
     "ultraInt8Hint": "Versão do modelo base ajustada pela Moondream, quantizada: menos erros de reconhecimento, os mesmos 25 idiomas · int8 ~0,7 GB"
   },
+  "ttsVariant": {
+    "drama3": "Drama 3",
+    "drama3Hint": "Um segundo motor de voz (Fish Audio), para placas de vídeo a partir de 6 GB; abaixo de 24 GB precisa de 32 GB de RAM · ~21 GB",
+    "qwen": "Qwen3-TTS",
+    "qwenQ8": "Qwen3-TTS (Q8_0)",
+    "qwenHint": "Um terceiro motor de voz leve: as vozes dos atores originais ou nove vozes prontas para os personagens · ~3 GB de memória de vídeo",
+    "supertonic": "Supertonic 3",
+    "supertonicHint": "Um motor de voz rápido: dez vozes prontas em 31 idiomas, sem clonagem; cada falante recebe uma voz pelo gênero · ~0,6 GB",
+    "dramaVram": "VRAM para o Drama 3",
+    "dramaVramHint": "Auto se configura sozinho: o modelo inteiro se couber na VRAM livre; senão, os especialistas (18 GB) ficam na RAM e a placa mantém um cache dos que estão em uso. Um número define a quantidade à mão; 24 GB mantém o modelo inteiro na placa. O som é o mesmo; com menos VRAM é mais lento (medido numa RTX 4090): 24 GB, cerca de 8× mais rápido que o tempo real; 12 GB, 4,7×; 8 GB, 3×; 6 GB, 2,2×."
+  },
   "units": {
     "gb": "GB",
     "mb": "MB",
@@ -869,9 +899,9 @@
   },
   "qc": {
     "asr": {
-      "tip": "Verifica automaticamente o texto reconhecido com o Whisper ASR para descartar silêncio e defeitos",
-      "label": "Verificação de texto por ASR (QC)",
-      "hint": "verificação automática da dublagem por ASR (desativar acelera a síntese)"
+      "tip": "Após a síntese, cada tomada é reconhecida pelo motor de reconhecimento escolhido; a que não bate com o texto é dita de novo. Só síntese local.",
+      "label": "Verificação por reconhecimento",
+      "hint": "a locução é reconhecida e comparada ao texto; divergência é ressintetizada (mais lento)"
     },
     "duration": {
       "tip": "Ajusta a velocidade e controla a duração do áudio para caber no intervalo da legenda",
@@ -907,6 +937,91 @@
       "tip": "Se uma fala dublada precisar de mais aceleração do que o render aplica (até ×4 com o ritmo de fala dinâmico), o modelo de tradução a reescreve mais curta uma vez e só essa fala é dublada de novo",
       "label": "Encurtar falas que não cabem",
       "hint": "reescrever mais curta a tradução das falas que não cabem e dublá-las de novo"
+    },
+    "asrRepeats": {
+      "tip": "O reconhecimento às vezes entra em loop sobre música e silêncio. Essa linha sem voz no seu trecho é ocultada da dublagem e das legendas (volta no editor); com voz só é marcada no registro.",
+      "label": "Descartar reconhecimento em loop",
+      "hint": "linhas em loop sem voz são ocultadas; com voz, marcadas"
+    },
+    "asrRepeatInside": {
+      "tip": "Regra do filtro de dados da NVIDIA NeMo: “the the the the the”.",
+      "label": "Repetição dentro da linha",
+      "hint": "linha de cinco ou mais palavras com no máximo 40% diferentes"
+    },
+    "asrRepeatLines": {
+      "tip": "Falas curtas (“Sim.”, “O quê?”) não são julgadas: as pessoas repetem mesmo. Desligue para músicas com refrão.",
+      "label": "A mesma linha de novo",
+      "hint": "linha de três ou mais palavras logo após ela mesma ou três vezes no vídeo"
+    },
+    "asrLongWords": {
+      "tip": "Desligue para alemão com palavras compostas longas.",
+      "label": "Palavras com mais de 25 letras",
+      "hint": "lixo do reconhecimento grudado"
+    },
+    "trGender": {
+      "tip": "O gênero vem da altura da voz de várias falas mais longas; uma medida incerta não dá dica. Serve a idiomas com gênero gramatical (“cansado / cansada”).",
+      "label": "Gênero do falante para o tradutor",
+      "hint": "o tradutor sabe se um homem ou uma mulher diz a linha"
+    },
+    "trGenderCheck": {
+      "tip": "Se o falante fala de si no outro gênero, a linha é pedida de novo. Se continuar errada após todas as tentativas, fica com uma nota no registro.",
+      "label": "Verificar o gênero de “eu disse”",
+      "hint": "uma linha na forma do outro gênero é pedida de novo (russo)"
+    },
+    "trLatin": {
+      "tip": "Nomes e marcas (com maiúscula no original: Google, iPhone, Wi-Fi), números e termos “não traduzir” ficam. A voz lê com sotaque uma palavra inglesa esquecida.",
+      "label": "Não deixar palavras em inglês",
+      "hint": "para idiomas não latinos: uma palavra original deixada em latim é pedida de novo"
+    },
+    "ttsCaps": {
+      "tip": "Um modelo de voz pode soletrar uma palavra em maiúsculas. Linha toda em maiúsculas: cada palavra exceto as curtas sem vogal; linha normal: palavras de cinco letras ou mais. O texto mostrado não muda.",
+      "label": "Ler maiúsculas como palavras",
+      "hint": "palavras em maiúsculas são ditas em letras normais; siglas (EUA, FBI) ficam"
+    },
+    "ttsSymbols": {
+      "tip": "Restos da marcação das legendas não são lidos em voz alta. O texto mostrado não muda.",
+      "label": "Tirar sinais de marcação",
+      "hint": "_ | ~ ^ \\ { } < > # * não são ditos"
+    },
+    "audio": {
+      "tip": "O som de cada tomada é verificado logo após a síntese, frações de segundo por linha. Tomada descontrolada, corte, silêncio e zumbido são sempre verificados; aqui ficam sinais extras.",
+      "label": "Verificação do som da tomada",
+      "hint": "um defeito no som gera a tomada de novo; na voz na nuvem vai ao registro"
+    },
+    "audioRepeat": {
+      "tip": "Busca por semelhança espectral. Um texto cujas palavras se repetem não é julgado pelo som.",
+      "label": "Um trecho repetido",
+      "hint": "um trecho da frase soa duas vezes, mas o texto não repete"
+    },
+    "audioEnd": {
+      "tip": "O modelo às vezes acrescenta uma palavra ou termina a tomada com um estalo em escala total.",
+      "label": "Estalo ou palavra a mais no fim",
+      "hint": "o fim da tomada é mais alto que quase toda a frase"
+    },
+    "audioCloud": {
+      "tip": "Falhas conhecidas dos modelos na nuvem. A síntese na nuvem é paga e não se repete sozinha: gere a fala de novo no editor.",
+      "label": "Assobio e chiado da voz na nuvem",
+      "hint": "assobio, chiado nas pausas — só nuvem, ao registro"
+    },
+    "asrLetters": {
+      "tip": "Só é divergência se palavras e letras não batem: menos ressínteses inúteis pela escrita do reconhecedor.",
+      "label": "Comparar letras",
+      "hint": "diferenças de escrita não contam: compara-se sem espaços nem sinais"
+    },
+    "asrRepeat": {
+      "tip": "Interjeições arrastadas (“é-é”, “mm”) não contam.",
+      "label": "Palavra repetida a mais",
+      "hint": "uma palavra que está uma vez no texto é ouvida duas vezes — divergência"
+    },
+    "voiceGender": {
+      "tip": "A altura de várias falas dubladas de um falante é comparada ao gênero dele no original. Pega uma voz de catálogo com gênero errado e um clone de amostra alheia.",
+      "label": "Gênero da voz da dublagem",
+      "hint": "uma voz de dublagem de outro gênero que o falante gera um aviso no registro"
+    },
+    "audioSilence": {
+      "tip": "O modelo às vezes dá um trecho curto ou outras palavras e silêncio no lugar da fala. Visto com Drama 3; nunca disparou em 726 tomadas do Higgs.",
+      "label": "Quase só silêncio",
+      "hint": "tomada de três segundos ou mais com fala em menos de um terço"
     }
   },
   "manual": {
@@ -1345,12 +1460,12 @@
     "batch": "Batch — tarifa da API 50% menor",
     "batchHint": "O Google coloca o lote na fila (meta: 24 horas). Cancelar a tarefa local pausa as consultas; o lote remoto continua. Retomar recupera o resultado sem outro envio pago. Uso e custo estimado: project_google_tts_report no MCP.",
     "standardHint": "Solicitações diretas em paralelo conforme a configuração de concorrência da nuvem. Uso e custo estimado: project_google_tts_report no MCP.",
-    "provider_local": "No computador · Higgs",
+    "provider_local": "No computador · Higgs / Drama / Qwen / Supertonic",
     "provider_openrouter": "Pelo OpenRouter",
     "provider_google": "Google · direto"
   },
   "hub": {
-    "why": "Saber quantas pessoas usam o Dub Studio e para quê ajuda a decidir no que trabalhar. Nada pessoal: nem vídeos, nem textos, nem vozes, nem nomes de arquivo — só contagens de tarefas, os modelos de cada etapa, a versão, a classe da placa de vídeo e por que uma tarefa falhou, com caminhos, nomes e texto entre aspas removidos neste computador antes do envio.",
+    "why": "Saber quantas pessoas usam o Dub Studio e para quê ajuda a decidir no que trabalhar. Nada pessoal: nem vídeos, nem textos, nem vozes, nem nomes de arquivo — só contagens de tarefas, quais funções do estúdio foram usadas (pelo nome, nunca com o quê), os modelos de cada etapa, a versão, um número do computador comum aos nossos programas (um hash irreversível, não o número do sistema), a classe da placa de vídeo e por que uma tarefa falhou, com caminhos, nomes e texto entre aspas removidos neste computador antes do envio.",
     "checkbox": "Enviar estatísticas de uso anônimas",
     "what": "O que é enviado",
     "byEnv": "Desligadas por DO_NOT_TRACK ou STUDIO_TELEMETRY no ambiente.",
@@ -1361,5 +1476,114 @@
     "refresh": "Verificar agora",
     "notices": "Avisos",
     "close": "Fechar"
+  },
+  "undoDelete": {
+    "deleted": "«{{video}}» foi para a lixeira",
+    "restore": "Restaurar",
+    "failed": "«{{video}}» não foi apagado: {{error}}"
+  },
+  "diag": {
+    "title": "Diagnóstico do sistema",
+    "hint": "O que o estúdio vê: a placa de vídeo, o driver e a CUDA, o ffmpeg, quais componentes estão presentes, quais bibliotecas faltam aos motores e as últimas linhas do log. Chaves nunca entram.",
+    "copy": "Copiar diagnóstico",
+    "pack": "Criar pacote para relatório de erro",
+    "report": "Relatar um problema",
+    "logs": "Pasta de logs",
+    "refresh": "Atualizar",
+    "packed": "Pacote salvo:",
+    "show": "Mostrar na pasta"
+  },
+  "journal": {
+    "line": "{{verb}}: {{kind}}{{target}}",
+    "quoted": "“{{name}}”",
+    "verb": {
+      "create": "Criação",
+      "delete": "Exclusão",
+      "restore": "Restauração",
+      "analyze": "Análise",
+      "translate": "Tradução",
+      "dub": "Dublagem",
+      "render": "Montagem do vídeo",
+      "remix": "Remix",
+      "align": "Alinhamento",
+      "resume": "Retomada",
+      "update": "Alteração",
+      "export": "Exportação",
+      "save": "Salvo",
+      "transcribe": "Reconhecimento",
+      "separate": "Separação de voz",
+      "detect": "Texto na tela",
+      "add": "Adicionado",
+      "split": "Divisão",
+      "merge": "Junção",
+      "hide": "Ocultado",
+      "keep": "Original mantido",
+      "reorder": "Nova ordem",
+      "regen": "Nova locução",
+      "shorten": "Encurtado",
+      "select": "Seleção",
+      "pin": "Fixado",
+      "assign": "Atribuição",
+      "rename": "Renomeação",
+      "download": "Download",
+      "record": "Gravação",
+      "extract": "Termos reunidos",
+      "apply": "Aplicação",
+      "set": "Salvamento",
+      "refresh": "Atualização",
+      "cancel": "Cancelamento",
+      "import": "Importação"
+    },
+    "kind": {
+      "project": "projeto",
+      "file": "arquivo",
+      "subtitles": "legendas",
+      "line": "fala",
+      "take": "tomada",
+      "voice": "voz",
+      "voices": "vozes",
+      "casting": "elenco",
+      "glossary": "glossário",
+      "blur": "desfoque",
+      "title": "título",
+      "translation": "tradução",
+      "sound": "som",
+      "model": "modelo",
+      "download": "download",
+      "setting": "configuração",
+      "preset": "predefinição",
+      "proxy": "proxy",
+      "key": "chave",
+      "catalog": "catálogo",
+      "tool": "ferramenta",
+      "job": "tarefa"
+    }
+  },
+  "consent": {
+    "title": "Enviar para {{provider}}?",
+    "allow": "Permitir",
+    "once": "O estúdio pergunta uma vez por etapa; dá para desfazer em Configurações, Privacidade.",
+    "what_recognition": "O som do vídeo vai para {{provider}} para ser reconhecido, e o texto volta de lá; é pago com sua chave.",
+    "what_translation": "O texto das falas vai para {{provider}} para ser traduzido ou encurtado, e a tradução volta de lá; é pago com sua chave.",
+    "what_vision": "Quadros do vídeo vão para {{provider}}, cujo modelo lê o estilo das legendas, os títulos e a cena; é pago com sua chave.",
+    "what_voicing": "As falas traduzidas (e, para clonar, amostras de voz dos falantes) vão para {{provider}} para serem dubladas, e o áudio volta de lá; é pago com sua chave.",
+    "declined": "Parado: você manteve esta etapa neste computador. Onde ela roda se escolhe em Configurações, Modelos."
+  },
+  "privacyRoutes": {
+    "title": "Para onde vão os dados",
+    "hint": "Tudo o que não está marcado como nuvem fica neste computador. Antes de uma etapa ir à nuvem pela primeira vez, o estúdio pergunta.",
+    "askAgain": "Perguntar de novo",
+    "willAsk": "pergunta antes de enviar",
+    "stage_recognition": "Reconhecimento",
+    "stage_translation": "Tradução e encurtamento",
+    "stage_vision": "Quadros (estilo das legendas, títulos)",
+    "stage_voicing": "Dublagem",
+    "cloud": "Agora: {{provider}}, então os dados vão para a nuvem.",
+    "local": "Agora: neste computador."
+  },
+  "errors": {
+    "whatToDo": "O que fazer: copie o texto, veja o diagnóstico ou relate o problema.",
+    "copy": "Copiar",
+    "diagnostics": "Diagnóstico"
   }
 }

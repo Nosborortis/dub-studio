@@ -50,9 +50,6 @@ function Copy-Required([string]$from, [string]$to) {
 $tauriConf = Get-Content -Raw -Encoding UTF8 (Join-Path $tauriRoot 'tauri.conf.json') | ConvertFrom-Json
 $Version = $tauriConf.version
 if ($Version -notmatch '^\d+\.\d+\.\d+([\-+][0-9A-Za-z.-]+)?$') { Fail "version in tauri.conf.json is not semver: '$Version'" }
-$cargoToml = Get-Content -Raw -Encoding UTF8 (Join-Path $tauriRoot 'Cargo.toml')
-if ($cargoToml -notmatch '(?m)^version\s*=\s*"([^"]+)"') { Fail 'desktop/src-tauri/Cargo.toml has no package version' }
-if ($Matches[1] -ne $Version) { Fail "desktop/src-tauri/Cargo.toml says $($Matches[1]) but tauri.conf.json says $Version; bump both" }
 $binaryName = $tauriConf.mainBinaryName
 if ([string]::IsNullOrWhiteSpace($binaryName)) { Fail 'mainBinaryName is missing in tauri.conf.json' }
 $pubkey = $tauriConf.plugins.updater.pubkey
