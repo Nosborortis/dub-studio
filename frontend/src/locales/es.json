@@ -240,7 +240,12 @@
     "pathsFailed": "No se pudo obtener la carpeta de datos: {{error}}",
     "recognitionGroup": "Reconocimiento",
     "translationGroup": "Traducción",
-    "takesGroup": "Revisión de tomas"
+    "takesGroup": "Revisión de tomas",
+    "theme": "Tema",
+    "themeHint": "Oscuro, claro o como el sistema",
+    "theme_system": "Como el sistema",
+    "theme_dark": "Oscuro",
+    "theme_light": "Claro"
   },
   "projects": {
     "title": "Todos los proyectos",

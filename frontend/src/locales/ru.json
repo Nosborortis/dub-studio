@@ -277,7 +277,12 @@
     "pathsFailed": "Не удалось узнать папку данных: {{error}}",
     "recognitionGroup": "Распознавание",
     "translationGroup": "Перевод",
-    "takesGroup": "Проверка дублей"
+    "takesGroup": "Проверка дублей",
+    "theme": "Тема",
+    "themeHint": "Тёмная, светлая или как в системе",
+    "theme_system": "Как в системе",
+    "theme_dark": "Тёмная",
+    "theme_light": "Светлая"
   },
   "projects": {
     "title": "Все проекты",

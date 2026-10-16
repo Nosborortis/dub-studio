@@ -2098,7 +2098,7 @@ function CastingPanel({ pid, characters, voices, onChange }: {
                   ) : (
                     <div className="w-full h-full grid place-items-center"
                       style={{ background: `color-mix(in oklab, ${avatarColor(i)} 22%, var(--color-surface))` }}>
-                      <span className="text-[40px] font-bold leading-none" style={{ color: avatarColor(i) }}>{initialOf(d.name)}</span>
+                      <span className="text-[40px] font-bold leading-none" style={{ color: `color-mix(in oklab, ${avatarColor(i)} 60%, var(--color-text))` }}>{initialOf(d.name)}</span>
                     </div>
                   )}
                   {/* Пол — бейдж поверх аватара. */}

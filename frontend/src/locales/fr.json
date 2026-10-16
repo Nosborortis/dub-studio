@@ -240,7 +240,12 @@
     "pathsFailed": "Impossible d'obtenir le dossier de données : {{error}}",
     "recognitionGroup": "Reconnaissance",
     "translationGroup": "Traduction",
-    "takesGroup": "Contrôle des prises"
+    "takesGroup": "Contrôle des prises",
+    "theme": "Thème",
+    "themeHint": "Sombre, clair ou comme le système",
+    "theme_system": "Comme le système",
+    "theme_dark": "Sombre",
+    "theme_light": "Clair"
   },
   "projects": {
     "title": "Tous les projets",

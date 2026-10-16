@@ -271,7 +271,12 @@
     "pathsFailed": "Couldn't get the data folder: {{error}}",
     "recognitionGroup": "Recognition",
     "translationGroup": "Translation",
-    "takesGroup": "Take checks"
+    "takesGroup": "Take checks",
+    "theme": "Theme",
+    "themeHint": "Dark, light, or as the system is",
+    "theme_system": "As the system",
+    "theme_dark": "Dark",
+    "theme_light": "Light"
   },
   "projects": {
     "title": "All projects",

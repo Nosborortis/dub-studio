@@ -240,7 +240,12 @@
     "pathsFailed": "Não foi possível obter a pasta de dados: {{error}}",
     "recognitionGroup": "Reconhecimento",
     "translationGroup": "Tradução",
-    "takesGroup": "Verificação de tomadas"
+    "takesGroup": "Verificação de tomadas",
+    "theme": "Tema",
+    "themeHint": "Escuro, claro ou como o sistema",
+    "theme_system": "Como o sistema",
+    "theme_dark": "Escuro",
+    "theme_light": "Claro"
   },
   "projects": {
     "title": "Todos os projetos",

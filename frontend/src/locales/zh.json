@@ -238,7 +238,12 @@
     "pathsFailed": "无法获取数据文件夹：{{error}}",
     "recognitionGroup": "识别",
     "translationGroup": "翻译",
-    "takesGroup": "配音检查"
+    "takesGroup": "配音检查",
+    "theme": "主题",
+    "themeHint": "深色、浅色或跟随系统",
+    "theme_system": "跟随系统",
+    "theme_dark": "深色",
+    "theme_light": "浅色"
   },
   "projects": {
     "title": "全部项目",
