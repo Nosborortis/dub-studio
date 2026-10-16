@@ -1548,5 +1548,27 @@
       "tool": "ferramenta",
       "job": "tarefa"
     }
+  },
+  "consent": {
+    "title": "Enviar para {{provider}}?",
+    "allow": "Permitir",
+    "once": "O estúdio pergunta uma vez por etapa; dá para desfazer em Configurações, Privacidade.",
+    "what_recognition": "O som do vídeo vai para {{provider}} para ser reconhecido, e o texto volta de lá; é pago com sua chave.",
+    "what_translation": "O texto das falas vai para {{provider}} para ser traduzido ou encurtado, e a tradução volta de lá; é pago com sua chave.",
+    "what_vision": "Quadros do vídeo vão para {{provider}}, cujo modelo lê o estilo das legendas, os títulos e a cena; é pago com sua chave.",
+    "what_voicing": "As falas traduzidas (e, para clonar, amostras de voz dos falantes) vão para {{provider}} para serem dubladas, e o áudio volta de lá; é pago com sua chave.",
+    "declined": "Parado: você manteve esta etapa neste computador. Onde ela roda se escolhe em Configurações, Modelos."
+  },
+  "privacyRoutes": {
+    "title": "Para onde vão os dados",
+    "hint": "Tudo o que não está marcado como nuvem fica neste computador. Antes de uma etapa ir à nuvem pela primeira vez, o estúdio pergunta.",
+    "askAgain": "Perguntar de novo",
+    "willAsk": "pergunta antes de enviar",
+    "stage_recognition": "Reconhecimento",
+    "stage_translation": "Tradução e encurtamento",
+    "stage_vision": "Quadros (estilo das legendas, títulos)",
+    "stage_voicing": "Dublagem",
+    "cloud": "Agora: {{provider}}, então os dados vão para a nuvem.",
+    "local": "Agora: neste computador."
   }
 }

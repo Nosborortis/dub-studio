@@ -1548,5 +1548,27 @@
       "tool": "herramienta",
       "job": "tarea"
     }
+  },
+  "consent": {
+    "title": "¿Enviar a {{provider}}?",
+    "allow": "Permitir",
+    "once": "El estudio pregunta una vez por etapa; puedes retirarlo en Ajustes, Privacidad.",
+    "what_recognition": "El sonido del vídeo va a {{provider}} para reconocerlo, y el texto vuelve de allí; se paga con tu clave.",
+    "what_translation": "El texto de las líneas va a {{provider}} para traducirlo o acortarlo, y la traducción vuelve de allí; se paga con tu clave.",
+    "what_vision": "Fotogramas del vídeo van a {{provider}}, cuyo modelo lee el estilo de subtítulos, los rótulos y la escena; se paga con tu clave.",
+    "what_voicing": "Las líneas traducidas (y, para clonar, muestras de voz de los hablantes) van a {{provider}} para locutarlas, y el audio vuelve de allí; se paga con tu clave.",
+    "declined": "Detenido: dejaste esta etapa en este equipo. Dónde se ejecuta se elige en Ajustes, Modelos."
+  },
+  "privacyRoutes": {
+    "title": "Adónde van los datos",
+    "hint": "Todo lo que no se indica como nube se queda en este ordenador. Antes de que una etapa vaya a la nube por primera vez, el estudio pregunta.",
+    "askAgain": "Volver a preguntar",
+    "willAsk": "pregunta antes de enviar",
+    "stage_recognition": "Reconocimiento",
+    "stage_translation": "Traducción y acortado",
+    "stage_vision": "Fotogramas (estilo de subtítulos, rótulos)",
+    "stage_voicing": "Locución",
+    "cloud": "Ahora: {{provider}}, así que los datos van a la nube.",
+    "local": "Ahora: en este equipo."
   }
 }

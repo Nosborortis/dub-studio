@@ -204,6 +204,7 @@ pub fn is_selection_key(key: &str) -> bool {
             | "or_tts_voice"    // голос по умолчанию для облачного TTS (напр. "alloy")
             | "or_tts_autocast" // БЕТА: автокастинг голосов по полу спикера (муж->муж/жен->жен); ВКЛ по умолчанию
             | "or_asr_on"       // "1" -> транскрипция (ASR) через OpenRouter вместо локального Parakeet/Whisper
+            | "cloud_ok_recognition" | "cloud_ok_translation" | "cloud_ok_vision" | "cloud_ok_voicing" // разрешил ли человек отправлять стадию в облако
             | "or_asr"          // id STT-модели OpenRouter (напр. "openai/whisper-large-v3")
             | "or_concurrency"  // число параллельных облачных запросов (чанки в N потоков; OpenRouter ~50 конкур.)
             // Прокси (режим, тип, адрес) меняется только через /engine/proxy/settings: там пароль уходит в хранилище
@@ -216,6 +217,7 @@ pub fn is_selection_value(key: &str, value: &str) -> bool {
     match key {
         "llm_provider" | "vision_provider" => LlmBackend::parse(value).is_some(),
         "tts_provider" => matches!(value, "local" | "openrouter" | "google"),
+        "cloud_ok_recognition" | "cloud_ok_translation" | "cloud_ok_vision" | "cloud_ok_voicing" => matches!(value, "0" | "1"),
         "drama_vram_gb" => value.parse::<u32>().is_ok_and(|gb| gb == 0 || (DRAMA_MIN_LIMIT_GB..=256).contains(&gb)),
         "google_tts_mode" => matches!(value, "standard" | "batch"),
         "google_tts_model" => {

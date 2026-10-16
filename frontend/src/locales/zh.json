@@ -1512,5 +1512,27 @@
       "tool": "工具",
       "job": "任务"
     }
+  },
+  "consent": {
+    "title": "发送到 {{provider}}？",
+    "allow": "允许",
+    "once": "每个阶段只询问一次；可在“设置 → 隐私”中撤销。",
+    "what_recognition": "视频的声音会发送到 {{provider}} 进行识别，文字从那里返回；费用由你的密钥支付。",
+    "what_translation": "台词文本会发送到 {{provider}} 进行翻译或缩短，译文从那里返回；费用由你的密钥支付。",
+    "what_vision": "视频画面会发送到 {{provider}}，其模型读取字幕样式、标题和场景；费用由你的密钥支付。",
+    "what_voicing": "翻译后的台词（克隆时还有说话人的声音样本）会发送到 {{provider}} 进行配音，音频从那里返回；费用由你的密钥支付。",
+    "declined": "已停止：你让这一阶段留在本机运行。在哪里运行可在“设置 → 模型”中选择。"
+  },
+  "privacyRoutes": {
+    "title": "数据去向",
+    "hint": "未标为云端的一切都留在本机。某个阶段第一次发送到云端之前，工作室会先询问。",
+    "askAgain": "重新询问",
+    "willAsk": "发送前会询问",
+    "stage_recognition": "识别",
+    "stage_translation": "翻译与缩短",
+    "stage_vision": "画面（字幕样式、标题）",
+    "stage_voicing": "配音",
+    "cloud": "当前：{{provider}}，数据会发送到云端。",
+    "local": "当前：在本机运行。"
   }
 }

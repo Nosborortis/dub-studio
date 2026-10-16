@@ -1530,5 +1530,27 @@
       "tool": "tool",
       "job": "job"
     }
+  },
+  "consent": {
+    "title": "Send to {{provider}}?",
+    "allow": "Allow",
+    "once": "The studio asks once for this stage; you can take it back in Settings, Privacy.",
+    "what_recognition": "The video's sound goes to {{provider}} to be recognised, and the text comes back from there; it is paid with your key.",
+    "what_translation": "The lines' text goes to {{provider}} to be translated or shortened, and the translation comes back from there; it is paid with your key.",
+    "what_vision": "Frames of the video go to {{provider}}, whose model reads the subtitle style, titles and scene; it is paid with your key.",
+    "what_voicing": "The translated lines (and, for cloning, the speakers' voice samples) go to {{provider}} to be voiced, and the audio comes back from there; it is paid with your key.",
+    "declined": "Stopped: you kept this stage on this computer. Settings, Models choose where it runs."
+  },
+  "privacyRoutes": {
+    "title": "Where data goes",
+    "hint": "Everything not named cloud stays on this computer. Before a stage first goes to the cloud, the studio asks.",
+    "askAgain": "Ask again",
+    "willAsk": "asks before sending",
+    "stage_recognition": "Recognition",
+    "stage_translation": "Translation and shortening",
+    "stage_vision": "Frames (subtitle style, titles)",
+    "stage_voicing": "Voicing",
+    "cloud": "Now: {{provider}}, so the data goes to the cloud.",
+    "local": "Now: on this computer."
   }
 }

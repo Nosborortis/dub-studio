@@ -1,5 +1,6 @@
 import i18n from "./i18n";
 import type en from "../locales/en.json";
+import { requireCloud } from "./cloudConsent";
 // Dub Studio API client — talks to the single-worker FastAPI backend over the dub-engine.
 // dev: Vite (5173) -> dub-server (8793, DUB_STUDIO_PORT). desktop/portable: the server serves the SPA
 // itself, so calls are same-origin (""). VITE_API overrides both.
@@ -450,7 +451,7 @@ export const api = {
     return fetch(`${BASE}/projects`, { method: "POST", body: fd }).then(j<{ project_id: string; imported_subs?: boolean }>);
   },
   analyze: (pid: string, tgt_lang: string, mode = "auto", src_lang = "auto", subs = "auto", rewrite = "", burn = true, detect = true, importTranslated = false, translateStyle = "", casting = false, castingRef = "", contentType = "auto", alignSubs = false, post: AnalyzePost = {}, speakerCount = 0) =>
-    fetch(`${BASE}/projects/${pid}/analyze?tgt_lang=${tgt_lang}&mode=${mode}&src_lang=${src_lang}&subs=${subs}&rewrite=${encodeURIComponent(rewrite)}&burn=${burn ? 1 : 0}&detect=${detect ? 1 : 0}&import_translated=${importTranslated ? 1 : 0}&translate_style=${encodeURIComponent(translateStyle)}&casting=${casting ? 1 : 0}&casting_ref=${encodeURIComponent(castingRef)}&content_type=${encodeURIComponent(contentType)}&align_subs=${alignSubs ? 1 : 0}&speaker_count=${speakerCount}${analyzePostQuery(post)}`, { method: "POST" }).then(j<{ job_id: string }>),
+    requireCloud(["recognition", "translation", "vision", "voicing"]).then(() => fetch(`${BASE}/projects/${pid}/analyze?tgt_lang=${tgt_lang}&mode=${mode}&src_lang=${src_lang}&subs=${subs}&rewrite=${encodeURIComponent(rewrite)}&burn=${burn ? 1 : 0}&detect=${detect ? 1 : 0}&import_translated=${importTranslated ? 1 : 0}&translate_style=${encodeURIComponent(translateStyle)}&casting=${casting ? 1 : 0}&casting_ref=${encodeURIComponent(castingRef)}&content_type=${encodeURIComponent(contentType)}&align_subs=${alignSubs ? 1 : 0}&speaker_count=${speakerCount}${analyzePostQuery(post)}`, { method: "POST" })).then(j<{ job_id: string }>),
   // Кастинг персонажей (#115): список найденных персонажей (аватар+пол+голос+реплики) / сохранение правок.
   casting: (pid: string) => getJson<{ characters: Character[] }>(`/projects/${pid}/casting`),
   castingAvatarUrl: (pid: string, id: string) => `${BASE}/projects/${pid}/casting/avatar?id=${encodeURIComponent(id)}`,
@@ -467,7 +468,7 @@ export const api = {
   glossary: (pid: string) => getJson<ProjectGlossary>(`/projects/${pid}/glossary`),
   glossaryTsv: (pid: string) => fetch(`${BASE}/projects/${pid}/glossary?format=tsv`).then(async (r) => { if (!r.ok) throw new Error(`${r.status} ${await r.text()}`); return r.text(); }),
   saveGlossary: (pid: string, body: GlossaryPut) => sendCoded<ProjectGlossary>("PUT", `/projects/${pid}/glossary`, body),
-  extractGlossary: (pid: string) => postJson<{ job_id: string }>(`/projects/${pid}/glossary/extract`, {}),
+  extractGlossary: (pid: string) => requireCloud(["translation"]).then(() => postJson<{ job_id: string }>(`/projects/${pid}/glossary/extract`, {})),
   seriesGlossary: (slug: string) => getJson<{ slug: string; entries: GlossaryEntry[] }>(`/casting/library/${encodeURIComponent(slug)}/glossary`),
   saveSeriesGlossary: (slug: string, body: GlossaryPut) =>
     sendCoded<{ slug: string; entries: GlossaryEntry[] }>("PUT", `/casting/library/${encodeURIComponent(slug)}/glossary`, body),
@@ -488,19 +489,19 @@ export const api = {
   patch: (pid: string, edit: Record<string, unknown>) =>   // run after the previous patch settles (ok or failed)
     _chain(() => fetch(`${BASE}/projects/${pid}`, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(edit) }).then(j<Project>)),
   alignProject: (pid: string) => fetch(`${BASE}/projects/${pid}/align`, { method: "POST" }).then(j<{ job_id: string; project_id: string }>),
-  render: (pid: string) => fetch(`${BASE}/projects/${pid}/render`, { method: "POST" }).then(j<{ job_id: string }>),
+  render: (pid: string) => requireCloud(["voicing"]).then(() => fetch(`${BASE}/projects/${pid}/render`, { method: "POST" })).then(j<{ job_id: string }>),
   // Экспорт-уровень мультиязыка: клон отредактированного проекта на язык lang (наследует раскладку/стиль/
   // блюр/титры + клон голоса), ре-перевод текста + рендер одним джобом. -> новый project_id + job_id.
-  exportLang: (pid: string, lang: string) => fetch(`${BASE}/projects/${pid}/export-lang?lang=${encodeURIComponent(lang)}`, { method: "POST" }).then(j<{ job_id: string; project_id: string }>),
+  exportLang: (pid: string, lang: string) => requireCloud(["translation", "voicing"]).then(() => fetch(`${BASE}/projects/${pid}/export-lang?lang=${encodeURIComponent(lang)}`, { method: "POST" })).then(j<{ job_id: string; project_id: string }>),
   // #122: смена режима из транскрипта — перевод готовых сегментов на lang + смена режима, БЕЗ повторного ASR.
-  retranslate: (pid: string, lang: string, mode: string) => fetch(`${BASE}/projects/${pid}/retranslate?lang=${encodeURIComponent(lang)}&mode=${encodeURIComponent(mode)}`, { method: "POST" }).then(j<{ job_id: string; project_id: string }>),
-  dubAudio: (pid: string) => fetch(`${BASE}/projects/${pid}/dub-audio`, { method: "POST" }).then(j<{ job_id: string }>),   // сгенерить только озвучку (без сборки видео) — слушать дуб в редакторе
+  retranslate: (pid: string, lang: string, mode: string) => requireCloud(["translation"]).then(() => fetch(`${BASE}/projects/${pid}/retranslate?lang=${encodeURIComponent(lang)}&mode=${encodeURIComponent(mode)}`, { method: "POST" })).then(j<{ job_id: string; project_id: string }>),
+  dubAudio: (pid: string) => requireCloud(["voicing"]).then(() => fetch(`${BASE}/projects/${pid}/dub-audio`, { method: "POST" })).then(j<{ job_id: string }>),   // сгенерить только озвучку (без сборки видео) — слушать дуб в редакторе
   // Сократить перевод реплик под слот (джоба shorten): названные строки или все, что не влезают.
-  shorten: (pid: string, target: { ids: string[] } | { all_over: true }) => postJson<{ job_id: string }>(`/projects/${pid}/shorten`, target),
+  shorten: (pid: string, target: { ids: string[] } | { all_over: true }) => requireCloud(["translation"]).then(() => postJson<{ job_id: string }>(`/projects/${pid}/shorten`, target)),
   takes: (pid: string, id: string) => getJson<Takes>(`/projects/${pid}/segments/${encodeURIComponent(id)}/takes`),
   takeAudioUrl: (pid: string, id: string, n: number) => `${BASE}/projects/${pid}/segments/${encodeURIComponent(id)}/takes/${n}/audio`,
   remix: (pid: string, instruction: string) =>
-    fetch(`${BASE}/projects/${pid}/remix?instruction=${encodeURIComponent(instruction)}`, { method: "POST" }).then(j<{ job_id: string }>),
+    requireCloud(["translation", "voicing"]).then(() => fetch(`${BASE}/projects/${pid}/remix?instruction=${encodeURIComponent(instruction)}`, { method: "POST" })).then(j<{ job_id: string }>),
   previewUrl: (pid: string, t: number, rev = 0, lowres = false) => `${BASE}/projects/${pid}/preview?t=${t}&rev=${rev}${lowres ? "&lr=1" : ""}`,   // lr=1 при плее -> низкое разрешение на больших видео (быстрее)
   originalUrl: (pid: string, t: number) => `${BASE}/projects/${pid}/original?t=${t}`,
   waveform: (pid: string) => getJson<{ peaks: number[] }>(`/projects/${pid}/waveform`),

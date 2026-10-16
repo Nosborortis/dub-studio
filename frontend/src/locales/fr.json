@@ -1548,5 +1548,27 @@
       "tool": "outil",
       "job": "tâche"
     }
+  },
+  "consent": {
+    "title": "Envoyer à {{provider}} ?",
+    "allow": "Autoriser",
+    "once": "Le studio demande une fois par étape ; vous pouvez revenir dessus dans Réglages, Confidentialité.",
+    "what_recognition": "Le son de la vidéo part chez {{provider}} pour être reconnu, et le texte en revient ; c’est payé avec votre clé.",
+    "what_translation": "Le texte des répliques part chez {{provider}} pour être traduit ou raccourci, et la traduction en revient ; c’est payé avec votre clé.",
+    "what_vision": "Des images de la vidéo partent chez {{provider}}, dont le modèle lit le style des sous-titres, les titres et la scène ; c’est payé avec votre clé.",
+    "what_voicing": "Les répliques traduites (et, pour le clonage, des extraits de voix des locuteurs) partent chez {{provider}} pour être doublées, et le son en revient ; c’est payé avec votre clé.",
+    "declined": "Arrêté : vous avez gardé cette étape sur cet ordinateur. Réglages, Modèles choisissent où elle tourne."
+  },
+  "privacyRoutes": {
+    "title": "Où vont les données",
+    "hint": "Tout ce qui n’est pas indiqué comme cloud reste sur cet ordinateur. Avant qu’une étape parte au cloud pour la première fois, le studio demande.",
+    "askAgain": "Redemander",
+    "willAsk": "demande avant l’envoi",
+    "stage_recognition": "Reconnaissance",
+    "stage_translation": "Traduction et raccourcissement",
+    "stage_vision": "Images (style des sous-titres, titres)",
+    "stage_voicing": "Doublage",
+    "cloud": "Maintenant : {{provider}}, donc les données partent dans le cloud.",
+    "local": "Maintenant : sur cet ordinateur."
   }
 }

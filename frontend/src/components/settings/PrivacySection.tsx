@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { hubChanged, refreshHub, resetInstall, setTelemetry, useHubState } from "../../lib/studioHub";
 import HubTelemetryPreview from "../HubTelemetryPreview";
+import PrivacyRoutes from "./PrivacyRoutes";
 
 // «Анонимная статистика»: галочка, что уходит, новый id установки и откуда пришли новости.
 export default function PrivacySection() {
@@ -19,6 +20,7 @@ export default function PrivacySection() {
   const btn = "px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-[13px] hover:border-[var(--color-accent)] disabled:opacity-40";
   return (
     <div className="space-y-5 text-[13px]">
+      <PrivacyRoutes />
       <section className="space-y-3">
         <p className="leading-relaxed text-[var(--color-muted)]">{t("hub.why")}</p>
         {tel?.disabledByEnv

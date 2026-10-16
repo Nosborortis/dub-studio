@@ -9,6 +9,7 @@ import SettingsModal from "./components/settings/SettingsModal";
 import ProjectsList, { MODE_KEYS } from "./components/ProjectsList";
 import ConfirmDialog from "./components/ConfirmDialog";
 import UndoToast from "./components/UndoToast";
+import CloudConsentHost from "./components/CloudConsentHost";
 import ServerOffline from "./components/ServerOffline";
 import { motion } from "motion/react";
 import { Upload, Languages, AudioLines, Sparkles, ArrowRight, ShieldCheck, Download, Loader2, Trash2, Plus, Captions, Columns2, FolderDown, ExternalLink, X, Undo2, Redo2, Settings, Eye, EyeOff, Play, Pause, RotateCw, RefreshCw, Square, Droplet, Check, HelpCircle, Copy, Star, Music, Move, Minimize2, FileText, Users, Mic2, AlignLeft, AlignCenter, AlignRight, ChevronFirst, ChevronLast, ArrowLeftToLine, ArrowRightToLine, ChevronDown, ChevronUp, GripVertical, ScrollText, Clock, Keyboard, Save, ZoomIn, ZoomOut, Sliders, Merge, Scissors, Bot, History, Pin } from "lucide-react";
@@ -4882,6 +4883,7 @@ export default function App() {
       </footer>
       <FilesPanel />
       <BridgeHost />
+      <CloudConsentHost />
       {(stage === "editor" || stage === "analyzing" || stage === "multilang" || stage === "batch") && <ResourceMonitor />}
     </div>
   );
