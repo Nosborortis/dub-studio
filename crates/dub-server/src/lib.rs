@@ -337,6 +337,16 @@ impl AppState {
         let repo_root = repo_root.as_ref().to_path_buf();
         let workspace = repo_root.join("workspace");
         let _ = std::fs::create_dir_all(&workspace);
+        // the language the window last showed, so what the studio says before a window opens is in it too
+        match std::fs::read_to_string(repo_root.join(UI_LANG_FILE)) {
+            Ok(code) => {
+                if let Err(e) = i18n::set_language(code.trim()) {
+                    tracing::error!("[ERROR] {UI_LANG_FILE}: {e}");
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => tracing::error!("[ERROR] {UI_LANG_FILE}: {e}"),
+        }
         let interrupted = job_store::recover(&workspace);
         if interrupted > 0 {
             eprintln!("[jobs] interrupted project jobs: {interrupted} (they can be resumed)");
@@ -3354,9 +3364,14 @@ async fn spa_fallback(State(st): State<AppState>, uri: axum::http::Uri) -> Respo
     spa::serve_spa(st.web_root.as_deref(), path).await
 }
 
-/// The language the window shows, reported by the window so the server speaks it too.
-async fn set_ui_lang(Json(body): Json<Value>) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+/// Where the window's language is kept between runs, in the data root.
+const UI_LANG_FILE: &str = "ui-lang.txt";
+
+/// The language the window shows, reported by the window so the server speaks it too, now and after a restart.
+async fn set_ui_lang(State(st): State<AppState>, Json(body): Json<Value>) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let lang = body.get("lang").and_then(Value::as_str).unwrap_or_default();
     i18n::set_language(lang).map_err(|detail| (StatusCode::BAD_REQUEST, Json(json!({ "code": "bad_lang", "detail": detail }))))?;
+    let file = st.repo_root.join(UI_LANG_FILE);
+    std::fs::write(&file, lang).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "code": "write_failed", "detail": format!("{}: {e}", file.display()) }))))?;
     Ok(Json(json!({ "lang": lang })))
 }

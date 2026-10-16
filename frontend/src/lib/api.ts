@@ -538,8 +538,21 @@ export const api = {
           else if (e.type === "cancelled") { es.close(); reject(new JobCancelledError()); }
         } catch (err) { es.close(); reject(err instanceof Error ? err : new Error(String(err))); }
       };
-      // EventSource fires onerror on transient drops too (it auto-reconnects) — only give up once truly CLOSED
-      es.onerror = () => { if (es.readyState === EventSource.CLOSED) reject(new Error(i18n.t("common.streamLost"))); };
+      // EventSource fires onerror on transient drops too (it auto-reconnects); once it is CLOSED the job itself is
+      // asked how it ended, since a closed stream says nothing about the job
+      es.onerror = () => {
+        if (es.readyState !== EventSource.CLOSED) return;
+        void (async () => {
+          for (;;) {
+            if (signal?.aborted) return;
+            const snap = await fetch(`${BASE}/jobs/${jobId}?wait=50`).then((r) => (r.status === 404 ? null : j<JobSnapshot>(r)));
+            if (!snap) throw new Error(i18n.t("common.streamLost"));
+            if (snap.status === "done") { resolve(snap.result); return; }
+            if (snap.status === "cancelled") { reject(new JobCancelledError()); return; }
+            if (snap.status === "error") { reject(new Error(snap.error ?? i18n.t("common.streamLost"))); return; }
+          }
+        })().catch((e: unknown) => reject(e instanceof Error ? e : new Error(String(e))));
+      };
     }),
 };
 
