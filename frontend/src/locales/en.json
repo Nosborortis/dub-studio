@@ -399,7 +399,12 @@
     "auto": "Auto",
     "sec": "s",
     "bench": "Stage benchmark",
-    "benchHint": "Measure time/GPU/VRAM per pipeline stage -> bench.json + ⏱ lines in the log. Light background sampling once per second."
+    "benchHint": "Measure time/GPU/VRAM per pipeline stage -> bench.json + ⏱ lines in the log. Light background sampling once per second.",
+    "dlTitle": "Download “{{name}}”?",
+    "dlSize": "{{size}} to download, {{need}} needed on disk (with unpacking).",
+    "dlFree": "{{free}} free.",
+    "dlNoSpace": "Only {{free}} free: free some space or choose another models folder.",
+    "dlVram": "The model takes about {{vram}} of video memory."
   },
   "secrets": {
     "orTitle": "OpenRouter key",

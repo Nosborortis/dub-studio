@@ -371,7 +371,12 @@
     "auto": "Auto",
     "sec": "s",
     "bench": "Benchmark des étapes",
-    "benchHint": "Mesure temps/GPU/VRAM par étape -> bench.json + lignes ⏱ dans le journal. Échantillonnage léger en arrière-plan chaque seconde."
+    "benchHint": "Mesure temps/GPU/VRAM par étape -> bench.json + lignes ⏱ dans le journal. Échantillonnage léger en arrière-plan chaque seconde.",
+    "dlTitle": "Télécharger « {{name}} » ?",
+    "dlSize": "{{size}} à télécharger, {{need}} nécessaires sur le disque (avec la décompression).",
+    "dlFree": "{{free}} libres.",
+    "dlNoSpace": "Seulement {{free}} libres : libérez de la place ou choisissez un autre dossier de modèles.",
+    "dlVram": "Le modèle occupe environ {{vram}} de mémoire vidéo."
   },
   "secrets": {
     "orTitle": "Clé OpenRouter",

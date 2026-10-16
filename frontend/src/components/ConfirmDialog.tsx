@@ -6,11 +6,13 @@ import { useEscapeLayer } from "../lib/escape";
 // Подтверждение необратимого действия вместо window.confirm: своё окно в стиле студии, Escape и клик по
 // подложке отменяют, Enter подтверждает. onConfirm может быть асинхронным: пока он идёт, окно ждёт, а его
 // ошибка показывается здесь же, и окно остаётся открытым.
-export default function ConfirmDialog({ title, message, confirmLabel, danger = false, onConfirm, onCancel }: {
+export default function ConfirmDialog({ title, message, confirmLabel, danger = false, disabled = false, onConfirm, onCancel }: {
   title: string;
   message: string;
   confirmLabel: string;
   danger?: boolean;
+  /** The action cannot go ahead now (the message says why): only Cancel. */
+  disabled?: boolean;
   onConfirm: () => void | Promise<void>;
   onCancel: () => void;
 }) {
@@ -53,7 +55,7 @@ export default function ConfirmDialog({ title, message, confirmLabel, danger = f
             className="px-3.5 py-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] text-[13px] text-[var(--color-text)] hover:border-[#3a414c] disabled:opacity-40 transition-colors">
             {t("common.cancel")}
           </button>
-          <button ref={confirmRef} type="button" onClick={() => { void runConfirm(); }} disabled={busy}
+          <button ref={confirmRef} type="button" onClick={() => { void runConfirm(); }} disabled={busy || disabled}
             className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[13px] font-semibold disabled:opacity-60 transition ${danger ? "bg-[#ef4444] text-white hover:brightness-110" : "bg-[var(--color-accent)] text-[var(--color-on-accent)] hover:brightness-105"}`}>
             {busy && <Loader2 size={13} className="animate-spin" />}{confirmLabel}
           </button>

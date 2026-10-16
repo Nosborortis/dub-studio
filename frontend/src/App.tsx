@@ -196,10 +196,27 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
     return () => { active = false; };
   }, [orTtsModel]);
   const setupErr = (e: unknown) => setErr(e instanceof SetupError ? `${errText(e.code)} · ${e.detail}` : e instanceof Error ? e.message : String(e));
-  const dl = async (ids: string[]) => {
-    if (downloading) return;
+  const [asking, setAsking] = useState<string[] | null>(null);
+  const dl = (ids: string[]) => { if (!downloading) setAsking(ids); };
+  const startDownload = async (ids: string[]) => {
+    setAsking(null);
     setErr(null);
     try { await api.setupDownload(ids); await refreshStatus(); } catch (e) { setupErr(e); }
+  };
+  const confirmDownload = () => {
+    if (!asking || !status) return null;
+    const comps = asking.map((id) => status.components.find((c) => c.id === id)).filter((c): c is SetupComponent => !!c);
+    const size = comps.reduce((n, c) => n + Math.max(0, c.size - c.bytesOnDisk), 0);
+    const need = comps.reduce((n, c) => n + c.spaceNeeded, 0);
+    const vram = Math.max(0, ...comps.map((c) => c.vram ?? 0));
+    const fits = status.freeBytes == null || need <= status.freeBytes;
+    const message = [
+      t("settings.dlSize", { size: fmtBytes(size), need: fmtBytes(need) }),
+      status.freeBytes != null ? t(fits ? "settings.dlFree" : "settings.dlNoSpace", { free: fmtBytes(status.freeBytes) }) : "",
+      vram ? t("settings.dlVram", { vram: fmtBytes(vram) }) : "",
+    ].filter(Boolean).join(" ");
+    return <ConfirmDialog title={t("settings.dlTitle", { name: comps.map((c) => c.name).join(", ") })} message={message} confirmLabel={t("setup.downloadOne")}
+      disabled={!fits} onConfirm={() => startDownload(asking)} onCancel={() => setAsking(null)} />;
   };
   const pause = () => { api.setupCancel().then(() => refreshStatus()).catch(setupErr); };
   useChanged(SETTINGS_CHANGED, () => { loadCap(); refreshStatus().catch(setupErr); });
@@ -264,10 +281,12 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
           <div className="flex items-center gap-1.5 shrink-0">
             <RemoveComponent c={c} disabled={!!prog} onDone={(s) => { adopt(s); loadCap(); }} onError={setErr} />
             <BrowseBtn id={c.id} />
-            <button onClick={() => dl([c.id])} disabled={!!prog}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[12px] border border-[var(--color-border)] text-[var(--color-accent-2)] hover:border-[var(--color-accent)] disabled:opacity-40">
-              {c.installed ? <RefreshCw size={12} /> : <Download size={12} />}{c.installed ? t("settings.redownload") : t("setup.downloadOne")}
-            </button>
+            {c.fitsVram === false && !c.installed
+              ? <span className="text-[11px] text-[var(--color-warn)]">{t("setup.noVramShort")}</span>
+              : <button onClick={() => dl([c.id])} disabled={!!prog}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[12px] border border-[var(--color-border)] text-[var(--color-accent-2)] hover:border-[var(--color-accent)] disabled:opacity-40">
+                  {c.installed ? <RefreshCw size={12} /> : <Download size={12} />}{c.installed ? t("settings.redownload") : t("setup.downloadOne")}
+                </button>}
           </div>
         )}
       </div>
@@ -369,11 +388,12 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
 
   return (
     <div>
+      {confirmDownload()}
       <div className="mb-3 space-y-2">
         <ModelsFolder status={status} />
         <GpuNotice gpu={status.gpu} driverUrl={driverUrl} />
         {status.active && status.active.status !== "completed" && (
-          <DownloadProgress job={status.active} onPause={pause} onResume={(ids) => { dl(ids); }} />
+          <DownloadProgress job={status.active} onPause={pause} onResume={(ids) => { void startDownload(ids); }} />
         )}
       </div>
       <button onClick={browse} disabled={!!prog}

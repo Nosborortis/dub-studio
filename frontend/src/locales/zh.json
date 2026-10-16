@@ -363,7 +363,12 @@
     "auto": "自动",
     "sec": "秒",
     "bench": "阶段基准测试",
-    "benchHint": "按阶段测量时间/GPU/显存 -> bench.json + 日志中的 ⏱ 行。每秒一次的轻量后台采样。"
+    "benchHint": "按阶段测量时间/GPU/显存 -> bench.json + 日志中的 ⏱ 行。每秒一次的轻量后台采样。",
+    "dlTitle": "下载“{{name}}”？",
+    "dlSize": "需下载 {{size}}，磁盘需要 {{need}}（含解压）。",
+    "dlFree": "可用 {{free}}。",
+    "dlNoSpace": "仅剩 {{free}} 可用：请释放空间或选择其他模型文件夹。",
+    "dlVram": "模型约占用 {{vram}} 显存。"
   },
   "secrets": {
     "orTitle": "OpenRouter 密钥",
