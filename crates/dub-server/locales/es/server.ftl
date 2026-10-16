@@ -254,6 +254,9 @@ mcp-speakers-without-diarize = speaker_count mayor que 1 no es compatible con di
 
 project-serialize = serializando project.json: { $error }
 project-delete-failed = eliminando el proyecto { $path }: { $error }
+project-delete-in-use = un archivo del proyecto está en uso (lo lee la ventana u otro programa): { $error }
+project-restore-exists = El proyecto ya está en su sitio.
+project-restore-gone = El proyecto no está en la papelera: se vació o no se borró desde aquí.
 setup-no-ids = ids está vacío
 setup-fetching-missing = Descargando los modelos que faltan para esta función…
 setup-diarization-missing = El modelo de diarización no se descargó ({ $error }); el análisis seguirá sin separar a los hablantes

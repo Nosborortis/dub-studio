@@ -268,6 +268,9 @@ mcp-speakers-without-diarize = speaker_count больше 1 несовмести
 
 project-serialize = сериализация project.json: { $error }
 project-delete-failed = удаление проекта { $path }: { $error }
+project-delete-in-use = файл проекта занят (его читает окно или другая программа): { $error }
+project-restore-exists = Проект уже на месте.
+project-restore-gone = Проекта нет в корзине: её очистили или он удалён не отсюда.
 setup-no-ids = ids пуст
 setup-fetching-missing = Догружаю недостающие модели для этой функции…
 setup-diarization-missing = Модель диаризации не скачалась ({ $error }) — анализ пойдёт без разделения спикеров

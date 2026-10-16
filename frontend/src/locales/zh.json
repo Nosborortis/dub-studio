@@ -1429,5 +1429,21 @@
     "refresh": "立即检查",
     "notices": "通知",
     "close": "关闭"
+  },
+  "undoDelete": {
+    "deleted": "「{{video}}」已移到回收站",
+    "restore": "恢复",
+    "failed": "「{{video}}」未删除：{{error}}"
+  },
+  "diag": {
+    "title": "系统诊断",
+    "hint": "工作室看到的情况：显卡、驱动和 CUDA、ffmpeg、哪些组件已就位、引擎缺少哪些库，以及最新的日志行。密钥绝不会包含在内。",
+    "copy": "复制诊断信息",
+    "pack": "生成错误报告包",
+    "report": "报告问题",
+    "logs": "日志文件夹",
+    "refresh": "刷新",
+    "packed": "报告包已保存：",
+    "show": "在文件夹中显示"
   }
 }

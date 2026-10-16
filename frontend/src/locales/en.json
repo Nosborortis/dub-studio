@@ -1447,5 +1447,21 @@
     "refresh": "Check now",
     "notices": "Notices",
     "close": "Close"
+  },
+  "undoDelete": {
+    "deleted": "«{{video}}» moved to the recycle bin",
+    "restore": "Restore",
+    "failed": "«{{video}}» was not deleted: {{error}}"
+  },
+  "diag": {
+    "title": "System diagnostics",
+    "hint": "What the studio sees: the graphics card, driver and CUDA, ffmpeg, which components are in place, which libraries the engines lack, and the latest log lines. Keys never get in.",
+    "copy": "Copy diagnostics",
+    "pack": "Make a bug-report pack",
+    "report": "Report a problem",
+    "logs": "Logs folder",
+    "refresh": "Refresh",
+    "packed": "Pack saved:",
+    "show": "Show in folder"
   }
 }

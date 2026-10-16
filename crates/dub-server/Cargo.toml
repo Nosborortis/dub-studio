@@ -39,6 +39,7 @@ mime_guess = "2"
 percent-encoding = "2.3"
 # MCP: картинки кадров в ответе инструмента, заголовки =?base64?…?= и границы since/until в часовом поясе компьютера.
 base64 = "0.23"
+trash = "5"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 # setup-автозакачка: HTTPS-загрузка компонентов (rustls, без системного OpenSSL) + распаковка zip/wheel.
 # rustls: собственный криптопровайдер reqwest (aws-lc-rs) и корни из системного хранилища сертификатов.

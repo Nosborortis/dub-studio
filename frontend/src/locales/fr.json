@@ -1465,5 +1465,21 @@
     "refresh": "Vérifier maintenant",
     "notices": "Annonces",
     "close": "Fermer"
+  },
+  "undoDelete": {
+    "deleted": "«{{video}}» est dans la corbeille",
+    "restore": "Restaurer",
+    "failed": "«{{video}}» n’a pas été supprimé : {{error}}"
+  },
+  "diag": {
+    "title": "Diagnostic du système",
+    "hint": "Ce que voit le studio : la carte graphique, le pilote et CUDA, ffmpeg, les composants présents, les bibliothèques qui manquent aux moteurs et les dernières lignes du journal. Les clés n’y figurent jamais.",
+    "copy": "Copier le diagnostic",
+    "pack": "Créer un paquet de rapport de bug",
+    "report": "Signaler un problème",
+    "logs": "Dossier des journaux",
+    "refresh": "Actualiser",
+    "packed": "Paquet enregistré :",
+    "show": "Afficher dans le dossier"
   }
 }

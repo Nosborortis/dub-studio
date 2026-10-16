@@ -1501,9 +1501,39 @@ fn tools() -> &'static [Tool] {
             },
             Tool {
                 name: "project_delete",
-                description: "Delete a project and everything the studio made for it; the file it was made from stays where it is.",
+                description: "Delete a project and everything the studio made for it to the system's recycle bin (project_restore takes it back); the file it was made from stays where it is.",
                 schema: project_only,
                 call: |args| send(Method::DELETE, project_path(args, "")?, json!({})),
+            },
+            Tool {
+                name: "project_restore",
+                description: "Take a deleted project back: project_delete moves a project to the system's recycle bin, and this restores the one deleted last under that pid, as the window's Undo does. Fails when the bin was emptied or the project is already in place.",
+                schema: project_only,
+                call: |args| post(project_path(args, "/restore")?, json!({})),
+            },
+            Tool {
+                name: "diagnostics_get",
+                description: "The studio's diagnostics: version, system, graphics card against CUDA, ffmpeg, every component and whether it is on disk, what the engines' DLLs miss, and the latest log lines - as text to read and as data.",
+                schema: nothing,
+                call: |_| get("/diagnostics".into()),
+            },
+            Tool {
+                name: "diagnostics_report",
+                description: "Pack a bug report (the diagnostics, the activity journal and the log, keys masked) into a ZIP file: answers its path.",
+                schema: nothing,
+                call: |_| post("/diagnostics/report".into(), json!({})),
+            },
+            Tool {
+                name: "diagnostics_report_reveal",
+                description: "Show a bug report (path from diagnostics_report) in Explorer, selected, for the user.",
+                schema: || id_only("path", "the report's path"),
+                call: |args| post("/diagnostics/report/reveal".into(), json!({ "path": text(args, "path")? })),
+            },
+            Tool {
+                name: "diagnostics_logs_reveal",
+                description: "Open the folder of the studio's logs in Explorer, for the user.",
+                schema: nothing,
+                call: |_| post("/diagnostics/logs/reveal".into(), json!({})),
             },
             Tool {
                 name: "project_waveform",

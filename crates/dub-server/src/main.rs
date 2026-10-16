@@ -11,12 +11,7 @@ async fn main() -> anyhow::Result<()> {
     // Рецепт «taskkill //IM dub-server.exe //F» не должен оставлять сирот (llama-server, ffmpeg, roformer).
     let bound = dub_server::process_group::bind_children_to_this_process();
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,ort=warn".into()),
-        )
-        .init();
+    dub_server::diagnostics::init_logging();
     if !bound {
         tracing::error!("the process did not join its job object: sidecars are stopped only by their own destructors");
     }

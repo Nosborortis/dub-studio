@@ -1465,5 +1465,21 @@
     "refresh": "Comprobar ahora",
     "notices": "Avisos",
     "close": "Cerrar"
+  },
+  "undoDelete": {
+    "deleted": "«{{video}}» se movió a la papelera",
+    "restore": "Recuperar",
+    "failed": "«{{video}}» no se borró: {{error}}"
+  },
+  "diag": {
+    "title": "Diagnóstico del sistema",
+    "hint": "Lo que ve el estudio: la tarjeta gráfica, el controlador y CUDA, ffmpeg, qué componentes están, qué bibliotecas faltan a los motores y las últimas líneas del registro. Las claves nunca se incluyen.",
+    "copy": "Copiar diagnóstico",
+    "pack": "Crear paquete para informe de error",
+    "report": "Informar de un problema",
+    "logs": "Carpeta de registros",
+    "refresh": "Actualizar",
+    "packed": "Paquete guardado:",
+    "show": "Mostrar en la carpeta"
   }
 }

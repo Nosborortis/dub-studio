@@ -6,7 +6,6 @@ import { ContinueJobButton, JobStateLabel } from "./RecentJobBadge";
 import { DUB_LANGS } from "../lib/i18n";
 import { facet, NO_FILTER, PROJECT_ORDERS, selectProjects, useListOrder, type ProjectFilter, type ProjectStatusFilter } from "../lib/projectList";
 import SortMenu from "./SortMenu";
-import ConfirmDialog from "./ConfirmDialog";
 import { useEscapeLayer } from "../lib/escape";
 
 // Сотни карточек с кадром-превью — сотни запросов к ffmpeg-превью; рисуем пачками.
@@ -45,7 +44,6 @@ export default function ProjectsList({ projects, onOpen, onDelete, onClose }: {
   const [filter, setFilter] = useState<ProjectFilter>(NO_FILTER);
   const [order, setOrder] = useListOrder("projects", "newest", PROJECT_ORDERS);
   const [shown, setShown] = useState(PAGE);
-  const [deleting, setDeleting] = useState<ProjectListing | null>(null);
   const titleId = useId();
 
   const visible = useMemo(() => selectProjects(projects, filter, order, language), [projects, filter, order, language]);
@@ -148,7 +146,7 @@ export default function ProjectsList({ projects, onOpen, onDelete, onClose }: {
                         : <span className="shrink-0 text-[11px] text-[var(--color-muted)]">{t("projects.filter.pending")}</span>}
                     </button>
                     <ContinueJobButton p={p} onOpen={onOpen} />
-                    <button type="button" onClick={() => setDeleting(p)} aria-label={t("recent.delete")} title={t("recent.delete")}
+                    <button type="button" onClick={() => void onDelete(p.pid)} aria-label={t("recent.delete")} title={t("recent.delete")}
                       className="shrink-0 mx-1 p-1.5 rounded-md text-[var(--color-muted)] opacity-60 group-hover:opacity-100 focus:opacity-100 hover:text-[#ef4444] hover:bg-white/5 transition"><Trash2 size={15} /></button>
                   </li>
                 ))}
@@ -163,11 +161,6 @@ export default function ProjectsList({ projects, onOpen, onDelete, onClose }: {
           </div>
         </div>
       </div>
-      {deleting && (
-        <ConfirmDialog danger title={t("recent.delete")} message={t("recent.deleteConfirm", { video: deleting.video })} confirmLabel={t("projects.deleteConfirm")}
-          onCancel={() => setDeleting(null)}
-          onConfirm={async () => { await onDelete(deleting.pid); setDeleting(null); }} />
-      )}
     </>
   );
 }

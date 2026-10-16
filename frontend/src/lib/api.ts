@@ -461,7 +461,12 @@ export const api = {
     sendCoded<{ slug: string; entries: GlossaryEntry[] }>("PUT", `/casting/library/${encodeURIComponent(slug)}/glossary`, body),
   listProjects: () => getJson<{ projects: ProjectListing[] }>("/projects"),   // недавние/сохранённые проекты для экрана «Открыть»
   getProject: (pid: string) => getJson<Project>(`/projects/${pid}`),
-  deleteProject: (pid: string) => fetch(`${BASE}/projects/${pid}`, { method: "DELETE" }).then(j<{ ok: boolean }>),   // удалить проект (стирает workspace/<pid>) — кнопка в «Недавних»
+  deleteProject: (pid: string) => fetch(`${BASE}/projects/${pid}`, { method: "DELETE" }).then(j<{ ok: boolean }>),   // проект в корзину системы — кнопка в «Недавних» и в списке проектов
+  diagnostics: () => getJson<{ text: string; report: { gpu: GpuReport } }>("/diagnostics"),   // система, компоненты, DLL и последние строки лога — для баг-репорта
+  diagnosticsReport: () => postJson<{ path: string }>("/diagnostics/report", {}),
+  revealReport: (path: string) => postJson<{ ok: boolean }>("/diagnostics/report/reveal", { path }),
+  revealLogs: () => postJson<{ ok: boolean }>("/diagnostics/logs/reveal", {}),
+  restoreProject: (pid: string) => fetch(`${BASE}/projects/${pid}/restore`, { method: "POST" }).then(j<{ restored: string }>),   // удалённый последним под этим id — обратно из корзины
   // undo/redo: та же очередь, что у patch(). base — ревизия, на которой снят снимок (без неё — последняя известная
   // окну). Если после неё проект сохранял кто-то, кроме этого окна, сервер его не перезапишет: ApiError project_changed.
   putProject: (pid: string, project: Project, base?: number) =>

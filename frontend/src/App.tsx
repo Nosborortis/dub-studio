@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { FolderOpen } from "lucide-react";
@@ -8,6 +8,7 @@ import { createLaunchSaver, loadWithMigration } from "./lib/launchDefaults";
 import SettingsModal from "./components/settings/SettingsModal";
 import ProjectsList, { MODE_KEYS } from "./components/ProjectsList";
 import ConfirmDialog from "./components/ConfirmDialog";
+import UndoToast from "./components/UndoToast";
 import ServerOffline from "./components/ServerOffline";
 import { motion } from "motion/react";
 import { Upload, Languages, AudioLines, Sparkles, ArrowRight, ShieldCheck, Download, Loader2, Trash2, Plus, Captions, Columns2, FolderDown, ExternalLink, X, Undo2, Redo2, Settings, Eye, EyeOff, Play, Pause, RotateCw, RefreshCw, Square, Droplet, Check, HelpCircle, Copy, Star, Music, Move, Minimize2, FileText, Users, Mic2, AlignLeft, AlignCenter, AlignRight, ChevronFirst, ChevronLast, ArrowLeftToLine, ArrowRightToLine, ChevronDown, ChevronUp, GripVertical, ScrollText, Clock, Keyboard, Save, ZoomIn, ZoomOut, Sliders, Merge, Scissors, Bot, History, Pin } from "lucide-react";
@@ -1037,7 +1038,9 @@ function DropZone() {
   // список и даём открыть прошлый проект в один клик. Автообновление URL (?pid=) — чтобы перезагрузка держала.
   const [recent, setRecent] = useState<ProjectListing[]>([]);
   const [allProjects, setAllProjects] = useState(false);                        // экран «Все проекты»
-  const [deleting, setDeleting] = useState<{ pid: string; video: string } | null>(null);   // проект в диалоге удаления
+  const [removed, setRemoved] = useState<{ pid: string; video: string } | null>(null);   // проект, только что ушедший в корзину: его можно вернуть
+  // одна функция на всё время: заметка держит свой таймер, пока её onClose тот же
+  const closeRemoved = useCallback(() => setRemoved(null), []);
   useEffect(() => {
     api.listProjects().then((r) => setRecent(r.projects))
       .catch((e: unknown) => useStore.getState().pushActivity(t("projects.loadFailed", { error: e instanceof Error ? e.message : String(e) }), "error"));
@@ -1046,15 +1049,25 @@ function DropZone() {
     api.listProjects().then((r) => setRecent(r.projects))
       .catch((err: unknown) => useStore.getState().pushActivity(t("bridge.syncFailed", { error: err instanceof Error ? err.message : String(err) }), "error"));
   });
-  // Удалить проект: DELETE /projects/<pid> стирает workspace/<pid>; из списка убираем только после ответа
-  // сервера, ошибка остаётся в диалоге подтверждения.
+  // Удалить проект: DELETE /projects/<pid> кладёт workspace/<pid> в корзину системы без вопроса, а заметка
+  // внизу 10 секунд предлагает вернуть его; из списка убираем только после ответа сервера.
   const deleteProject = async (pid: string) => {
-    await api.deleteProject(pid);
-    setRecent((r) => r.filter((x) => x.pid !== pid));
+    const video = recent.find((x) => x.pid === pid)?.video ?? pid;
+    try {
+      await api.deleteProject(pid);
+      setRecent((r) => r.filter((x) => x.pid !== pid));
+      setRemoved({ pid, video });
+    } catch (err: unknown) {
+      useStore.getState().pushActivity(t("undoDelete.failed", { video, error: err instanceof Error ? err.message : String(err) }), "error");
+    }
   };
-  const deleteRecent = (e: React.MouseEvent, pid: string, video: string) => {
+  const restoreProject = async (pid: string) => {
+    await api.restoreProject(pid);
+    setRecent((await api.listProjects()).projects);
+  };
+  const deleteRecent = (e: React.MouseEvent, pid: string) => {
     e.stopPropagation();
-    setDeleting({ pid, video });
+    void deleteProject(pid);
   };
   const rtf = new Intl.RelativeTimeFormat((i18n.language as string) || "en", { numeric: "auto" });
   function fmtAgo(sec: number) {
@@ -1212,7 +1225,7 @@ function DropZone() {
                       </div>
                     </button>
                     <ContinueJobButton p={p} onOpen={openProject} />
-                    <button onClick={(e) => deleteRecent(e, p.pid, p.video)} title={t("recent.delete")}
+                    <button onClick={(e) => deleteRecent(e, p.pid)} title={t("recent.delete")}
                       className="shrink-0 mr-1 p-1.5 rounded-md text-[var(--color-muted)] opacity-0 group-hover:opacity-100 hover:text-[#ef4444] hover:bg-white/5 transition"><Trash2 size={15} /></button>
                   </div>
                 ))}
@@ -1580,10 +1593,9 @@ function DropZone() {
         <ProjectsList projects={recent} onOpen={(pid) => { setAllProjects(false); void openProject(pid); }}
           onDelete={deleteProject} onClose={() => setAllProjects(false)} />
       )}
-      {deleting && (
-        <ConfirmDialog danger title={t("recent.delete")} message={t("recent.deleteConfirm", { video: deleting.video })} confirmLabel={t("projects.deleteConfirm")}
-          onCancel={() => setDeleting(null)}
-          onConfirm={async () => { await deleteProject(deleting.pid); setDeleting(null); }} />
+      {removed && (
+        <UndoToast key={removed.pid} text={t("undoDelete.deleted", { video: removed.video })}
+          onUndo={() => restoreProject(removed.pid)} onClose={closeRemoved} />
       )}
       {deletingCast && (
         <ConfirmDialog danger title={t("castingLib.delete")} message={t("castingLib.deleteConfirm")} confirmLabel={t("castingLib.delete")}

@@ -254,6 +254,9 @@ mcp-speakers-without-diarize = speaker_count above 1 does not go with diarize=fa
 
 project-serialize = serializing project.json: { $error }
 project-delete-failed = deleting the project { $path }: { $error }
+project-delete-in-use = a file of the project is in use (the window or another program is reading it): { $error }
+project-restore-exists = The project is already in place.
+project-restore-gone = The project is not in the recycle bin: it was emptied, or the project was not deleted from here.
 setup-no-ids = ids is empty
 setup-fetching-missing = Fetching the models this feature still needs…
 setup-diarization-missing = The diarization model did not download ({ $error }); the analysis goes on without telling the speakers apart

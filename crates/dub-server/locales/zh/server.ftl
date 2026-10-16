@@ -200,6 +200,9 @@ mcp-speakers-without-diarize = speaker_count 大于 1 时不能与 diarize=false
 
 project-serialize = 序列化 project.json：{ $error }
 project-delete-failed = 删除项目 { $path }：{ $error }
+project-delete-in-use = 项目的文件正在被使用（窗口或其他程序正在读取）：{ $error }
+project-restore-exists = 项目已在原处。
+project-restore-gone = 回收站中没有该项目：回收站已清空，或项目不是从这里删除的。
 setup-no-ids = ids 为空
 setup-fetching-missing = 正在下载此功能缺少的模型…
 setup-diarization-missing = 说话人分离模型未能下载（{ $error }）；分析将不区分说话人

@@ -19,7 +19,7 @@ mod cloud_tts;
 mod cloud_voices;
 mod compose;
 mod credentials;
-#[cfg(test)]
+pub mod diagnostics;
 #[cfg(windows)]
 mod dll_imports;
 mod downloads;
@@ -579,6 +579,11 @@ pub fn build_router(state: AppState) -> Router {
             "/projects/{pid}",
             get(get_project).patch(patch_project).put(endpoints::put_project).delete(delete_project),
         )
+        .route("/projects/{pid}/restore", post(restore_project))
+        .route("/diagnostics", get(diagnostics::get))
+        .route("/diagnostics/report", post(diagnostics::make_report))
+        .route("/diagnostics/report/reveal", post(diagnostics::reveal_report))
+        .route("/diagnostics/logs/reveal", post(diagnostics::reveal_logs))
         .route("/projects/{pid}/analyze", post(analyze_project))
         .route("/projects/{pid}/resume", post(resume_project))
         .route("/projects/{pid}/align", post(align_project))
@@ -1939,8 +1944,7 @@ pub(crate) fn source_name(dir: &Path, video: &str) -> String {
         .unwrap_or_else(|| Path::new(video).file_name().and_then(|s| s.to_str()).unwrap_or(video).to_string())
 }
 
-// ─── DELETE /projects/{pid} — удалить проект (весь каталог workspace/<pid>) ───
-// Убирает проект из «последних» на главной И реально стирает его данные с диска.
+// ─── DELETE /projects/{pid} — проект в корзину системы (весь каталог workspace/<pid>), откуда его вернёт restore ───
 async fn delete_project(State(st): State<AppState>, AxPath(pid): AxPath<String>) -> Response {
     let dir = match st.proj_dir(&pid) {
         Ok(d) => d,
@@ -1953,13 +1957,53 @@ async fn delete_project(State(st): State<AppState>, AxPath(pid): AxPath<String>)
         )
             .into_response();
     }
-    match std::fs::remove_dir_all(&dir) {
-        Ok(()) => ([("content-type", "application/json")], "{\"ok\":true}").into_response(),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            t!("project-delete-failed", path = dir.display().to_string(), error = e.to_string()),
-        )
-            .into_response(),
+    let shown = dir.display().to_string();
+    // the window may still be reading the project's video for a frame: Windows aborts the move while a file is open,
+    // and lets it through once the read ends
+    let to_bin = move || {
+        let mut tries = 0;
+        loop {
+            match trash::delete(&dir) {
+                Ok(()) => return Ok(()),
+                Err(e) if tries < 12 => {
+                    tries += 1;
+                    tracing::warn!("project {} did not go to the recycle bin yet ({e}); trying again", dir.display());
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                }
+                Err(e) => return Err(t!("project-delete-in-use", error = e.to_string())),
+            }
+        }
+    };
+    match tokio::task::spawn_blocking(to_bin).await {
+        Ok(Ok(())) => ([("content-type", "application/json")], "{\"ok\":true}").into_response(),
+        Ok(Err(e)) => (StatusCode::INTERNAL_SERVER_ERROR, t!("project-delete-failed", path = shown, error = e)).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, t!("project-delete-failed", path = shown, error = e.to_string())).into_response(),
+    }
+}
+
+// ─── POST /projects/{pid}/restore — проект, удалённый последним под этим id, обратно из корзины системы ───
+async fn restore_project(State(st): State<AppState>, AxPath(pid): AxPath<String>) -> Response {
+    if pid.is_empty() || !pid.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return (StatusCode::NOT_FOUND, "project not found").into_response();
+    }
+    let dir = st.workspace.join(&pid);
+    if dir.exists() {
+        return (StatusCode::CONFLICT, t!("project-restore-exists")).into_response();
+    }
+    let found = tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let item = trash::os_limited::list()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .filter(|i| i.original_path() == dir)
+            .max_by_key(|i| i.time_deleted)
+            .ok_or_else(|| t!("project-restore-gone"))?;
+        trash::os_limited::restore_all([item]).map_err(|e| e.to_string())
+    })
+    .await;
+    match found {
+        Ok(Ok(())) => Json(json!({ "restored": pid })).into_response(),
+        Ok(Err(e)) => (StatusCode::NOT_FOUND, e).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
 

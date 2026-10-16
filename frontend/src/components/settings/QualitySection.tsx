@@ -4,6 +4,7 @@ import { AudioLines, AudioWaveform, Captions, CaseUpper, Clock, CloudAlert, Ear,
   Scissors, Sparkles, SpellCheck, Star, Timer, VenusAndMars, VolumeX, WholeWord, type LucideIcon } from "lucide-react";
 import { api } from "../../lib/api";
 import SettingSwitch from "./SettingSwitch";
+import DiagnosticsPanel from "./DiagnosticsPanel";
 import { useChanged } from "../editorBridge";
 import { SETTINGS_CHANGED } from "../../lib/mcpBridge";
 
@@ -124,6 +125,7 @@ export default function QualitySection() {
       {group("voice", t("prefs.voiceGroup"), VOICE)}
       {group("takes", t("prefs.takesGroup"), TAKES)}
       {group("diagnostics", t("prefs.diagnostics"), DIAGNOSTICS)}
+      <DiagnosticsPanel />
     </div>
   );
 }
