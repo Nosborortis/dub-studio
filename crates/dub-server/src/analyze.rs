@@ -705,6 +705,7 @@ fn provider_tag(paths: &AnalyzePaths, stage: &str) -> String {
             format!("server:{}:{}", crate::models::server_url(mr), crate::models::server_model(mr, stage))
         }
         crate::models::LlmBackend::OpenRouter => format!("openrouter:{}", crate::models::openrouter_model(mr, stage)),
+        crate::models::LlmBackend::Agent => "agent".to_string(),
     }
 }
 

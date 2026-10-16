@@ -362,6 +362,9 @@ pub enum LlmBackend {
     Server,
     /// OpenRouter.
     OpenRouter,
+    /// Агент, подключённый по MCP: студия спрашивает его то же, что спросила бы свою модель, с теми же
+    /// инструкциями и схемой ответа (YuE2 `AssistantProvider::Agent`).
+    Agent,
 }
 
 impl LlmBackend {
@@ -370,6 +373,7 @@ impl LlmBackend {
             LlmBackend::Local => "local",
             LlmBackend::Server => "server",
             LlmBackend::OpenRouter => "openrouter",
+            LlmBackend::Agent => "agent",
         }
     }
 
@@ -378,6 +382,7 @@ impl LlmBackend {
             "local" => Some(LlmBackend::Local),
             "server" => Some(LlmBackend::Server),
             "openrouter" => Some(LlmBackend::OpenRouter),
+            "agent" => Some(LlmBackend::Agent),
             _ => None,
         }
     }

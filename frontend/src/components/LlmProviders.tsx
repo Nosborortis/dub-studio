@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Eye, EyeOff, RefreshCw, Trash2 } from "lucide-react";
-import { api, llmProviderOf, slot, type LlmProviderKind, type Selection } from "../lib/api";
+import { api, llmProviderOf, slot, type LlmProviderKind, type McpStatus, type Selection } from "../lib/api";
 import OpenRouterModelSelect from "./OpenRouterModelSelect";
 
 type Stage = "llm" | "vision";
@@ -57,8 +57,8 @@ function ServerKey({ url, typedUrl }: { url: string; typedUrl: string }) {
   );
 }
 
-// Провайдеры перевода и vision: своя Gemma, локальный OpenAI-совместимый сервер (Ollama, LM Studio, vLLM) или
-// OpenRouter — независимо для каждой стадии. Модель сервера — только из его /v1/models.
+// Провайдеры перевода и vision: своя Gemma, локальный OpenAI-совместимый сервер (Ollama, LM Studio, vLLM), OpenRouter
+// или подключённый по MCP агент — независимо для каждой стадии. Модель сервера — только из его /v1/models.
 export default function LlmProviders({ selection, hasOrKey, onChanged }: {
   selection: Selection | undefined; hasOrKey: boolean; onChanged: () => void;
 }) {
@@ -76,6 +76,20 @@ export default function LlmProviders({ selection, hasOrKey, onChanged }: {
     );
   const savedUrl = sel("srv_url") || DEFAULT_SERVER_URL;
   const usesServer = llmProviderOf(selection, "llm") === "server" || llmProviderOf(selection, "vision") === "server";
+  const usesAgent = llmProviderOf(selection, "llm") === "agent" || llmProviderOf(selection, "vision") === "agent";
+  const [agent, setAgent] = useState<McpStatus | null>(null);
+  const [agentErr, setAgentErr] = useState<string | null>(null);
+  useEffect(() => {
+    if (!usesAgent) return;
+    let alive = true;
+    const look = () => api.mcpStatus().then(
+      (s) => { if (alive) { setAgent(s); setAgentErr(null); } },
+      (e: unknown) => { if (alive) setAgentErr(errorText(e)); },
+    );
+    void look();
+    const timer = window.setInterval(look, 5000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [usesAgent]);
 
   useEffect(() => {
     if (!usesServer) return;
@@ -101,6 +115,7 @@ export default function LlmProviders({ selection, hasOrKey, onChanged }: {
       { id: "local", label: t("providers.localGemma") },
       { id: "server", label: t("providers.server") },
       { id: "openrouter", label: "OpenRouter", disabled: !hasOrKey, title: hasOrKey ? "" : t("providers.needKey") },
+      { id: "agent", label: t("providers.agent") },
     ];
     return (
       <div key={stage} className={`${rowCls} space-y-1.5`}>
@@ -135,6 +150,18 @@ export default function LlmProviders({ selection, hasOrKey, onChanged }: {
     <div className="space-y-1.5">
       {stageBlock("llm")}
       {stageBlock("vision")}
+      {usesAgent && (
+        <div className={`${rowCls} space-y-1`}>
+          <div className="text-[12px] font-medium">{t("providers.agent")}</div>
+          <div className="mono text-[10px] text-[var(--color-muted)] leading-snug">{t("providers.agentHint")}</div>
+          <div role="status" className={`text-[11px] ${agentErr || (agent && !agent.agent_connected) ? "text-[var(--color-warn)]" : "text-[var(--color-accent)]"}`}>
+            {agentErr ? t("providers.saveFailed", { detail: agentErr })
+              : agent === null ? "…"
+              : agent.agent_connected ? t("providers.agentConnected", { seconds: agent.agent_seconds_ago ?? 0, count: agent.requests_waiting ?? 0 })
+              : t("providers.agentMissing")}
+          </div>
+        </div>
+      )}
       {usesServer && (
         <div className={`${rowCls} space-y-2`}>
           <div>

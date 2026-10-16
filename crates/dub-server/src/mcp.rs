@@ -20,11 +20,13 @@ use axum::{Json, Router};
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
+mod assistant;
 mod atomic;
 mod window;
 
 pub(crate) use window::{carry, carry_job, save_with_revision, tell_windows, track, REV_HEADER};
 pub use window::{window_events, window_focus, window_result};
+pub(crate) use assistant::{agent_llm, agent_llm_image};
 
 /// The studio's API router, set once the service has built it.
 static API: OnceLock<Router> = OnceLock::new();
@@ -733,6 +735,7 @@ pub async fn status() -> Json<Value> {
         "agent_seconds_ago": last.as_ref().map(|(at, _)| at.elapsed().as_secs()),
         "agent_calls": agent().calls.load(Ordering::Relaxed),
         "window_open": window::windows_open() > 0,
+        "requests_waiting": assistant::waiting(),
     }))
 }
 
@@ -2090,6 +2093,7 @@ fn tools() -> &'static [Tool] {
         ];
         all.extend(atomic::tools());
         all.extend(window::tools());
+        all.extend(assistant::tools());
         all
     })
 }
@@ -2493,6 +2497,11 @@ pub async fn handle(headers: HeaderMap, body: axum::body::Bytes) -> Response {
                     Ok(state) => tool_json(id, state),
                     Err(problem) => answer(problem, true),
                 },
+                Ok(call) if call.path == "composite:questions" => tool_json(id, assistant::wait_for_questions(&args).await),
+                Ok(call) if call.path == "composite:answer" => match assistant::answer_question(&args) {
+                    Ok(result) => tool_json(id, result),
+                    Err(problem) => answer(problem, true),
+                },
                 Ok(call) if call.path.starts_with(atomic::PREFIX) => {
                     match atomic::run(name, &args).await {
                     Ok(result) => tool_json(id, result),
@@ -2743,6 +2752,8 @@ mod tests {
         ("composite:wait", &[("GET", "/jobs/x1"), ("GET", "/url/fetches/x1"), ("GET", "/jobs"), ("GET", "/setup/status"), ("GET", "/url/fetches"),
             ],
         ),
+        ("composite:questions", &[("POST", "/mcp/agent-llm/v1/chat/completions")]),
+        ("composite:answer", &[("POST", "/mcp/agent-llm/v1/chat/completions")]),
     ];
 
     /// Arguments for every property of a tool, and one set more for each other

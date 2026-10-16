@@ -288,6 +288,18 @@ for the cloud at once. The proxy has three modes: `system` (as in Windows), `cus
 address, `kind` giving the scheme of an address without one) and `off`; `proxy_test` checks a mode
 and address before `proxy_settings_set` stores them (`proxy_settings_get` shows them, the password hidden).
 
+### You as the studio's language model
+
+With `llm_provider` (and `vision_provider`) set to `agent` - "Agent (MCP)" beside Gemma, a local server
+and OpenRouter in Settings, Models - the studio asks you what it would ask its own model: translating
+the lines, shortening them, the glossary (target `llm`) and the video's frames for subtitle style,
+titles and scene (target `vision`). Keep calling `assistant_requests_wait`; each request carries the
+instructions, the request, `answer_schema` and, for frames, `images` - a file path on this computer
+and a URL of this server for each, named in the request as `[image N: path]`; read them as pictures.
+Answer with `assistant_request_answer`: the JSON object `answer_schema` describes, written by the
+instructions, as the studio's model would. A request waits about nine minutes, then the stage fails
+with that reason.
+
 ## Working in the window, in front of the user
 
 The studio's window is the second way in: `editor_*` tools work in its editor exactly as

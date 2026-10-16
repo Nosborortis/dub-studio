@@ -252,6 +252,11 @@ pub(crate) fn record_port(port: u16) {
     let _ = LISTEN_PORT.set(port);
 }
 
+/// The port this server listens on, once it does.
+pub(crate) fn bound_port() -> Option<u16> {
+    LISTEN_PORT.get().copied()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

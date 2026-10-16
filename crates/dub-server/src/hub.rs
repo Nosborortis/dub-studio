@@ -182,6 +182,7 @@ fn models_in_use(mroot: &Path, stages: &[&str]) -> Vec<String> {
                 LlmBackend::Local => format!("{stage}:{}", stem(&models::resolve_mt(mroot, &sel).0)),
                 LlmBackend::Server => format!("{stage}:server"),
                 LlmBackend::OpenRouter => format!("{stage}:openrouter:{}", models::openrouter_model(mroot, stage)),
+                LlmBackend::Agent => format!("{stage}:agent"),
             },
         })
         .collect()

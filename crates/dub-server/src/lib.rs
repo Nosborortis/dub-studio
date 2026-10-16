@@ -635,6 +635,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/mcp/window/result", post(mcp::window_result).layer(axum::extract::DefaultBodyLimit::max(64 * 1024 * 1024)),
         )
         .route("/mcp/window/focus", post(mcp::window_focus))
+        .route("/mcp/agent-llm/v1/chat/completions", post(mcp::agent_llm))
+        .route("/mcp/agent-llm/images/{name}", get(mcp::agent_llm_image))
         .layer(guard::cors())
         // Снаружи всех слоёв: чужой Origin/Host получает 403 раньше CORS, SPA и любой ручки.
         .layer(axum::middleware::from_fn(guard::origin_guard))

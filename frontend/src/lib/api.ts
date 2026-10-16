@@ -155,7 +155,7 @@ const analyzePostQuery = (p: AnalyzePost): string =>
   + (p.keepOriginal ? `&keep_original=1&container=${encodeURIComponent(p.keepOriginal.container)}` : "")
   + (p.voiceSlots ? `&voice_slots=${encodeURIComponent(JSON.stringify(p.voiceSlots))}` : "");
 // Подключённый к MCP-серверу агент: последний вызов и сколько секунд назад. window_open появится с мостом окна.
-export type McpStatus = { agent_connected: boolean; agent_last_call: string | null; agent_seconds_ago: number | null; agent_calls: number; window_open?: boolean };
+export type McpStatus = { agent_connected: boolean; agent_last_call: string | null; agent_seconds_ago: number | null; agent_calls: number; window_open?: boolean; requests_waiting?: number };
 export type ModelStack = { asr: string; llm: string; vision: string; tts: string };
 // Выбор active.json: строковые слоты + флаги секретов. Ключ OpenRouter и пароль прокси сервер не отдаёт.
 export type Selection = { [slot: string]: string | boolean | undefined; or_key_set?: boolean; proxy_password_set?: boolean };
@@ -354,10 +354,10 @@ export type OrModelKind = "llm" | "vision" | "tts" | "asr";
 export type OrCatalog = { refreshed_at: number; total: number; counts: Record<OrModelKind, number> };
 // Провайдер перевода/vision: своя Gemma, локальный OpenAI-совместимый сервер или OpenRouter. Сервер отдаёт
 // действующий провайдер в llm_provider/vision_provider, даже если он выбран прежними флагами or_*_on.
-export type LlmProviderKind = "local" | "server" | "openrouter";
+export type LlmProviderKind = "local" | "server" | "openrouter" | "agent";
 export const llmProviderOf = (sel: Selection | undefined, stage: "llm" | "vision"): LlmProviderKind => {
   const v = slot(sel, stage === "llm" ? "llm_provider" : "vision_provider");
-  return v === "server" || v === "openrouter" ? v : "local";
+  return v === "server" || v === "openrouter" || v === "agent" ? v : "local";
 };
 
 export const api = {
