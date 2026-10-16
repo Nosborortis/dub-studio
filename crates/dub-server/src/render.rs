@@ -1149,18 +1149,19 @@ fn defect_name(kind: &str) -> String {
     }
 }
 
-/// Похожесть ожидаемого перевода и услышанного ASR: нормализация (lowercase, ё→е, только буквы/цифры)
-/// + доля общих слов от максимума. Мягкая метрика: ловим «совсем не то/тишину», не орфографию.
+/// Похожесть ожидаемого перевода и услышанного ASR: нормализация (lowercase, ё→е, только буквы/цифры,
+/// иероглиф — отдельное слово) + доля общих слов от максимума. Мягкая метрика: ловим «совсем не то/тишину», не орфографию.
 fn qc_similarity(expected: &str, heard: &str) -> f64 {
     let norm = |s: &str| -> Vec<String> {
-        s.to_lowercase()
-            .replace('ё', "е")
-            .chars()
-            .map(|c| if c.is_alphanumeric() { c } else { ' ' })
-            .collect::<String>()
-            .split_whitespace()
-            .map(|w| w.to_string())
-            .collect()
+        let mut spaced = String::new();
+        for c in s.to_lowercase().replace('ё', "е").chars() {
+            if crate::analyze::is_cjk(c) {
+                spaced.extend([' ', c, ' ']);
+            } else {
+                spaced.push(if c.is_alphanumeric() { c } else { ' ' });
+            }
+        }
+        spaced.split_whitespace().map(str::to_string).collect()
     };
     let a = norm(expected);
     let b = norm(heard);
@@ -3916,6 +3917,13 @@ fn map_sub_style(s: &CoreSubStyle) -> CapSubStyle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chinese_is_compared_character_by_character() {
+        let s = qc_similarity("床前明月光，疑是地上霜。", "床前明月光, 仪式地上霜");
+        assert!((s - 0.8).abs() < 1e-9, "{s}");
+        assert_eq!(qc_similarity("Qwen3 说：你好", "qwen3 说 你好"), 1.0);
+    }
     use dub_core::{BlurBox as CoreBlurBox, Segment};
 
     fn bb(x: i64, y: i64, w: i64, h: i64, t0: f64, t1: f64, band: bool) -> CoreBlurBox {

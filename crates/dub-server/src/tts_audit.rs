@@ -56,7 +56,7 @@ impl Judge {
 const VOWELS: &str = "aeiouyàáâãäåèéêëìíîïòóôõöùúûüýæœаеёиоуыэюяіїє";
 
 fn syllables(text: &str) -> usize {
-    text.chars().flat_map(char::to_lowercase).filter(|c| VOWELS.contains(*c)).count()
+    text.chars().flat_map(char::to_lowercase).filter(|&c| VOWELS.contains(c) || crate::analyze::is_cjk(c)).count()
 }
 
 /// В тексте одно слово (основа — первые 4 буквы слова от 3 букв) звучит не раз: повтор в звуке
@@ -243,6 +243,13 @@ pub fn audit(x: &[f32], sr: u32) -> Audit {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn syllables_count_accented_vowels_and_one_per_ideograph() {
+        assert_eq!(syllables("está café"), 4);
+        assert_eq!(syllables("床前明月光"), 5);
+        assert_eq!(syllables("Мама мыла раму"), 6);
+    }
 
     const SR: u32 = 24_000;
 
