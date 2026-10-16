@@ -19,11 +19,24 @@ release notes on GitHub are taken from the release's section.
 - **Looped recognition is dropped.** A recognised line that repeats one word over and over, comes right after itself or three times in a video, or holds a word over 25 letters is hidden when no voice is heard on it and marked when one is.
 - **Text for the voice.** Words in capitals are voiced as words, abbreviations stay; leftover markup signs (`_ | ~ ^ \ { } < > # *`) are not voiced. The shown text does not change.
 - **Settings › Quality by stage**: recognition, translation, voicing, take checks and diagnostics; every check above is its own switch, and a sub-check works only while its check is on.
+- **Your agent as the language model.** Settings › Models has a fourth provider beside Gemma, a local server and OpenRouter: Agent (MCP). Translation, shortening, the glossary and the look at the frames go to the agent connected over MCP (Claude Code, Codex and others on their own subscription), which takes each request with `assistant_requests_wait` and answers with `assistant_request_answer`; frames come to it as files on this computer. Settings show whether an agent is connected and how many requests wait.
+- **Ask before the cloud.** The first time a stage would send the video's sound, text or frames to OpenRouter or Gemini, the studio asks, saying what goes where; the answer is kept for that stage. Settings › Anonymous statistics shows where each stage runs now and lets a stage be asked again; a stage kept on this computer stops the task with a line in the journal.
+- **Deleted projects go to the recycle bin and come back.** Deleting no longer asks first: a note with Restore stays for ten seconds, and a project can also be restored from the system's recycle bin; agents have `project_restore`.
+- **Activity journal across restarts.** The journal in the status bar is kept by the studio, with what an agent changed over MCP worded in the window's language; agents read and add to it with `journal_*`, and the bug report takes it along.
+- **Diagnostics in Settings › Quality**: the graphics card, driver and CUDA, ffmpeg, which components are in place and which libraries are missing, the log folder, and a report pack to attach to an issue (no keys inside); agents have `diagnostics_*`.
+- **Theme**: dark, light or as the system is, in Settings › Language & sounds; lists open in the theme's colours.
+- **Model downloads ask first** with the download size, the space needed on disk and free, and the video memory the model takes; a model that does not fit the card offers no download.
 
 ### Fixed
 
 - **Speaker gender from several lines.** The gender shown in the cast list and used to pick cloud and Supertonic voices is measured on up to five of the speaker's longest lines and taken only when two thirds of them agree, instead of on the single longest one.
 - **No clipped peaks in local voicing.** A take louder than full scale is turned down before it is written instead of having its peaks cut.
+- **Closing the window while tasks run asks first.** What is done stays in the project, and Continue goes on from there.
+- **Errors stay until closed.** An error in the files panel shows its whole text with Copy, Diagnostics and Report a problem instead of one cut line.
+- **A dropped connection no longer fails a task.** When the window loses a task's progress stream, it asks the task how it ended instead of reporting it lost.
+- **The studio speaks the window's language from the start.** The language is kept across restarts, so messages before a window opens are in it too.
+- **Chinese, Japanese and Korean takes are checked character by character.** A line with no spaces is no longer one long word that a single misheard sign fails, and a repeated piece is caught in these languages too.
+- **An agent reads the window as you see it**: a button's words come before its tooltip, a collapsed section says it is closed, and a click names the row it was in.
 
 - **An agent's command to a closed window fails at once.** A window that closed without saying so kept the agent waiting for its answer until the timeout; the command now fails as the window goes, and the next call reaches another open window or says none is open.
 - **Analysis downloads ffmpeg when it is missing** instead of stopping on every file with "ffprobe not found". A project opened by its link, or a start when the first-run check did not answer, reached the editor without the first-run screen, and nothing fetched the tools afterwards.
