@@ -797,13 +797,14 @@ const JOURNAL: &[(&str, &str, &str)] = &[
 ];
 
 /// The name a journal line gives what a tool changed: a name the agent passed, else the project's name, else the id it
-/// named. Taken before the call, while a project about to be deleted still has its name.
+/// named, a file by its name. Taken before the call, while a project about to be deleted still has its name.
 fn journal_target(args: &Value) -> String {
     const NAMED: &[&str] = &["name", "new_name", "title", "voice", "model"];
     const IDS: &[&str] = &["id", "key", "provider", "path", "pid", "project_id", "job_id", "fetch_id"];
     let text = |key: &&str| args.get(*key).and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty()).map(str::to_string);
     let project = || ["pid", "project_id"].iter().find_map(text).and_then(|pid| crate::journal::project_name(&pid));
-    NAMED.iter().find_map(text).or_else(project).or_else(|| IDS.iter().find_map(text)).unwrap_or_default().chars().take(80).collect()
+    let file = || text(&"path").map(|path| path.rsplit(['/', '\\']).next().unwrap_or(&path).to_string());
+    NAMED.iter().find_map(text).or_else(project).or_else(file).or_else(|| IDS.iter().find_map(text)).unwrap_or_default().chars().take(80).collect()
 }
 
 /// Journals a tool's change once it succeeded; work an agent still waits for (`done: false`) is journaled when it is

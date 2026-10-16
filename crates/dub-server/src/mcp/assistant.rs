@@ -113,6 +113,7 @@ pub(crate) async fn agent_llm(axum::Json(body): axum::Json<Value>) -> axum::resp
             }
         }
     }
+    let _frames = Frames(images);
     let request = request.join("\n\n");
     let schema = body.pointer("/response_format/json_schema/schema").cloned();
     let target = body["model"].as_str().and_then(|model| model.strip_prefix("agent-")).unwrap_or("llm");
@@ -124,10 +125,18 @@ pub(crate) async fn agent_llm(axum::Json(body): axum::Json<Value>) -> axum::resp
     } else {
         ask_agent_within(question, AGENT_AS_MODEL).await.map_err(|e| (axum::http::StatusCode::GATEWAY_TIMEOUT, e))
     };
-    images.iter().for_each(|path| { let _ = std::fs::remove_file(path); });
     match answer {
         Ok(answer) => axum::Json(json!({ "choices": [{ "message": { "role": "assistant", "content": answer }, "finish_reason": "stop" }] })).into_response(),
         Err((code, message)) => fail(code, message),
+    }
+}
+
+/// The frames of one request: gone with it, answered, failed or dropped when the studio stops waiting.
+struct Frames(Vec<std::path::PathBuf>);
+
+impl Drop for Frames {
+    fn drop(&mut self) {
+        self.0.iter().for_each(|path| { let _ = std::fs::remove_file(path); });
     }
 }
 

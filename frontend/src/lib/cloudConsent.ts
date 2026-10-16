@@ -29,9 +29,18 @@ type Asking = { stage: CloudStage; provider: string; answer: (ok: boolean) => vo
 /** The question the window shows now, answered by CloudConsentHost. */
 export const useCloudConsent = create<{ asking: Asking | null }>(() => ({ asking: null }));
 
+let turn: Promise<unknown> = Promise.resolve();
+
 /** Whether these stages may go to the cloud: each one that would and was not allowed yet is asked once, and the
- * answer is kept in the studio's settings. False as soon as the person keeps one on this computer. */
-export async function askCloud(stages: readonly CloudStage[]): Promise<boolean> {
+ * answer is kept in the studio's settings. False as soon as the person keeps one on this computer. One question is
+ * on screen at a time: a call made while another is asking waits for its answer. */
+export function askCloud(stages: readonly CloudStage[]): Promise<boolean> {
+  const run = turn.then(() => ask(stages));
+  turn = run.catch(() => undefined);
+  return run;
+}
+
+async function ask(stages: readonly CloudStage[]): Promise<boolean> {
   const sel = (await api.capabilities()).selection;
   for (const stage of stages) {
     const provider = cloudOf(sel, stage);

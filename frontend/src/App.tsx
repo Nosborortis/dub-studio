@@ -9,7 +9,7 @@ import SettingsModal from "./components/settings/SettingsModal";
 import ProjectsList, { MODE_KEYS } from "./components/ProjectsList";
 import ConfirmDialog from "./components/ConfirmDialog";
 import ErrorNote from "./components/ErrorNote";
-import { ConsentDeclined } from "./lib/cloudConsent";
+import { ConsentDeclined, requireCloud } from "./lib/cloudConsent";
 import UndoToast from "./components/UndoToast";
 import CloudConsentHost from "./components/CloudConsentHost";
 import ServerOffline from "./components/ServerOffline";
@@ -2798,6 +2798,7 @@ function Editor() {
     if (regenId) return;
     setRegenId(segId); pushActivity(t("seg.regen"));
     try {
+      await requireCloud(["voicing"]);
       await api.patch(pid, { op: "regen", id: segId });
       const { job_id } = await enqueueWhenFree(() => api.dubAudio(pid), waitNote);   // ре-TTS ТОЛЬКО dirty-сегмент -> свежая озвучка (без сборки видео; финал — на Экспорте)
       await watchDub(job_id);

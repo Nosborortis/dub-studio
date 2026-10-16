@@ -60,13 +60,18 @@ fn syllables(text: &str) -> usize {
 }
 
 /// В тексте одно слово (основа — первые 4 буквы слова от 3 букв) звучит не раз: повтор в звуке
-/// тогда может быть сказанным, и по звуку его не судим.
+/// тогда может быть сказанным, и по звуку его не судим. У иероглифов слов без пробелов нет: повтор —
+/// знак дважды подряд (谢谢) или пара знаков, встреченная снова (你好你好).
 fn text_repeats(text: &str) -> bool {
     let mut seen = std::collections::HashSet::new();
-    text.split(|c: char| !c.is_alphabetic())
+    let words = text
+        .split(|c: char| !c.is_alphabetic() || crate::analyze::is_cjk(c))
         .filter(|w| w.chars().count() >= 3)
         .map(|w| w.to_lowercase().replace('ё', "е").chars().take(4).collect::<String>())
-        .any(|stem| !seen.insert(stem))
+        .any(|stem| !seen.insert(stem));
+    let signs: Vec<char> = text.chars().filter(|&c| crate::analyze::is_cjk(c)).collect();
+    let mut pairs = std::collections::HashSet::new();
+    words || signs.windows(2).any(|p| p[0] == p[1] || !pairs.insert((p[0], p[1])))
 }
 
 /// Признак брака дубля по его звуку и тексту; None — признаков нет.
@@ -249,6 +254,14 @@ mod tests {
         assert_eq!(syllables("está café"), 4);
         assert_eq!(syllables("床前明月光"), 5);
         assert_eq!(syllables("Мама мыла раму"), 6);
+    }
+
+    #[test]
+    fn a_repeat_written_in_chinese_is_said_not_a_defect() {
+        assert!(text_repeats("谢谢你"));
+        assert!(text_repeats("你好你好，朋友"));
+        assert!(!text_repeats("床前明月光，疑是地上霜。"));
+        assert!(!text_repeats("Мама мыла раму"));
     }
 
     const SR: u32 = 24_000;

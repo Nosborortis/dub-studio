@@ -136,10 +136,28 @@ pub async fn write(Json(line): Json<Line>) -> Response {
     if !complete {
         return (StatusCode::BAD_REQUEST, "a journal line is an agent's change (verb and kind) or a window's message (text and tone work, done, error or agent)").into_response();
     }
+    if let Some(kept) = shown_by_another_window(&line) {
+        return Json(kept).into_response();
+    }
     match note(line) {
         Ok(line) => Json(line).into_response(),
         Err(e) => failed(e),
     }
+}
+
+/// How close in time the same message of two windows is one line.
+const SAME_MESSAGE_MS: i64 = 5_000;
+
+/// Every open window shows the studio's progress and writes it: the line another window wrote a moment ago is that
+/// message already.
+fn shown_by_another_window(line: &Line) -> Option<Line> {
+    if line.source != "studio" {
+        return None;
+    }
+    let j = journal().ok()?;
+    let lines = j.lines.lock().unwrap_or_else(|p| p.into_inner());
+    let now = chrono::Utc::now().timestamp_millis();
+    lines.iter().rev().take(16).find(|l| l.source == "studio" && l.text == line.text && l.tone == line.tone && now - l.at < SAME_MESSAGE_MS).cloned()
 }
 
 /// DELETE /journal: every line.

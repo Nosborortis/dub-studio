@@ -2004,11 +2004,14 @@ async fn restore_project(State(st): State<AppState>, AxPath(pid): AxPath<String>
     if dir.exists() {
         return (StatusCode::CONFLICT, t!("project-restore-exists")).into_response();
     }
+    let (workspace, name) = (st.workspace.clone(), pid.clone());
     let found = tokio::task::spawn_blocking(move || -> Result<(), String> {
+        // the bin keeps the folder the project was deleted from as the system spells it
+        let home = std::fs::canonicalize(&workspace).map_err(|e| format!("{}: {e}", workspace.display()))?;
         let item = trash::os_limited::list()
             .map_err(|e| e.to_string())?
             .into_iter()
-            .filter(|i| i.original_path() == dir)
+            .filter(|i| i.name == name.as_str() && std::fs::canonicalize(&i.original_parent).is_ok_and(|parent| parent == home))
             .max_by_key(|i| i.time_deleted)
             .ok_or_else(|| t!("project-restore-gone"))?;
         trash::os_limited::restore_all([item]).map_err(|e| e.to_string())
