@@ -55,6 +55,7 @@ type State = {
   setRendering: (b: boolean) => void;
   addExport: (e: ExportItem) => void;
   updateExport: (id: string, patch: Partial<ExportItem>) => void;
+  removeExport: (id: string) => void;
   pushHistory: (p: Project) => void; // snapshot the project BEFORE a mutation (for undo)
   undo: () => Snapshot | null;       // returns the snapshot to restore (PUT it with its rev) or null
   redo: () => Snapshot | null;
@@ -122,6 +123,7 @@ export const useStore = create<State>((set, get) => ({
   setRendering: (rendering) => set({ rendering }),
   addExport: (e) => set((s) => ({ exports: [e, ...s.exports.filter((x) => x.id !== e.id)] })),   // дедуп по id: повторный экспорт того же проекта заменяет запись, а не плодит дубли
   updateExport: (id, patch) => set((s) => ({ exports: s.exports.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
+  removeExport: (id) => set((s) => ({ exports: s.exports.filter((x) => x.id !== id) })),
   pushHistory: (p) => set((s) => {
     // no-op if the snapshot matches the current head: callers may re-snapshot the same
     // baseline (e.g. a second keystroke in the same edit burst), and an unconditional

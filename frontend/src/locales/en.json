@@ -1562,5 +1562,10 @@
     "stage_voicing": "Voicing",
     "cloud": "Now: {{provider}}, so the data goes to the cloud.",
     "local": "Now: on this computer."
+  },
+  "errors": {
+    "whatToDo": "What to do: copy the text, look at the diagnostics or report the problem.",
+    "copy": "Copy",
+    "diagnostics": "Diagnostics"
   }
 }

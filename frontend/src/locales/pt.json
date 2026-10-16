@@ -1580,5 +1580,10 @@
     "stage_voicing": "Dublagem",
     "cloud": "Agora: {{provider}}, então os dados vão para a nuvem.",
     "local": "Agora: neste computador."
+  },
+  "errors": {
+    "whatToDo": "O que fazer: copie o texto, veja o diagnóstico ou relate o problema.",
+    "copy": "Copiar",
+    "diagnostics": "Diagnóstico"
   }
 }

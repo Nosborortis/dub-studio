@@ -8,6 +8,8 @@ import { createLaunchSaver, loadWithMigration } from "./lib/launchDefaults";
 import SettingsModal from "./components/settings/SettingsModal";
 import ProjectsList, { MODE_KEYS } from "./components/ProjectsList";
 import ConfirmDialog from "./components/ConfirmDialog";
+import ErrorNote from "./components/ErrorNote";
+import { ConsentDeclined } from "./lib/cloudConsent";
 import UndoToast from "./components/UndoToast";
 import CloudConsentHost from "./components/CloudConsentHost";
 import ServerOffline from "./components/ServerOffline";
@@ -2744,6 +2746,7 @@ function Editor() {
   // a patch/PUT rejected (4xx/5xx/offline) -> surface it in the Files panel (like doExport) and re-sync from
   // the server so the optimistic local echo can't silently diverge from persisted truth
   async function surfaceErr(err: unknown) {
+    if (err instanceof ConsentDeclined) { pushActivity(err.message, "done"); return; }
     // PUT снимка (undo, импорт субтитров) на проект, который после него сохранили агент или другое окно: сервер
     // его не принял — показываем актуальный проект, а старые снимки undo больше не годятся.
     const changed = err instanceof ApiError && err.code === "project_changed";
@@ -3013,6 +3016,8 @@ function Editor() {
       if (err instanceof JobCancelledError) {
         updateExport(exId, { status: "error", msg: t("jobs.state.cancelled") });
         pushActivity(t("jobs.cancelledKind", { kind: t("jobs.kind.render") }), "done");
+      } else if (err instanceof ConsentDeclined) {
+        useStore.getState().removeExport(exId); pushActivity(err.message, "done");
       } else {
         updateExport(exId, { status: "error", msg: String(err) }); pushActivity(String(err), "error"); playSfx("error");
       }
@@ -4105,7 +4110,7 @@ function FilesPanel() {
                     </button>
                   </div>
                 )}
-                {e.status === "error" && <div className="mt-1 mono text-[10px] text-[var(--color-warn)] truncate">{e.msg}</div>}
+                {e.status === "error" && <div className="mt-1.5"><ErrorNote text={e.msg} onClose={() => useStore.getState().removeExport(e.id)} /></div>}
               </div>
             ))}
           </div>

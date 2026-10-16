@@ -1580,5 +1580,10 @@
     "stage_voicing": "Locución",
     "cloud": "Ahora: {{provider}}, así que los datos van a la nube.",
     "local": "Ahora: en este equipo."
+  },
+  "errors": {
+    "whatToDo": "Qué hacer: copia el texto, mira el diagnóstico o informa del problema.",
+    "copy": "Copiar",
+    "diagnostics": "Diagnóstico"
   }
 }

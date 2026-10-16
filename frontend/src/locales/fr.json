@@ -1580,5 +1580,10 @@
     "stage_voicing": "Doublage",
     "cloud": "Maintenant : {{provider}}, donc les données partent dans le cloud.",
     "local": "Maintenant : sur cet ordinateur."
+  },
+  "errors": {
+    "whatToDo": "Que faire : copiez le texte, consultez le diagnostic ou signalez le problème.",
+    "copy": "Copier",
+    "diagnostics": "Diagnostic"
   }
 }

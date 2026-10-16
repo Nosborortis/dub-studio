@@ -1544,5 +1544,10 @@
     "stage_voicing": "配音",
     "cloud": "当前：{{provider}}，数据会发送到云端。",
     "local": "当前：在本机运行。"
+  },
+  "errors": {
+    "whatToDo": "怎么办：复制文本、查看诊断或报告问题。",
+    "copy": "复制",
+    "diagnostics": "诊断"
   }
 }
