@@ -277,6 +277,18 @@ async function setupPost<T>(path: string, body: unknown): Promise<T> {
 }
 
 // Ошибка ручки с кодом ({error, detail}): текст для окна выбирается по коду через t().
+/** A line of the journal: an agent's change (verb, kind, target) or a message the window showed (text). */
+export type JournalLine = { id: number; at: number; source: "agent" | "studio"; tone: "work" | "done" | "error" | "agent"; verb: string; kind: string; target: string; text: string };
+export const journalApi = {
+  read: () => fetch(`${BASE}/journal`).then(j<JournalLine[]>),
+  write: (tone: JournalLine["tone"], text: string) =>
+    fetch(`${BASE}/journal`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "studio", tone, text }) }).then(j<JournalLine>),
+  clear: async (): Promise<void> => {
+    const r = await fetch(`${BASE}/journal`, { method: "DELETE" });
+    if (!r.ok) throw new Error(`journal: http ${r.status}: ${await r.text()}`);
+  },
+};
+
 export class ApiError extends Error {
   code: string;
   detail: string;

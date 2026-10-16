@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { projectRev, type JobKind, type Project } from "./lib/api";
+import { journalApi, projectRev, type JobKind, type JournalLine, type Project } from "./lib/api";
 
 /**
  * A state of the open project undo or redo can write back, with the revision the window knew when it was taken:
@@ -9,7 +9,17 @@ export type Snapshot = { project: Project; rev: number | undefined };
 
 type Stage = "boot" | "offline" | "setup" | "empty" | "analyzing" | "editor" | "batch" | "multilang";
 export type ExportItem = { id: string; name: string; status: "rendering" | "done" | "error"; msg: string; url?: string; pid?: string };
-export type Activity = { t: number; text: string; kind: "work" | "done" | "error" | "agent" };   // строка лога «что делает приложение»; agent — действие агента по MCP
+// строка журнала «что делает приложение»; agent — действие агента по MCP; verb/noun/target — изменение агента, словами окна
+export type Activity = { t: number; text: string; kind: "work" | "done" | "error" | "agent"; verb?: string; noun?: string; target?: string };
+
+const KEPT = 500;
+
+const fromLine = (l: JournalLine): Activity => ({ t: l.at, text: l.text, kind: l.tone, ...(l.source === "agent" ? { verb: l.verb, noun: l.kind, target: l.target } : {}) });
+
+/** A line the window shows goes to the server's journal too, which keeps it across restarts. */
+function keep(text: string, kind: Activity["kind"]): void {
+  journalApi.write(kind, text).catch((problem: unknown) => console.error("[ERROR] the journal did not take a line:", problem));
+}
 export type CurrentJob = { id: string; kind: JobKind; pid: string };
 // Джоба, за которой следит сам редактор (экспорт, озвучка, ремикс): полоса джоб проекта показывает её с «Отменить».
 export type LocalJob = { id: string; kind: JobKind; pid: string; stage: string; msg: string; ahead: number | null };
@@ -53,6 +63,8 @@ type State = {
   setSelBlur: (i: number | null) => void;
   setSelTitle: (i: number | null) => void;
   pushActivity: (text: string, kind?: Activity["kind"]) => void;   // добавить строку в журнал
+  loadJournal: () => Promise<void>;                                  // журнал сервера (переживает перезапуск)
+  clearJournal: () => Promise<void>;
   resetHistory: () => void;         // проект изменили агент или другое окно: старые снимки undo затёрли бы их правки
   currentJob: CurrentJob | null;     // джоба экрана анализа (для «Отменить»)
   setCurrentJob: (j: CurrentJob | null) => void;
@@ -103,7 +115,8 @@ export const useStore = create<State>((set, get) => ({
     const kind: Activity["kind"] = stage === "error" ? "error" : stage === "done" ? "done" : "work";
     const last = s.activities[s.activities.length - 1];
     if (last && last.text === text && last.kind === kind) return { progress };   // дедуп повторов
-    return { progress, activities: [...s.activities, { t: Date.now(), text, kind }].slice(-200) };
+    keep(text, kind);
+    return { progress, activities: [...s.activities, { t: Date.now(), text, kind }].slice(-KEPT) };
   }),
   setRendered: (rendered) => set({ rendered }),
   setRendering: (rendering) => set({ rendering }),
@@ -138,8 +151,17 @@ export const useStore = create<State>((set, get) => ({
     if (!clean) return {};
     const last = s.activities[s.activities.length - 1];
     if (last && last.text === clean && last.kind === kind) return {};   // дедуп повторов
-    return { activities: [...s.activities, { t: Date.now(), text: clean, kind }].slice(-200) };
+    keep(clean, kind);
+    return { activities: [...s.activities, { t: Date.now(), text: clean, kind }].slice(-KEPT) };
   }),
+  loadJournal: async () => {
+    const lines = await journalApi.read();
+    set({ activities: lines.map(fromLine) });
+  },
+  clearJournal: async () => {
+    await journalApi.clear();
+    set({ activities: [] });
+  },
   currentJob: null,
   setCurrentJob: (currentJob) => set({ currentJob }),
   queuedAhead: null,

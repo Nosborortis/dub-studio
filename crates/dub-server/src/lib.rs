@@ -20,6 +20,7 @@ mod cloud_voices;
 mod compose;
 mod credentials;
 pub mod diagnostics;
+mod journal;
 #[cfg(windows)]
 mod dll_imports;
 mod downloads;
@@ -478,6 +479,7 @@ fn clean_partials(dir: &Path) {
 }
 
 pub fn build_router(state: AppState) -> Router {
+    journal::open(&state.repo_root);
     let api = Router::new()
         .route("/health", get(service::health))
         .route("/engine/capabilities", get(capabilities))
@@ -584,6 +586,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/diagnostics/report", post(diagnostics::make_report))
         .route("/diagnostics/report/reveal", post(diagnostics::reveal_report))
         .route("/diagnostics/logs/reveal", post(diagnostics::reveal_logs))
+        .route("/journal", get(journal::read).post(journal::write).delete(journal::clear))
+        .route("/journal/{id}", axum::routing::delete(journal::remove))
         .route("/projects/{pid}/analyze", post(analyze_project))
         .route("/projects/{pid}/resume", post(resume_project))
         .route("/projects/{pid}/align", post(align_project))

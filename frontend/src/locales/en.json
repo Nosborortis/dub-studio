@@ -336,7 +336,8 @@
     "setupNeeded": "Components to download",
     "log": "Activity log",
     "clear": "Clear",
-    "backendOffline": "backend offline"
+    "backendOffline": "backend offline",
+    "journalFailed": "The journal did not load: {{error}}"
   },
   "edit": {
     "setStart": "Start at playhead",
@@ -937,7 +938,7 @@
       "hint": "recognition garbage stuck together"
     },
     "trGender": {
-      "tip": "The speaker’s gender comes from the pitch of several of their longest lines; an unsure measure gives no hint. It matters for languages with grammatical gender (Russian “я сказал / сказала”, French “prêt / prête”).",
+      "tip": "The speaker’s gender comes from the pitch of several of their longest lines; an unsure measure gives no hint. It matters for languages with grammatical gender (in Russian a man and a woman say “I said” differently; French “prêt / prête”).",
       "label": "Speaker gender for the translator",
       "hint": "the translator knows whether a man or a woman says the line"
     },
@@ -1463,5 +1464,71 @@
     "refresh": "Refresh",
     "packed": "Pack saved:",
     "show": "Show in folder"
+  },
+  "journal": {
+    "line": "{{verb}}: {{kind}}{{target}}",
+    "quoted": "“{{name}}”",
+    "verb": {
+      "create": "Created",
+      "delete": "Deleted",
+      "restore": "Restored",
+      "analyze": "Analysed",
+      "translate": "Translated",
+      "dub": "Dubbed",
+      "render": "Rendered",
+      "remix": "Remixed",
+      "align": "Aligned",
+      "resume": "Resumed",
+      "update": "Changed",
+      "export": "Exported",
+      "save": "Saved",
+      "transcribe": "Recognised",
+      "separate": "Voice separated",
+      "detect": "Text found",
+      "add": "Added",
+      "split": "Split",
+      "merge": "Merged",
+      "hide": "Hidden",
+      "keep": "Original kept",
+      "reorder": "Reordered",
+      "regen": "Voiced again",
+      "shorten": "Shortened",
+      "select": "Selected",
+      "pin": "Pinned",
+      "assign": "Assigned",
+      "rename": "Renamed",
+      "download": "Downloaded",
+      "record": "Recorded",
+      "extract": "Terms collected",
+      "apply": "Applied",
+      "set": "Saved",
+      "refresh": "Refreshed",
+      "cancel": "Cancelled",
+      "import": "Imported"
+    },
+    "kind": {
+      "project": "project",
+      "file": "file",
+      "subtitles": "subtitles",
+      "line": "line",
+      "take": "take",
+      "voice": "voice",
+      "voices": "voices",
+      "casting": "casting",
+      "glossary": "glossary",
+      "blur": "blur box",
+      "title": "title",
+      "translation": "translation",
+      "sound": "sound",
+      "model": "model",
+      "download": "download",
+      "setting": "setting",
+      "preset": "preset",
+      "proxy": "proxy",
+      "key": "key",
+      "catalog": "catalog",
+      "tool": "tool",
+      "job": "job"
+    }
   }
 }

@@ -390,6 +390,10 @@ without it they answer that the window is not open, and everything else still wo
 - **diagnostics**: `diagnostics_get` (version, system, card against CUDA, ffmpeg, components, the
   engines' missing DLLs and the latest log lines), `diagnostics_report` (a ZIP for a bug report, keys
   masked), `diagnostics_report_reveal` and `diagnostics_logs_reveal` (in Explorer, for the user).
+- **journal**: the activity journal the user reads in the window's status bar, kept across restarts;
+  your changes are written there by themselves (verb, kind and what you named). `journal_get`,
+  `journal_note` (a line of your own: what you did, what you need from them), `journal_delete`,
+  `journal_clear`.
 - **openrouter**: `openrouter_status`, `openrouter_set_key`, `openrouter_delete_key`,
   `openrouter_verify`, `openrouter_models`, `openrouter_voices`, `openrouter_catalog`,
   `openrouter_catalog_refresh`.

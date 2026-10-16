@@ -296,6 +296,11 @@ pub(crate) fn carry_job(job: JobFn) -> JobFn {
     Box::new(move |progress| REQUEST.sync_scope(Scope::of_job(actor), move || job(progress)))
 }
 
+/// Who the current request or job is for: `window:<mark>`, `agent`, `api`, or `studio` outside both.
+pub(crate) fn current_actor() -> String {
+    REQUEST.try_with(|scope| scope.actor.clone()).unwrap_or_else(|_| "studio".into())
+}
+
 /// Writes a project through `write` as its next revision and tells the windows who saved it: the
 /// window or agent whose request or job is being served (`studio` outside both; a job's save marked
 /// `job`). A whole-project PUT whose state was taken before someone else's save is refused before

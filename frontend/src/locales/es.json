@@ -308,7 +308,8 @@
     "setupNeeded": "Faltan componentes por descargar",
     "log": "Registro de actividad",
     "clear": "Borrar",
-    "backendOffline": "backend sin conexión"
+    "backendOffline": "backend sin conexión",
+    "journalFailed": "El diario no se cargó: {{error}}"
   },
   "edit": {
     "setStart": "Inicio en el cursor",
@@ -954,7 +955,7 @@
     },
     "trGenderCheck": {
       "tip": "Si el hablante habla de sí en el otro género, la línea se pide de nuevo. Si tras todos los intentos sigue igual, se queda con una nota en el registro.",
-      "label": "Comprobar formas «я сказал / сказала»",
+      "label": "Comprobar el género de «yo dije»",
       "hint": "una línea con la forma del otro género se vuelve a pedir (ruso)"
     },
     "trLatin": {
@@ -1481,5 +1482,71 @@
     "refresh": "Actualizar",
     "packed": "Paquete guardado:",
     "show": "Mostrar en la carpeta"
+  },
+  "journal": {
+    "line": "{{verb}}: {{kind}}{{target}}",
+    "quoted": "«{{name}}»",
+    "verb": {
+      "create": "Creación",
+      "delete": "Eliminación",
+      "restore": "Restauración",
+      "analyze": "Análisis",
+      "translate": "Traducción",
+      "dub": "Doblaje",
+      "render": "Montaje del vídeo",
+      "remix": "Remezcla",
+      "align": "Alineación",
+      "resume": "Reanudación",
+      "update": "Cambio",
+      "export": "Exportación",
+      "save": "Guardado",
+      "transcribe": "Reconocimiento",
+      "separate": "Separación de voz",
+      "detect": "Texto en pantalla",
+      "add": "Añadido",
+      "split": "División",
+      "merge": "Unión",
+      "hide": "Ocultado",
+      "keep": "Original conservado",
+      "reorder": "Nuevo orden",
+      "regen": "Nueva locución",
+      "shorten": "Acortado",
+      "select": "Selección",
+      "pin": "Fijado",
+      "assign": "Asignación",
+      "rename": "Cambio de nombre",
+      "download": "Descarga",
+      "record": "Grabación",
+      "extract": "Términos reunidos",
+      "apply": "Aplicación",
+      "set": "Guardado",
+      "refresh": "Actualización",
+      "cancel": "Cancelación",
+      "import": "Importación"
+    },
+    "kind": {
+      "project": "proyecto",
+      "file": "archivo",
+      "subtitles": "subtítulos",
+      "line": "línea",
+      "take": "toma",
+      "voice": "voz",
+      "voices": "voces",
+      "casting": "casting",
+      "glossary": "glosario",
+      "blur": "difuminado",
+      "title": "rótulo",
+      "translation": "traducción",
+      "sound": "sonido",
+      "model": "modelo",
+      "download": "descarga",
+      "setting": "ajuste",
+      "preset": "preajuste",
+      "proxy": "proxy",
+      "key": "clave",
+      "catalog": "catálogo",
+      "tool": "herramienta",
+      "job": "tarea"
+    }
   }
 }

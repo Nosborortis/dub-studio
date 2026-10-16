@@ -300,7 +300,8 @@
     "setupNeeded": "需要下载组件",
     "log": "活动日志",
     "clear": "清除",
-    "backendOffline": "后端不可用"
+    "backendOffline": "后端不可用",
+    "journalFailed": "日志未能加载：{{error}}"
   },
   "edit": {
     "setStart": "起点设为播放头",
@@ -926,7 +927,7 @@
       "hint": "粘连的识别垃圾"
     },
     "trGender": {
-      "tip": "说话人性别由其几句最长台词的音高判断；测量不确定时不提示。适用于有语法性别的语言（如俄语“я сказал / сказала”）。",
+      "tip": "说话人性别由其几句最长台词的音高判断；测量不确定时不提示。适用于有语法性别的语言（如俄语中男女说“我说了”的形式不同）。",
       "label": "向译者提供说话人性别",
       "hint": "译者知道这句话是男性还是女性说的"
     },
@@ -1445,5 +1446,71 @@
     "refresh": "刷新",
     "packed": "报告包已保存：",
     "show": "在文件夹中显示"
+  },
+  "journal": {
+    "line": "{{verb}}：{{kind}}{{target}}",
+    "quoted": "“{{name}}”",
+    "verb": {
+      "create": "创建",
+      "delete": "删除",
+      "restore": "恢复",
+      "analyze": "分析",
+      "translate": "翻译",
+      "dub": "配音",
+      "render": "合成视频",
+      "remix": "混音",
+      "align": "对齐",
+      "resume": "继续",
+      "update": "修改",
+      "export": "导出",
+      "save": "保存",
+      "transcribe": "识别",
+      "separate": "人声分离",
+      "detect": "识别画面文字",
+      "add": "添加",
+      "split": "拆分",
+      "merge": "合并",
+      "hide": "隐藏",
+      "keep": "保留原声",
+      "reorder": "调整顺序",
+      "regen": "重新配音",
+      "shorten": "缩短",
+      "select": "选择",
+      "pin": "固定",
+      "assign": "分配",
+      "rename": "重命名",
+      "download": "下载",
+      "record": "录音",
+      "extract": "收集术语",
+      "apply": "应用",
+      "set": "保存",
+      "refresh": "刷新",
+      "cancel": "取消",
+      "import": "导入"
+    },
+    "kind": {
+      "project": "项目",
+      "file": "文件",
+      "subtitles": "字幕",
+      "line": "台词",
+      "take": "片段",
+      "voice": "声音",
+      "voices": "声音",
+      "casting": "选角",
+      "glossary": "术语表",
+      "blur": "模糊框",
+      "title": "标题",
+      "translation": "翻译",
+      "sound": "声音",
+      "model": "模型",
+      "download": "下载",
+      "setting": "设置",
+      "preset": "预设",
+      "proxy": "代理",
+      "key": "密钥",
+      "catalog": "目录",
+      "tool": "工具",
+      "job": "任务"
+    }
   }
 }

@@ -308,7 +308,8 @@
     "setupNeeded": "Composants à télécharger",
     "log": "Journal d'activité",
     "clear": "Effacer",
-    "backendOffline": "backend hors ligne"
+    "backendOffline": "backend hors ligne",
+    "journalFailed": "Le journal ne s’est pas chargé : {{error}}"
   },
   "edit": {
     "setStart": "Début au curseur",
@@ -954,7 +955,7 @@
     },
     "trGenderCheck": {
       "tip": "Si le locuteur parle de lui-même à l’autre genre, la ligne est redemandée. Si elle reste fausse après tous les essais, elle est gardée avec une note dans le journal.",
-      "label": "Vérifier les formes « я сказал / сказала »",
+      "label": "Vérifier le genre de « j’ai dit »",
       "hint": "une ligne à la forme de l’autre genre est redemandée (russe)"
     },
     "trLatin": {
@@ -1481,5 +1482,71 @@
     "refresh": "Actualiser",
     "packed": "Paquet enregistré :",
     "show": "Afficher dans le dossier"
+  },
+  "journal": {
+    "line": "{{verb}} : {{kind}}{{target}}",
+    "quoted": "« {{name}} »",
+    "verb": {
+      "create": "Création",
+      "delete": "Suppression",
+      "restore": "Restauration",
+      "analyze": "Analyse",
+      "translate": "Traduction",
+      "dub": "Doublage",
+      "render": "Montage vidéo",
+      "remix": "Remix",
+      "align": "Alignement",
+      "resume": "Reprise",
+      "update": "Modification",
+      "export": "Export",
+      "save": "Enregistrement",
+      "transcribe": "Reconnaissance",
+      "separate": "Séparation de la voix",
+      "detect": "Texte à l’écran",
+      "add": "Ajout",
+      "split": "Découpe",
+      "merge": "Fusion",
+      "hide": "Masqué",
+      "keep": "Original gardé",
+      "reorder": "Nouvel ordre",
+      "regen": "Nouvelle voix",
+      "shorten": "Raccourci",
+      "select": "Sélection",
+      "pin": "Épinglé",
+      "assign": "Attribution",
+      "rename": "Renommage",
+      "download": "Téléchargement",
+      "record": "Enregistrement",
+      "extract": "Termes relevés",
+      "apply": "Application",
+      "set": "Enregistrement de la clé",
+      "refresh": "Actualisation",
+      "cancel": "Annulation",
+      "import": "Import"
+    },
+    "kind": {
+      "project": "projet",
+      "file": "fichier",
+      "subtitles": "sous-titres",
+      "line": "réplique",
+      "take": "prise",
+      "voice": "voix",
+      "voices": "voix",
+      "casting": "casting",
+      "glossary": "glossaire",
+      "blur": "flou",
+      "title": "titre",
+      "translation": "traduction",
+      "sound": "son",
+      "model": "modèle",
+      "download": "téléchargement",
+      "setting": "réglage",
+      "preset": "préréglage",
+      "proxy": "proxy",
+      "key": "clé",
+      "catalog": "catalogue",
+      "tool": "outil",
+      "job": "tâche"
+    }
   }
 }

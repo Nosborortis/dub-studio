@@ -515,6 +515,7 @@ export const SETTINGS_CHANGED = "dub:settings-changed";
 export const VOICES_CHANGED = "dub:voices-changed";
 export const CASTING_CHANGED = "dub:casting-changed";
 export const JOBS_CHANGED = "dub:jobs-changed";
+export const JOURNAL_CHANGED = "dub:journal-changed";
 
 /** A notice of the studio: what changed, which project, its revision, who changed it, and a job's facts. */
 export type ChangeNotice = { changed: string; pid?: string | null; rev?: number; by?: string; job?: boolean; job_id?: string; kind?: string; project_id?: string | null };
@@ -530,8 +531,9 @@ const EVENTS: Record<string, string[]> = {
   casting: [CASTING_CHANGED],
   casting_library: [SETTINGS_CHANGED],
   jobs: [JOBS_CHANGED],
+  journal: [JOURNAL_CHANGED],
 };
-const EVERYTHING = [PROJECT_CHANGED, PROJECTS_CHANGED, SETTINGS_CHANGED, VOICES_CHANGED, CASTING_CHANGED];
+const EVERYTHING = [PROJECT_CHANGED, PROJECTS_CHANGED, SETTINGS_CHANGED, VOICES_CHANGED, CASTING_CHANGED, JOURNAL_CHANGED];
 
 function changed(notice: ChangeNotice): void {
   // a job this window started is followed by the window itself; its own list and settings changes it already shows
