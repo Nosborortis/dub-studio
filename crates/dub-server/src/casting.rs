@@ -24,7 +24,6 @@ use dub_faces::{
 use crate::analyze::{AnalyzePaths, Progress};
 use crate::localize::Localize;
 
-
 // Стадии кастинга для степпера фронта: cast_detect (подготовка/спикеры) -> cast_embed (голос) ->
 // cast_speaker (аватарки из говорящих кадров + casting.json).
 fn emit(progress: &Progress, stage: &str, msg: &str) {

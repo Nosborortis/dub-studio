@@ -10,7 +10,6 @@ use dub_core::Project;
 use crate::dub_timing::DubTiming;
 use crate::project_files::{srt, Row};
 
-
 /// Дорожка субтитров: язык (ISO 639-2), название и текст SRT.
 #[derive(Debug)]
 pub struct Track {

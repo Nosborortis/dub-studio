@@ -7,7 +7,6 @@ use image::RgbImage;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-
 /// Частота семплинга кадров кастинга по умолчанию (кадр/с). Лиц достаточно и на 1.5 fps; выше — лишний
 /// счёт SCRFD/LVFace. Env DUB_FACES_FPS.
 pub const DEFAULT_FPS: f64 = 1.5;

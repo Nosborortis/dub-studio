@@ -103,27 +103,22 @@ pub fn libraries_beside<'a>(cmd: &'a mut Command, dir: &std::path::Path) -> &'a 
     cmd
 }
 
-static TOOLS: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
-
-/// Каталог скачанных студией ffmpeg и ffprobe (`<корень>/tools/ffmpeg`), один раз при старте.
-pub fn set_tools_dir(dir: std::path::PathBuf) {
-    let _ = TOOLS.set(dir);
-}
-
-/// ffmpeg студии полным путём, когда он скачан, иначе системный по имени: по голому имени Windows ищет программу в
-/// каталоге приложения и системных каталогах раньше PATH, и старый ffmpeg оттуда брал верх над скачанным.
+/// ffmpeg первым из PATH процесса (в его начале каталог скачанного студией), иначе по имени: голое имя Windows ищет
+/// в каталоге приложения и системных каталогах раньше PATH.
 pub fn ffmpeg() -> std::path::PathBuf {
     tool("ffmpeg")
 }
 
-/// ffprobe рядом со скачанным ffmpeg, иначе системный по имени.
+/// ffprobe первым из PATH процесса, как [`ffmpeg`].
 pub fn ffprobe() -> std::path::PathBuf {
     tool("ffprobe")
 }
 
 fn tool(name: &str) -> std::path::PathBuf {
     let file = if cfg!(windows) { format!("{name}.exe") } else { name.to_string() };
-    TOOLS.get().map(|dir| dir.join(&file)).filter(|path| path.is_file()).unwrap_or_else(|| std::path::PathBuf::from(file))
+    std::env::var_os("PATH")
+        .and_then(|paths| std::env::split_paths(&paths).map(|dir| dir.join(&file)).find(|path| path.is_file()))
+        .unwrap_or_else(|| std::path::PathBuf::from(file))
 }
 
 /// Аналог `Command::output()` с учётом процесса: stdin закрыт, stdout/stderr читаются целиком.

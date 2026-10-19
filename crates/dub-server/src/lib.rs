@@ -251,7 +251,6 @@ pub fn ensure_library_path(repo_root: &Path) {
 /// чтобы `Command::new("ffmpeg")` и подобные находили их без перезапуска после автозакачки. Вызывается
 /// один раз при старте сервера (main.rs / Tauri-shell). Идемпотентно: не дублирует уже присутствующие.
 pub fn augment_path_for_tools(repo_root: &Path) {
-    dub_core::proc::set_tools_dir(repo_root.join("tools").join("ffmpeg"));
     let dirs = [
         repo_root.join("tools").join("ffmpeg"),
         repo_root.join("tools").join("llama"),

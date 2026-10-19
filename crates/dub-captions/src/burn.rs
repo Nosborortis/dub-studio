@@ -7,7 +7,6 @@ use crate::types::{BlurBox, CaptionsError};
 use std::path::Path;
 use std::process::Command;
 
-
 /// Ключ передачи filtergraph ФАЙЛОМ. ffmpeg 8.0 УДАЛИЛ `-filter_complex_script` (был deprecated с 7.0):
 /// на свежих сборках burn падал с «Unrecognized option 'filter_complex_script'» — issue #1. Универсальная
 /// замена `-/filter_complex` (общий префикс `/` = «значение опции лежит в файле») есть с 7.0, поэтому:

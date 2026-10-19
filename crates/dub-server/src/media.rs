@@ -6,7 +6,6 @@ use std::ffi::{OsStr, OsString};
 use std::path::Path;
 use std::process::Command;
 
-
 /// Сводка probe: длительность/размер/fps/кодек первого видеопотока. Зеркало api._meta().
 #[derive(Debug, Clone, Default)]
 pub struct MediaMeta {
@@ -236,7 +235,7 @@ pub fn to_16k_mono(src: &Path, dst: &Path) -> Result<(), String> {
 
 /// Длительность файла в секундах (ffprobe format.duration). Порт media.duration.
 pub fn duration(path: &Path) -> Result<f64, String> {
-    // клипы озвучки — WAV студии: их длина в заголовке, и у клипа без отсчётов она 0, а не «N/A» ffprobe
+    // клипы озвучки — WAV студии: длина из заголовка, у клипа без отсчётов она 0
     if let Ok(reader) = hound::WavReader::open(path) {
         let spec = reader.spec();
         if spec.sample_rate > 0 {

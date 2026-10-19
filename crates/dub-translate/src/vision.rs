@@ -15,7 +15,6 @@ use crate::{Note, TranslateError};
 
 pub const FONTS: &str = "Montserrat, Oswald, Roboto, Russo One, Pacifico, Playfair Display, Caveat";
 
-
 /// _hex — вытащить #RRGGBB (upper). None если нет.
 pub fn hex(s: &str) -> Option<String> {
     static RE: std::sync::LazyLock<Regex> =
