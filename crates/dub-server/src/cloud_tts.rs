@@ -34,11 +34,6 @@ pub fn style(s: &dub_core::Segment) -> &str {
 /// Уникализатор temp-файлов раскодировки (для потокобезопасности synth_batch).
 static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
-#[cfg(target_os = "windows")]
-const FFMPEG: &str = "ffmpeg.exe";
-#[cfg(not(target_os = "windows"))]
-const FFMPEG: &str = "ffmpeg";
-
 /// Синтез одной реплики -> WAV-байты (готовы к записи в seg-файл). `voice` пусто -> дефолт из настроек.
 pub fn synth_audio(models_root: &Path, text: &str, voice: &str,
     style: &str,
@@ -108,7 +103,7 @@ fn to_seg_wav(mime: &str, bytes: &[u8]) -> Result<Vec<u8>, String> {
     let tmp = std::env::temp_dir().join(format!("dub_cloud_tts_{}_{}.bin", std::process::id(), uid));
     let wav_tmp = tmp.with_extension("wav");
     std::fs::write(&tmp, bytes).map_err(|e| t!("cloud-tts-failed", error = format!("{mime}: {e}")))?;
-    let out = dub_core::proc::output(Command::new(FFMPEG).args([
+    let out = dub_core::proc::output(Command::new(dub_core::proc::ffmpeg()).args([
         "-v", "error", "-i", &tmp.to_string_lossy(), "-ar", &SEG_RATE.to_string(), "-ac", "1", "-c:a", "pcm_s16le", "-y", &wav_tmp.to_string_lossy(),
     ]));
     let _ = std::fs::remove_file(&tmp);

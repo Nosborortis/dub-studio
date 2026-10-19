@@ -4,6 +4,12 @@ What changed, newest first. Dates are release dates; the app is versioned by its
 build. Every change a user can see is written here in the commit that makes it, and the
 release notes on GitHub are taken from the release's section.
 
+## Unreleased
+
+### Fixed
+
+- **The studio's own ffmpeg comes first.** A downloaded ffmpeg is now called by its full path, so an older ffmpeg on the system no longer takes its place (Windows finds a program by name in its own and system folders before PATH), and a system ffmpeg too old for the studio (its `amix` has no `normalize`, before 4.4) no longer counts as installed ([#34](https://github.com/timoncool/dub-studio/issues/34)).
+
 ## 2026-10-16 — 4.3.0
 
 ### Added

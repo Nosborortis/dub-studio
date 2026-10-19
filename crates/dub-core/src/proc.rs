@@ -103,6 +103,29 @@ pub fn libraries_beside<'a>(cmd: &'a mut Command, dir: &std::path::Path) -> &'a 
     cmd
 }
 
+static TOOLS: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+
+/// Каталог скачанных студией ffmpeg и ffprobe (`<корень>/tools/ffmpeg`), один раз при старте.
+pub fn set_tools_dir(dir: std::path::PathBuf) {
+    let _ = TOOLS.set(dir);
+}
+
+/// ffmpeg студии полным путём, когда он скачан, иначе системный по имени: по голому имени Windows ищет программу в
+/// каталоге приложения и системных каталогах раньше PATH, и старый ffmpeg оттуда брал верх над скачанным.
+pub fn ffmpeg() -> std::path::PathBuf {
+    tool("ffmpeg")
+}
+
+/// ffprobe рядом со скачанным ffmpeg, иначе системный по имени.
+pub fn ffprobe() -> std::path::PathBuf {
+    tool("ffprobe")
+}
+
+fn tool(name: &str) -> std::path::PathBuf {
+    let file = if cfg!(windows) { format!("{name}.exe") } else { name.to_string() };
+    TOOLS.get().map(|dir| dir.join(&file)).filter(|path| path.is_file()).unwrap_or_else(|| std::path::PathBuf::from(file))
+}
+
 /// Аналог `Command::output()` с учётом процесса: stdin закрыт, stdout/stderr читаются целиком.
 pub fn output(cmd: &mut Command) -> std::io::Result<Output> {
     dies_with_parent(cmd);

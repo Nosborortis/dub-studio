@@ -538,7 +538,7 @@ fn box_bg_colour(
     h: i64,
     t: f64,
 ) -> Option<(String, f64)> {
-    let ffmpeg = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
+    let ffmpeg = dub_core::proc::ffmpeg();
     let out = std::process::Command::new(ffmpeg)
         .args(["-v", "error", "-ss", &format!("{t:.3}")])
         .arg("-i")

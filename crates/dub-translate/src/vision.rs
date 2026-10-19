@@ -15,10 +15,6 @@ use crate::{Note, TranslateError};
 
 pub const FONTS: &str = "Montserrat, Oswald, Roboto, Russo One, Pacifico, Playfair Display, Caveat";
 
-#[cfg(windows)]
-const FFMPEG: &str = "ffmpeg.exe";
-#[cfg(not(windows))]
-const FFMPEG: &str = "ffmpeg";
 
 /// _hex — вытащить #RRGGBB (upper). None если нет.
 pub fn hex(s: &str) -> Option<String> {
@@ -68,7 +64,7 @@ fn vis_json(s: &str) -> Value {
 /// _frame_b64 — square-pad кадр (SigLIP резайзит всё в 896x896; квадрат сохраняет геометрию букв) и base64.
 fn frame_b64(video: &Path, t: f64, tmp: &Path) -> Result<String, TranslateError> {
     let _ = std::fs::remove_file(tmp); // сбросить прошлый кадр, чтобы не прочитать несвежий при сбое
-    let out = Command::new(FFMPEG)
+    let out = Command::new(dub_core::proc::ffmpeg())
         .args(["-y", "-ss"])
         .arg(format!("{t:.1}"))
         .arg("-i")
