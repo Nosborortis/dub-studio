@@ -100,8 +100,8 @@ pub struct HardwareRecommendation {
 /// нет NVIDIA GPU или <7 ГБ -> облако (локально не потянет комфортно).
 pub fn recommend() -> HardwareRecommendation {
     let hw = crate::hw::snapshot();
-    let vram_gb = hw.total_vram as f64 / 1e9;
-    let ram_gb = hw.total_ram as f64 / 1e9;
+    let vram_gb = hw.total_vram as f64 / crate::hw::GIB;
+    let ram_gb = hw.total_ram as f64 / crate::hw::GIB;
     let has_gpu = hw.total_vram > 0;
     let name_lc = hw.gpu_name.to_lowercase();
 

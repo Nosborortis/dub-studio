@@ -122,7 +122,7 @@ fn report(root: &Path) -> Value {
 
 /// The diagnostics as text to paste into an issue.
 fn text(report: &Value, log: &[String]) -> String {
-    let gb = |b: &Value| b.as_u64().map(|b| format!("{:.1} GB", b as f64 / 1e9)).unwrap_or_else(|| "?".into());
+    let gb = |b: &Value| b.as_u64().map(|b| format!("{:.1} GB", b as f64 / crate::hw::GIB)).unwrap_or_else(|| "?".into());
     let gpu = &report["gpu"];
     let mut out = String::new();
     out.push_str(&format!("Dub Studio {}\n", report["version"].as_str().unwrap_or_default()));
