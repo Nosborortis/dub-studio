@@ -8,6 +8,7 @@ release notes on GitHub are taken from the release's section.
 
 ### Fixed
 
+- **A line the voice returns empty no longer stops the dub.** Drama 3 and Qwen3-TTS could give a line no sound at all; the empty take was kept, its length could not be read and voicing stopped on it again at every Continue ("seg_sNNN.wav: could not determine the duration"). An empty take now counts as silence and is generated again, and after the last attempt the line keeps its original voice ([#36](https://github.com/timoncool/dub-studio/issues/36)).
 - **The studio's own ffmpeg comes first.** A downloaded ffmpeg is now called by its full path, so an older ffmpeg on the system no longer takes its place (Windows finds a program by name in its own and system folders before PATH), and a system ffmpeg too old for the studio (its `amix` has no `normalize`, before 4.4) no longer counts as installed ([#34](https://github.com/timoncool/dub-studio/issues/34)).
 
 ## 2026-10-16 — 4.3.0

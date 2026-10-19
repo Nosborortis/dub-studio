@@ -236,6 +236,13 @@ pub fn to_16k_mono(src: &Path, dst: &Path) -> Result<(), String> {
 
 /// Длительность файла в секундах (ffprobe format.duration). Порт media.duration.
 pub fn duration(path: &Path) -> Result<f64, String> {
+    // клипы озвучки — WAV студии: их длина в заголовке, и у клипа без отсчётов она 0, а не «N/A» ffprobe
+    if let Ok(reader) = hound::WavReader::open(path) {
+        let spec = reader.spec();
+        if spec.sample_rate > 0 {
+            return Ok(reader.duration() as f64 / spec.sample_rate as f64);
+        }
+    }
     let out = Command::new(dub_core::proc::ffprobe())
         .args(["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1"])
         .arg(path)

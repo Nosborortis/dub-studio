@@ -1027,7 +1027,7 @@ fn synth_abort(e: &str) -> bool {
 /// None ≠ гарантия чистоты: финальную правду даёт ASR-верификация (QC-пасс после синтеза).
 fn synth_defect(samples: &[f32], sr: i32, tgt_chars: usize) -> Option<&'static str> {
     if sr <= 0 || samples.is_empty() {
-        return None;
+        return Some("silence");
     }
     let srn = sr as usize;
     let dur = samples.len() as f64 / srn as f64;
@@ -3917,6 +3917,15 @@ fn map_sub_style(s: &CoreSubStyle) -> CapSubStyle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_take_without_samples_is_silence_and_measures_zero() {
+        assert_eq!(synth_defect(&[], 24_000, 12), Some("silence"));
+        let dir = tempfile::tempdir().unwrap();
+        let wav = dir.path().join("seg_s213.wav");
+        hound::WavWriter::create(&wav, hound::WavSpec { channels: 1, sample_rate: 24_000, bits_per_sample: 16, sample_format: hound::SampleFormat::Int }).unwrap().finalize().unwrap();
+        assert_eq!(media::duration(&wav).unwrap(), 0.0);
+    }
 
     #[test]
     fn chinese_is_compared_character_by_character() {
