@@ -1518,13 +1518,25 @@ fn write_record(repo_root: &Path, f: &FileSpec, written: &[PathBuf]) -> Result<(
     std::fs::rename(&tmp, &path).map_err(|e| DlError::new("io", t!("common-write", what = path.display().to_string(), error = e.to_string())))
 }
 
-/// ffmpeg и ffprobe доступны в системном PATH? Студия зовёт оба по имени, а ffmpeg без ffprobe рядом
-/// валит анализ на первом же замере длительности.
+/// ffmpeg и ffprobe доступны в системном PATH и ffmpeg умеет то, что зовёт студия? ffmpeg без ffprobe рядом
+/// валит анализ на первом же замере длительности, а старый (до 4.4) — сведение: его amix не знает `normalize`.
 pub(crate) fn ffmpeg_on_path() -> bool {
-    let names: &[&str] = if cfg!(windows) { &["ffmpeg.exe", "ffprobe.exe"] } else { &["ffmpeg", "ffprobe"] };
-    let Some(paths) = std::env::var_os("PATH") else { return false };
-    let dirs: Vec<PathBuf> = std::env::split_paths(&paths).collect();
-    names.iter().all(|name| dirs.iter().any(|dir| dir.join(name).is_file()))
+    static ON_PATH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON_PATH.get_or_init(|| {
+        let names: &[&str] = if cfg!(windows) { &["ffmpeg.exe", "ffprobe.exe"] } else { &["ffmpeg", "ffprobe"] };
+        let Some(paths) = std::env::var_os("PATH") else { return false };
+        let dirs: Vec<PathBuf> = std::env::split_paths(&paths).collect();
+        let found: Vec<PathBuf> = names.iter().filter_map(|name| dirs.iter().map(|dir| dir.join(name)).find(|path| path.is_file())).collect();
+        if found.len() != names.len() {
+            return false;
+        }
+        let help = dub_core::proc::output(std::process::Command::new(&found[0]).args(["-hide_banner", "-h", "filter=amix"]));
+        let mixes = help.is_ok_and(|out| String::from_utf8_lossy(&out.stdout).contains("normalize"));
+        if !mixes {
+            tracing::warn!("{} is too old for the studio (its amix has no normalize): the studio's own ffmpeg is needed", found[0].display());
+        }
+        mixes
+    })
 }
 
 /// Место под докачку одного файла: чего ещё не занял его .part (под докачку по Range он сразу занимает полный

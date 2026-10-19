@@ -24,11 +24,6 @@ use dub_faces::{
 use crate::analyze::{AnalyzePaths, Progress};
 use crate::localize::Localize;
 
-#[cfg(windows)]
-const FFMPEG: &str = "ffmpeg.exe";
-#[cfg(not(windows))]
-const FFMPEG: &str = "ffmpeg";
-
 // Стадии кастинга для степпера фронта: cast_detect (подготовка/спикеры) -> cast_embed (голос) ->
 // cast_speaker (аватарки из говорящих кадров + casting.json).
 fn emit(progress: &Progress, stage: &str, msg: &str) {
@@ -822,7 +817,7 @@ pub fn models_fingerprint(models_root: &Path, anime: bool) -> String {
 
 /// Извлечь один кадр видео в момент t (сек) -> RgbImage. Быстрый seek (-ss ПЕРЕД -i).
 fn extract_frame(video: &Path, t: f64, out: &Path) -> Result<image::RgbImage, String> {
-    let res = std::process::Command::new(FFMPEG)
+    let res = std::process::Command::new(dub_core::proc::ffmpeg())
         .args(["-y", "-ss"])
         .arg(format!("{:.3}", t.max(0.0)))
         .arg("-i")

@@ -118,17 +118,12 @@ impl OcrPaths {
 
 // ─── text_detect.py порт ─────────────────────────────────────────────────────
 
-#[cfg(windows)]
-const FFMPEG: &str = "ffmpeg.exe";
-#[cfg(not(windows))]
-const FFMPEG: &str = "ffmpeg";
-
 /// Извлечь кадры видео с частотой fps в PNG (порт _frames).
 fn extract_frames(video: &Path, out_dir: &Path, fps: i32) -> Result<Vec<PathBuf>, OcrError> {
     std::fs::create_dir_all(out_dir).map_err(|e| OcrError::Io(format!("{}: {e}", out_dir.display())))?;
     let vf = format!("fps={fps}");
     let pat = out_dir.join("f_%05d.png");
-    let out = Command::new(FFMPEG)
+    let out = Command::new(dub_core::proc::ffmpeg())
         .arg("-y")
         .arg("-i")
         .arg(video)

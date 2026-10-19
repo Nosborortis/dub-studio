@@ -103,6 +103,24 @@ pub fn libraries_beside<'a>(cmd: &'a mut Command, dir: &std::path::Path) -> &'a 
     cmd
 }
 
+/// ffmpeg первым из PATH процесса (в его начале каталог скачанного студией), иначе по имени: голое имя Windows ищет
+/// в каталоге приложения и системных каталогах раньше PATH.
+pub fn ffmpeg() -> std::path::PathBuf {
+    tool("ffmpeg")
+}
+
+/// ffprobe первым из PATH процесса, как [`ffmpeg`].
+pub fn ffprobe() -> std::path::PathBuf {
+    tool("ffprobe")
+}
+
+fn tool(name: &str) -> std::path::PathBuf {
+    let file = if cfg!(windows) { format!("{name}.exe") } else { name.to_string() };
+    std::env::var_os("PATH")
+        .and_then(|paths| std::env::split_paths(&paths).map(|dir| dir.join(&file)).find(|path| path.is_file()))
+        .unwrap_or_else(|| std::path::PathBuf::from(file))
+}
+
 /// Аналог `Command::output()` с учётом процесса: stdin закрыт, stdout/stderr читаются целиком.
 pub fn output(cmd: &mut Command) -> std::io::Result<Output> {
     dies_with_parent(cmd);

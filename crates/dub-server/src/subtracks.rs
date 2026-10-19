@@ -10,11 +10,6 @@ use dub_core::Project;
 use crate::dub_timing::DubTiming;
 use crate::project_files::{srt, Row};
 
-#[cfg(windows)]
-const FFMPEG: &str = "ffmpeg.exe";
-#[cfg(not(windows))]
-const FFMPEG: &str = "ffmpeg";
-
 /// Дорожка субтитров: язык (ISO 639-2), название и текст SRT.
 #[derive(Debug)]
 pub struct Track {
@@ -94,7 +89,7 @@ pub fn add_to_mkv(mkv: &Path, tracks: &[Track], work_dir: &Path, on_screen: bool
         files.push(p);
     }
     let tmp = mkv.with_extension("subs.mkv");
-    let mut cmd = Command::new(FFMPEG);
+    let mut cmd = Command::new(dub_core::proc::ffmpeg());
     cmd.arg("-y").arg("-i").arg(mkv);
     for f in &files {
         cmd.arg("-i").arg(f);
@@ -182,7 +177,7 @@ mod tests {
     fn tracks_land_in_the_mkv_with_their_languages() {
         let dir = tempfile::tempdir().unwrap();
         let mkv = dir.path().join("output.mkv");
-        let made = Command::new(FFMPEG)
+        let made = Command::new(dub_core::proc::ffmpeg())
             .args(["-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=10:duration=3"])
             .args(["-f", "lavfi", "-i", "sine=duration=3", "-c:v", "libx264", "-c:a", "aac"])
             .arg(&mkv)
@@ -191,7 +186,7 @@ mod tests {
         assert!(made.success());
         let t = tracks(&project("dub", "bilingual"), None, "Russian", "English");
         add_to_mkv(&mkv, &t, dir.path(), true).unwrap();
-        let probe = Command::new("ffprobe")
+        let probe = Command::new(dub_core::proc::ffprobe())
             .args(["-v", "error", "-select_streams", "s", "-show_entries", "stream=codec_name:stream_tags=language,title:stream_disposition=default", "-of", "csv=p=0"])
             .arg(&mkv)
             .output()
