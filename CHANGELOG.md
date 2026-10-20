@@ -4,7 +4,7 @@ What changed, newest first. Dates are release dates; the app is versioned by its
 build. Every change a user can see is written here in the commit that makes it, and the
 release notes on GitHub are taken from the release's section.
 
-## Unreleased
+## 2026-10-21 — 4.4.0
 
 ### Changed
 
@@ -25,7 +25,7 @@ release notes on GitHub are taken from the release's section.
 - **The hardware preset names a card's memory as its box does**: an RTX 4090 is 24 GB, not 26 (memory is counted in 2³⁰-byte gigabytes, as the resource monitor already did); so is the diagnostics report.
 - **The first-run screen's component ticks and Download buttons carry the component's name**, so an agent and a screen reader know which one they are; so do the Download and Re-download buttons in Settings - Models.
 
-## 2026-10-20 — 4.3.1
+## 4.3.1 — not released on its own; its fixes are part of 4.4.0
 
 ### Fixed
 
