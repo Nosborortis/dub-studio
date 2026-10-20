@@ -40,4 +40,6 @@ jobs:
           TCPP_MODEL: ${{ github.workspace }}/parakeet.gguf
           TCPP_PCM: ${{ github.workspace }}/speech.f32
           TCPP_EXPECT: ancient dragon music
+          # the repository pins the Windows toolchain
+          RUSTUP_TOOLCHAIN: stable
         run: cargo test -p dub-tcpp --release -- --ignored the_engine_hears_a_recording --nocapture
