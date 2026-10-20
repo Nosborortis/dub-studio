@@ -500,7 +500,7 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
                 </div>
                 <select value={whisperCompute} onChange={(e) => { setWhisperCompute(e.target.value); api.setSelection("whisper_compute", e.target.value).catch(() => {}); }}
                   className="shrink-0 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md px-2 py-1 text-[11px] mono focus:border-[var(--color-accent)] focus:outline-none">
-                  {(cap?.whisper_computes ?? ["int8", "int8_float16", "float16", "int8_float32", "float32"]).map((q) => <option key={q} value={q}>{q}</option>)}
+                  {(cap?.whisper_computes ?? ["int8", "int8_float16", "int8_float32"]).map((q) => <option key={q} value={q}>{q}</option>)}
                 </select>
               </div>
             </div>

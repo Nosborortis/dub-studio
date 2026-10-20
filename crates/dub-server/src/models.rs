@@ -647,9 +647,10 @@ pub fn resolve_asr_choice(repo_root: &Path, mroot: &Path, sel: &Value) -> AsrCho
                 "cpu"
             };
             let device = pick(sel, "whisper_device").unwrap_or(auto_dev).to_string();
-            // Квант: на GPU дефолт float16 (родной для тензорных ядер), на CPU — int8.
+            // Квант: веса int8 на обоих устройствах, на GPU активации в float16.
             let mut compute = pick(sel, "whisper_compute")
-                .unwrap_or(if device == "cuda" { "float16" } else { "int8" })
+                .filter(|c| c.starts_with("int8"))
+                .unwrap_or(if device == "cuda" { "int8_float16" } else { "int8" })
                 .to_string();
             // ГАРД: float16/bfloat16 не поддерживаются на CPU — CTranslate2 роняет процесс с
             // "Requested float16 compute type, but the target device do not support efficient float16".

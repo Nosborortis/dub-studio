@@ -707,7 +707,7 @@ async fn capabilities(State(st): State<AppState>) -> Json<Value> {
         "asr_engines": ["parakeet","whisper"],
         "whisper_models": ["tiny","base","small","medium","large-v3","large-v3-turbo"],
         // Кванты Whisper (compute_type): float16 / int8_float16 задействуют Tensor Cores на CUDA GPU.
-        "whisper_computes": ["int8","int8_float16","float16","int8_float32","float32"],
+        "whisper_computes": ["int8","int8_float16","int8_float32"],
         // Видимые лимиты RAM (настройки, не авто-магия): против OOM на слабой памяти. "0" = авто (дефолт).
         "llama_ubatches": ["0","512","256","128"],      // prefill-батч Gemma (меньше = меньше RAM)
         "higgs_ref_secs_opts": ["12","8","6","4"],       // длина реф-клипа клона (сек; <12 спасает 32ГБ)

@@ -3,7 +3,7 @@ name = "dub-asr"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "ASR + диаризация над parakeet-rs (Parakeet-TDT + Nemotron 3 Diarization)"
+description = "Распознавание (transcribe.cpp, faster-whisper) и диаризация над parakeet-rs (Nemotron 3 Diarization)"
 
 [dependencies]
 dub-core = { path = "../dub-core" }
@@ -37,6 +37,3 @@ default = []
 # GPU-исполнение onnxruntime. По умолчанию CPU (провайдер по докам). Собираем CPU в раунде 1.
 cuda = ["parakeet-rs/cuda"]
 
-[[example]]
-name = "asr"
-path = "examples/asr.rs"
