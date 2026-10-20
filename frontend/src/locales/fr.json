@@ -581,6 +581,10 @@
     "grpGemma": "Traduction + texte à l'écran · Gemma-4 12B",
     "grpParakeet": "Reconnaissance vocale · Parakeet-TDT",
     "grpRoformer": "Séparation vocale · Mel-Band Roformer",
+    "grpQwen": "Voix · Qwen3-TTS 1.7B",
+    "grpWhisper": "Reconnaissance des autres langues · Whisper",
+    "notNeeded": "Pas besoin",
+    "serviceNote": "Avec ce qui est choisi, les moteurs et bibliothèques pour cet ordinateur sont téléchargés : {{size}}",
     "pickOneQuant": "choisissez-en un",
     "default": "par défaut",
     "alt": "ou",
@@ -829,14 +833,10 @@
     }
   },
   "asrVariant": {
-    "int8": "int8",
-    "int8Hint": "Modèle de base NVIDIA, quantification int8 — rapide et léger (~0,7 Go)",
-    "fp32": "fp32",
-    "fp32Hint": "Modèle de base NVIDIA en pleine précision fp32 (~2,6 Go)",
-    "ultra": "Ultra · fp32",
-    "ultraHint": "Version du modèle de base affinée par Moondream : moins d'erreurs de reconnaissance, les mêmes 25 langues · fp32 ~2,6 Go",
-    "ultraInt8": "Ultra · int8",
-    "ultraInt8Hint": "Version du modèle de base affinée par Moondream, quantifiée : moins d'erreurs de reconnaissance, les mêmes 25 langues · int8 ~0,7 Go"
+    "int8": "v3 · Q8_0",
+    "int8Hint": "Modèle de base NVIDIA, quantification Q8_0 — rapide et léger (~0,7 Go)",
+    "ultraInt8": "Ultra · Q8_0",
+    "ultraInt8Hint": "Version du modèle de base affinée par Moondream, quantifiée : moins d'erreurs de reconnaissance, les mêmes 25 langues · Q8_0 ~0,7 Go"
   },
   "ttsVariant": {
     "drama3": "Drama 3",
@@ -1279,6 +1279,9 @@
       "sound_only": "Non doublé : seulement des balises de sons",
       "no_words": "Non doublé : aucun mot"
     },
+    "ttsIgnored": "Le moteur ne lira pas : {{tags}}",
+    "ttsIgnoredHint": "Balisage d’un autre moteur de voix : le moteur choisi ne le lit pas, il n’entre pas dans le doublage",
+    "ttsIgnoredStress": "accent « + »",
     "err": {
       "over_limit": "Le glossaire compte {{total}} entrées, plus que {{max}}.",
       "empty_term": "L’entrée {{entry}} n’a pas de terme.",

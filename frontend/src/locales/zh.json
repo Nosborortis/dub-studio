@@ -571,6 +571,10 @@
     "grpGemma": "翻译 + 画面文字 · Gemma-4 12B",
     "grpParakeet": "语音识别 · Parakeet-TDT",
     "grpRoformer": "人声分离 · Mel-Band Roformer",
+    "grpQwen": "语音 · Qwen3-TTS 1.7B",
+    "grpWhisper": "其他语言的识别 · Whisper",
+    "notNeeded": "不需要",
+    "serviceNote": "所选内容在这台电脑上运行所需的引擎和库会一起下载：{{size}}",
     "pickOneQuant": "选一个",
     "default": "默认",
     "alt": "或",
@@ -807,14 +811,10 @@
     }
   },
   "asrVariant": {
-    "int8": "int8",
-    "int8Hint": "NVIDIA 基础模型，int8 量化——快速轻量（约 0.7 GB）",
-    "fp32": "fp32",
-    "fp32Hint": "NVIDIA 基础模型，完整 fp32 精度（约 2.6 GB）",
-    "ultra": "Ultra · fp32",
-    "ultraHint": "Moondream 在基础模型上微调的版本：识别错误更少，同样支持 25 种语言 · fp32 约 2.6 GB",
-    "ultraInt8": "Ultra · int8",
-    "ultraInt8Hint": "Moondream 在基础模型上微调并量化的版本：识别错误更少，同样支持 25 种语言 · int8 约 0.7 GB"
+    "int8": "v3 · Q8_0",
+    "int8Hint": "NVIDIA 基础模型，Q8_0 量化——快速轻量（约 0.7 GB）",
+    "ultraInt8": "Ultra · Q8_0",
+    "ultraInt8Hint": "Moondream 在基础模型上微调并量化的版本：识别错误更少，同样支持 25 种语言 · Q8_0 约 0.7 GB"
   },
   "ttsVariant": {
     "drama3": "Drama 3",
@@ -1255,6 +1255,9 @@
       "sound_only": "不配音：只有声音标记",
       "no_words": "不配音：没有文字"
     },
+    "ttsIgnored": "引擎不会读取：{{tags}}",
+    "ttsIgnoredHint": "这是其他配音引擎的标记：所选引擎不读取，不会进入配音",
+    "ttsIgnoredStress": "重音“+”",
     "err": {
       "over_limit": "术语表有 {{total}} 条，超过上限 {{max}}。",
       "empty_term": "第 {{entry}} 条没有术语。",

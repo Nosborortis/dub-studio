@@ -247,6 +247,10 @@ tts-silent-after-cleanup = nenhuma fala restou após limpar o texto, então sil�
     [one] fala
    *[other] falas
 } ({ $lines })
+tts-markup-ignored = o motor de voz não lê esta marcação, então ela foi retirada: { $count } { $count ->
+    [one] fala
+   *[other] falas
+} ({ $lines })
 mcp-bad-speaker-count = speaker_count: espera-se um número inteiro de 0 a { $max }
 mcp-speakers-without-diarize = speaker_count maior que 1 não é compatível com diarize=false
 
@@ -466,6 +470,10 @@ voices-pack-unpacking = descompactando
 voices-open-zip = abrindo o zip: { $error }
 voices-create-file = criando { $name }: { $error }
 voices-unpack-file = descompactando { $name }: { $error }
+voices-pack-taken = obtido de { $app }: { $count } { $count ->
+    [one] arquivo
+   *[other] arquivos
+}
 voices-pack-done = pronto: { $count } { $count ->
     [one] arquivo
    *[other] arquivos
@@ -688,9 +696,10 @@ setup-comp-gemma-q5-0-purpose = Tradução e texto na tela: mais preciso que q4_
 setup-comp-gemma-q6-k-purpose = Tradução e texto na tela: ainda mais preciso
 setup-comp-gemma-q8-0-purpose = Tradução e texto na tela: o mais preciso e o mais pesado
 setup-comp-parakeet-purpose = Reconhece a fala do vídeo com o tempo exato de cada palavra
+setup-comp-transcribe-engine-purpose = O motor de reconhecimento transcribe.cpp na GPU; nele roda o Parakeet
+setup-comp-transcribe-engine-cpu-purpose = O motor de reconhecimento transcribe.cpp no processador, para um computador sem NVIDIA; nele roda o Parakeet, mais devagar
 setup-comp-higgs-q6-k-purpose = Voz: variante mais leve que Q8_0
 setup-comp-higgs-q4-k-m-purpose = Voz: a variante mais leve
-setup-comp-parakeet-fp32-purpose = Reconhecimento de fala: precisão total, mais pesado
 setup-comp-parakeet-ultra-purpose = Reconhecimento de fala: versão ajustada, com menos erros
 setup-comp-whisper-engine-name = Whisper: reconhecimento para outros idiomas
 setup-comp-whisper-engine-purpose = Só é necessário para idiomas fora da Europa: o Parakeet conhece 25 idiomas europeus, o Whisper 99. Baixe com ele um modelo Whisper abaixo

@@ -247,6 +247,10 @@ tts-silent-after-cleanup = no queda habla tras limpiar el texto, así que silenc
     [one] frase
    *[other] frases
 } ({ $lines })
+tts-markup-ignored = el motor de voz no lee esta marca, así que se quitó: { $count } { $count ->
+    [one] frase
+   *[other] frases
+} ({ $lines })
 mcp-bad-speaker-count = speaker_count: se espera un número entero de 0 a { $max }
 mcp-speakers-without-diarize = speaker_count mayor que 1 no es compatible con diarize=false
 
@@ -466,6 +470,10 @@ voices-pack-unpacking = descomprimiendo
 voices-open-zip = abriendo el zip: { $error }
 voices-create-file = creando { $name }: { $error }
 voices-unpack-file = descomprimiendo { $name }: { $error }
+voices-pack-taken = tomado de { $app }: { $count } { $count ->
+    [one] archivo
+   *[other] archivos
+}
 voices-pack-done = listo: { $count } { $count ->
     [one] archivo
    *[other] archivos
@@ -688,9 +696,10 @@ setup-comp-gemma-q5-0-purpose = Traducción y texto en pantalla: más preciso qu
 setup-comp-gemma-q6-k-purpose = Traducción y texto en pantalla: aún más preciso
 setup-comp-gemma-q8-0-purpose = Traducción y texto en pantalla: el más preciso y el más pesado
 setup-comp-parakeet-purpose = Reconoce el habla del vídeo con el tiempo exacto de cada palabra
+setup-comp-transcribe-engine-purpose = El motor de reconocimiento transcribe.cpp en la GPU; en él funciona Parakeet
+setup-comp-transcribe-engine-cpu-purpose = El motor de reconocimiento transcribe.cpp en el procesador, para un equipo sin NVIDIA; en él funciona Parakeet, más lento
 setup-comp-higgs-q6-k-purpose = Voz: variante más ligera que Q8_0
 setup-comp-higgs-q4-k-m-purpose = Voz: la variante más ligera
-setup-comp-parakeet-fp32-purpose = Reconocimiento de voz: precisión completa, más pesado
 setup-comp-parakeet-ultra-purpose = Reconocimiento de voz: versión afinada, con menos errores
 setup-comp-whisper-engine-name = Whisper: reconocimiento para otros idiomas
 setup-comp-whisper-engine-purpose = Solo hace falta para idiomas fuera de Europa: Parakeet conoce 25 idiomas europeos, Whisper 99. Descarga con él un modelo de Whisper de abajo

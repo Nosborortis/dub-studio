@@ -247,6 +247,10 @@ tts-silent-after-cleanup = plus de parole après le nettoyage du texte, donc sil
     [one] réplique
    *[other] répliques
 } ({ $lines })
+tts-markup-ignored = le moteur de voix ne lit pas ce balisage, il a été retiré : { $count } { $count ->
+    [one] réplique
+   *[other] répliques
+} ({ $lines })
 mcp-bad-speaker-count = speaker_count : un entier de 0 à { $max } est attendu
 mcp-speakers-without-diarize = speaker_count supérieur à 1 est incompatible avec diarize=false
 
@@ -466,6 +470,10 @@ voices-pack-unpacking = décompression
 voices-open-zip = ouverture du zip : { $error }
 voices-create-file = création de { $name } : { $error }
 voices-unpack-file = décompression de { $name } : { $error }
+voices-pack-taken = repris de { $app } : { $count } { $count ->
+    [one] fichier
+   *[other] fichiers
+}
 voices-pack-done = terminé : { $count } { $count ->
     [one] fichier
    *[other] fichiers
@@ -688,9 +696,10 @@ setup-comp-gemma-q5-0-purpose = Traduction et texte à l'écran : plus précis q
 setup-comp-gemma-q6-k-purpose = Traduction et texte à l'écran : encore plus précis
 setup-comp-gemma-q8-0-purpose = Traduction et texte à l'écran : le plus précis et le plus lourd
 setup-comp-parakeet-purpose = Reconnaît la parole de la vidéo avec le minutage de chaque mot
+setup-comp-transcribe-engine-purpose = Le moteur de reconnaissance transcribe.cpp sur la carte graphique ; Parakeet tourne dessus
+setup-comp-transcribe-engine-cpu-purpose = Le moteur de reconnaissance transcribe.cpp sur le processeur, pour un ordinateur sans NVIDIA ; Parakeet tourne dessus, plus lent
 setup-comp-higgs-q6-k-purpose = Voix : variante plus légère que Q8_0
 setup-comp-higgs-q4-k-m-purpose = Voix : la variante la plus légère
-setup-comp-parakeet-fp32-purpose = Reconnaissance vocale : pleine précision, plus lourd
 setup-comp-parakeet-ultra-purpose = Reconnaissance vocale : version affinée, moins d'erreurs
 setup-comp-whisper-engine-name = Whisper : reconnaissance pour d'autres langues
 setup-comp-whisper-engine-purpose = Utile seulement pour les langues hors d'Europe : Parakeet connaît 25 langues européennes, Whisper 99. Téléchargez avec lui un modèle Whisper ci-dessous

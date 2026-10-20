@@ -193,6 +193,7 @@ translate-coverage-retry = 翻译覆盖：{ $count } 行未翻译；正在补译
 translate-coverage-failed = 翻译覆盖：补译失败（{ $error }）
 translate-coverage-left = 翻译覆盖：仍有 { $count } 行未翻译
 tts-silent-after-cleanup = 清理文本后没有可读内容，保持静音：{ $count } 句（{ $lines }）
+tts-markup-ignored = 配音引擎不读这些标记，已去掉：{ $count } 句（{ $lines }）
 mcp-bad-speaker-count = speaker_count：应为 0 到 { $max } 的整数
 mcp-speakers-without-diarize = speaker_count 大于 1 时不能与 diarize=false 同用
 
@@ -355,6 +356,7 @@ voices-pack-unpacking = 正在解压
 voices-open-zip = 打开 zip：{ $error }
 voices-create-file = 创建 { $name }：{ $error }
 voices-unpack-file = 解压 { $name }：{ $error }
+voices-pack-taken = 已从 { $app } 获取：{ $count } 个文件
 voices-pack-done = 完成：{ $count } 个文件
 
 ## Downloads by link
@@ -529,9 +531,10 @@ setup-comp-gemma-q5-0-purpose = 翻译与画面文字——比 q4_0 更准确
 setup-comp-gemma-q6-k-purpose = 翻译与画面文字——更加准确
 setup-comp-gemma-q8-0-purpose = 翻译与画面文字——最准确，也最大
 setup-comp-parakeet-purpose = 识别视频中的语音，并给出每个词的时间
+setup-comp-transcribe-engine-purpose = GPU 上的 transcribe.cpp 识别引擎；Parakeet 在它上面运行
+setup-comp-transcribe-engine-cpu-purpose = 处理器上的 transcribe.cpp 识别引擎，适用于没有 NVIDIA 显卡的电脑；Parakeet 在它上面运行，较慢
 setup-comp-higgs-q6-k-purpose = 配音——比 Q8_0 更轻的版本
 setup-comp-higgs-q4-k-m-purpose = 配音——最轻的版本
-setup-comp-parakeet-fp32-purpose = 语音识别——全精度，更大
 setup-comp-parakeet-ultra-purpose = 语音识别——微调版本，错误更少
 setup-comp-whisper-engine-name = Whisper——其他语言的语音识别
 setup-comp-whisper-engine-purpose = 只在欧洲以外的语言时需要：Parakeet 支持 25 种欧洲语言，Whisper 支持 99 种。请同时下载下面的一个 Whisper 模型

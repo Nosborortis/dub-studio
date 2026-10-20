@@ -199,6 +199,19 @@ mod platform {
     // GitHub: deno 2.9.7 (denoland/deno) — JS-рантайм, без которого yt-dlp не решает задачи YouTube (yt-dlp-ejs уже внутри
     // yt-dlp.exe; вики yt-dlp EJS: deno не ниже 2.3.0).
     const GH_DENO: &str = "https://github.com/denoland/deno/releases/download/v2.9.7/deno-x86_64-pc-windows-msvc.zip";
+    // transcribe.cpp (fork timoncool/transcribe.cpp, branch studio, scripts/build-engine-windows.cmd): libtranscribe and
+    // ggml whole in one library. CUDA 13, sm 75/80/86/89/90/100/120 without PTX, cudart and cuBLAS from cuda-runtime;
+    // the CPU build for a computer without a card CUDA 13 runs on.
+    pub const TRANSCRIBE_ENGINE: Parts = Parts {
+        size: 144_513_536,
+        files: &[FileSpec { url: "https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.1.1/transcribe_engine.dll", dest_rel: "models/transcribe-engine/transcribe_engine.dll", size: 144_513_536, sha256: "80b90f1294f7d63dfb658fb5ebc6e06627d3d97931a2552bb8553deb7eeb9b52", extract: Extract::None }],
+        markers: &[Marker { rel: "models/transcribe-engine/transcribe_engine.dll", expect: 144_513_536 }],
+    };
+    pub const TRANSCRIBE_ENGINE_CPU: Parts = Parts {
+        size: 3_666_432,
+        files: &[FileSpec { url: "https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.1.1/transcribe_engine-cpu.dll", dest_rel: "models/transcribe-engine-cpu/transcribe_engine.dll", size: 3_666_432, sha256: "92511dcc9490fb4deb75c0d31c78de21ee826e50d90db1ffbeeff23865602be4", extract: Extract::None }],
+        markers: &[Marker { rel: "models/transcribe-engine-cpu/transcribe_engine.dll", expect: 3_666_432 }],
+    };
     pub const HIGGS_ENGINE: Parts = Parts {
         size: 129_390_080,
         files: &[
@@ -341,6 +354,19 @@ mod platform {
 
     // Движок Higgs, собранный под Linux из исходника (timoncool/Higgs-Ultimate, sm 75/80/86/89/90/120a): RUNPATH
     // $ORIGIN, CUDA-библиотеки берёт из своего каталога (их кладёт cuda-runtime).
+    // transcribe.cpp (fork timoncool/transcribe.cpp, scripts/build-engine-linux-docker.sh: Ubuntu 22.04). CUDA 13.3,
+    // sm 75/80/86/89/90/100/120, RUNPATH $ORIGIN and ../higgs-engine, where libcudart and libcublas come from
+    // cuda-runtime; the CPU build for a computer without a card CUDA 13 runs on.
+    pub const TRANSCRIBE_ENGINE: Parts = Parts {
+        size: 160_931_720,
+        files: &[FileSpec { url: "https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.1.1/libtranscribe_engine.so", dest_rel: "models/transcribe-engine/libtranscribe_engine.so", size: 160_931_720, sha256: "1dff339818952e1cf547d85bb216dae36dccf1d8654612f2197f98a75950368e", extract: Extract::None }],
+        markers: &[Marker { rel: "models/transcribe-engine/libtranscribe_engine.so", expect: 160_931_720 }],
+    };
+    pub const TRANSCRIBE_ENGINE_CPU: Parts = Parts {
+        size: 5_002_200,
+        files: &[FileSpec { url: "https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.1.1/libtranscribe_engine-cpu.so", dest_rel: "models/transcribe-engine-cpu/libtranscribe_engine.so", size: 5_002_200, sha256: "8120113acb4f9a7b4b6c623e5e758b9260883ab3467eed07f712d6cb28f66c4f", extract: Extract::None }],
+        markers: &[Marker { rel: "models/transcribe-engine-cpu/libtranscribe_engine.so", expect: 5_002_200 }],
+    };
     pub const HIGGS_ENGINE: Parts = Parts {
         size: 136_774_464,
         files: &[
@@ -686,23 +712,37 @@ pub fn manifest() -> Vec<Component> {
         },
         Component {
             id: "parakeet",
-            name: "Parakeet-TDT 0.6B v3 (int8)".into(),
+            name: "Parakeet TDT 0.6B v3 (GGUF Q8_0, transcribe.cpp)".into(),
             purpose: t!("setup-comp-parakeet-purpose"),
             requirement: Requirement::Required,
             delivery: Delivery::Download,
-            size: 670_619_803,
-            files: &[
-                FileSpec { url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/encoder-model.int8.onnx", dest_rel: "models/tdt/encoder-model.int8.onnx", size: 652_183_999, sha256: "6139d2fa7e1b086097b277c7149725edbab89cc7c7ae64b23c741be4055aff09", extract: Extract::None },
-                FileSpec { url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/decoder_joint-model.int8.onnx", dest_rel: "models/tdt/decoder_joint-model.int8.onnx", size: 18_202_004, sha256: "eea7483ee3d1a30375daedc8ed83e3960c91b098812127a0d99d1c8977667a70", extract: Extract::None },
-                FileSpec { url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/nemo128.onnx", dest_rel: "models/tdt/nemo128.onnx", size: 139_764, sha256: "a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f", extract: Extract::None },
-                FileSpec { url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/vocab.txt", dest_rel: "models/tdt/vocab.txt", size: 93_939, sha256: "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d", extract: Extract::None },
-                FileSpec { url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/config.json", dest_rel: "models/tdt/config.json", size: 97, sha256: "666903c76b9798caf2c210afd4f6cd60b08a8dbf9800ec8d7a3bc0d2148ac466", extract: Extract::None },
-            ],
-            markers: &[
-                Marker { rel: "models/tdt/encoder-model.int8.onnx", expect: 652_183_999 },
-                Marker { rel: "models/tdt/decoder_joint-model.int8.onnx", expect: 18_202_004 },
-                Marker { rel: "models/tdt/vocab.txt", expect: 93_939 },
-            ],
+            size: 739_508_576,
+            files: &[FileSpec { url: "https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v3-gguf/resolve/d8d8c32cb2017c57e5307767343e97870f8a7f53/parakeet-tdt-0.6b-v3-Q8_0.gguf", dest_rel: "models/asr-gguf-parakeet-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf", size: 739_508_576, sha256: "5859f77944efcd8eafa23a6350731960b2b55b2203df51f319665c807d802cc7", extract: Extract::None }],
+            markers: &[Marker { rel: "models/asr-gguf-parakeet-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf", expect: 739_508_576 }],
+            external_url: None,
+        },
+        // Recognition by transcribe.cpp (ggml), the same engine and files as Speech Studio (dub_asr::tcpp), so either
+        // program takes them from the other: the CUDA build on the card, the CPU build without one (asr_backend).
+        Component {
+            id: "transcribe-engine",
+            name: "transcribe.cpp (CUDA)".into(),
+            purpose: t!("setup-comp-transcribe-engine-purpose"),
+            requirement: Requirement::Required,
+            delivery: Delivery::Download,
+            size: platform::TRANSCRIBE_ENGINE.size,
+            files: platform::TRANSCRIBE_ENGINE.files,
+            markers: platform::TRANSCRIBE_ENGINE.markers,
+            external_url: None,
+        },
+        Component {
+            id: "transcribe-engine-cpu",
+            name: "transcribe.cpp (CPU)".into(),
+            purpose: t!("setup-comp-transcribe-engine-cpu-purpose"),
+            requirement: Requirement::Optional,
+            delivery: Delivery::Download,
+            size: platform::TRANSCRIBE_ENGINE_CPU.size,
+            files: platform::TRANSCRIBE_ENGINE_CPU.files,
+            markers: platform::TRANSCRIBE_ENGINE_CPU.markers,
             external_url: None,
         },
         // Альтернативные кванты TTS Higgs (выбор в настройках; своя папка на квант, aux те же).
@@ -852,73 +892,15 @@ pub fn manifest() -> Vec<Component> {
             markers: &[Marker { rel: "models/ruaccent/nn/nn_omograph/big_poetry/model.onnx", expect: 181_553_054 }],
             external_url: None,
         },
-        // Альтернативный квант ASR: fp32 (точнее, тяжелее int8). Отдельная папка (fp32 приоритетнее int8).
-        Component {
-            id: "parakeet-fp32",
-            name: "Parakeet-TDT 0.6B v3 (fp32)".into(),
-            purpose: t!("setup-comp-parakeet-fp32-purpose"),
-            requirement: Requirement::Optional,
-            delivery: Delivery::Download,
-            size: 2_549_945_719,
-            files: &[
-                FileSpec { url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/encoder-model.onnx", dest_rel: "models/tdt-fp32/encoder-model.onnx", size: 41_770_866, sha256: "98a74b21b4cc0017c1e7030319a4a96f4a9506e50f0708f3a516d02a77c96bb1", extract: Extract::None },
-                FileSpec { url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/encoder-model.onnx.data", dest_rel: "models/tdt-fp32/encoder-model.onnx.data", size: 2_435_420_160, sha256: "9a22d372c51455c34f13405da2520baefb7125bd16981397561423ed32d24f36", extract: Extract::None },
-                FileSpec { url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/decoder_joint-model.onnx", dest_rel: "models/tdt-fp32/decoder_joint-model.onnx", size: 72_520_893, sha256: "e978ddf6688527182c10fde2eb4b83068421648985ef23f7a86be732be8706c1", extract: Extract::None },
-                FileSpec { url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/nemo128.onnx", dest_rel: "models/tdt-fp32/nemo128.onnx", size: 139_764, sha256: "a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f", extract: Extract::None },
-                FileSpec { url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/vocab.txt", dest_rel: "models/tdt-fp32/vocab.txt", size: 93_939, sha256: "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d", extract: Extract::None },
-                FileSpec { url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/config.json", dest_rel: "models/tdt-fp32/config.json", size: 97, sha256: "666903c76b9798caf2c210afd4f6cd60b08a8dbf9800ec8d7a3bc0d2148ac466", extract: Extract::None },
-            ],
-            markers: &[Marker { rel: "models/tdt-fp32/encoder-model.onnx", expect: 41_770_866 }, Marker { rel: "models/tdt-fp32/encoder-model.onnx.data", expect: 2_435_420_160 }, Marker { rel: "models/tdt-fp32/vocab.txt", expect: 93_939 }],
-            external_url: None,
-        },
-        // Parakeet Ultra (Moondream): дообученный parakeet-tdt-0.6b-v3 той же архитектуры, словаря и 25 языков,
-        // fp32. ONNX — altunenes/parakeet-rs/parakeet-ultra; nemo128.onnx и config.json дополняют папку до
-        // раскладки tdt-fp32 (файлы байт-в-байт те же, что у базовой модели). Ревизии закреплены sha коммитов.
         Component {
             id: "parakeet-ultra",
-            name: "Parakeet Ultra 0.6B (fp32)".into(),
+            name: "Parakeet Ultra 0.6B (GGUF Q8_0, transcribe.cpp)".into(),
             purpose: t!("setup-comp-parakeet-ultra-purpose"),
             requirement: Requirement::Optional,
             delivery: Delivery::Download,
-            size: 2_596_031_917,
-            files: &[
-                FileSpec { url: "https://huggingface.co/altunenes/parakeet-rs/resolve/4d2a8bc71f5c896ec40faa59732e6716295edaf2/parakeet-ultra/encoder-model.onnx", dest_rel: "models/tdt-ultra/encoder-model.onnx", size: 87_857_063, sha256: "76f835e57d62d82f1485c7a84706782e44a123a69f4efa86ed3b4ad56e236051", extract: Extract::None },
-                FileSpec { url: "https://huggingface.co/altunenes/parakeet-rs/resolve/4d2a8bc71f5c896ec40faa59732e6716295edaf2/parakeet-ultra/encoder-model.onnx.data", dest_rel: "models/tdt-ultra/encoder-model.onnx.data", size: 2_435_420_160, sha256: "6aeb9438f1f45dafc17d27c61a12bc406c0c2ccb8c17219aeeb3f898c283a8e6", extract: Extract::None },
-                FileSpec { url: "https://huggingface.co/altunenes/parakeet-rs/resolve/4d2a8bc71f5c896ec40faa59732e6716295edaf2/parakeet-ultra/decoder_joint-model.onnx", dest_rel: "models/tdt-ultra/decoder_joint-model.onnx", size: 72_520_894, sha256: "a5911fe202e8fba44251fce252a6c9c7c0a7c724c882a13f81d96611fa2d7ccb", extract: Extract::None },
-                FileSpec { url: "https://huggingface.co/altunenes/parakeet-rs/resolve/4d2a8bc71f5c896ec40faa59732e6716295edaf2/parakeet-ultra/vocab.txt", dest_rel: "models/tdt-ultra/vocab.txt", size: 93_939, sha256: "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d", extract: Extract::None },
-                FileSpec { url: "https://huggingface.co/altunenes/parakeet-rs/resolve/4d2a8bc71f5c896ec40faa59732e6716295edaf2/tdt/nemo128.onnx", dest_rel: "models/tdt-ultra/nemo128.onnx", size: 139_764, sha256: "a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f", extract: Extract::None },
-                FileSpec { url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/config.json", dest_rel: "models/tdt-ultra/config.json", size: 97, sha256: "666903c76b9798caf2c210afd4f6cd60b08a8dbf9800ec8d7a3bc0d2148ac466", extract: Extract::None },
-            ],
-            markers: &[
-                Marker { rel: "models/tdt-ultra/encoder-model.onnx", expect: 87_857_063 },
-                Marker { rel: "models/tdt-ultra/encoder-model.onnx.data", expect: 2_435_420_160 },
-                Marker { rel: "models/tdt-ultra/decoder_joint-model.onnx", expect: 72_520_894 },
-                Marker { rel: "models/tdt-ultra/vocab.txt", expect: 93_939 },
-            ],
-            external_url: None,
-        },
-        // Parakeet Ultra int8 (Masterx): та же дообученная Moondream модель, квантованная тем же рецептом, что
-        // istupakov int8 базовой. Своя папка: энкодер в пределах допуска по размеру от базового int8, а декодер
-        // и словарь совпадают с ним по размеру при других байтах.
-        Component {
-            id: "parakeet-ultra-int8",
-            name: "Parakeet Ultra 0.6B (int8)".into(),
-            purpose: t!("setup-comp-parakeet-ultra-purpose"),
-            requirement: Requirement::Optional,
-            delivery: Delivery::Download,
-            size: 670_619_018,
-            files: &[
-                FileSpec { url: "https://huggingface.co/Masterx/parakeet-tdt-0.6b-ultra-onnx/resolve/99b09f030a5a6efeaa13cf2cf54592100ce2c3f1/encoder-model.int8.onnx", dest_rel: "models/tdt-ultra-int8/encoder-model.int8.onnx", size: 652_183_214, sha256: "46e78f85f1ae43b43bd359889c966da5c7ca401df60a42eeffc2e7699b357ba6", extract: Extract::None },
-                FileSpec { url: "https://huggingface.co/Masterx/parakeet-tdt-0.6b-ultra-onnx/resolve/99b09f030a5a6efeaa13cf2cf54592100ce2c3f1/decoder_joint-model.int8.onnx", dest_rel: "models/tdt-ultra-int8/decoder_joint-model.int8.onnx", size: 18_202_004, sha256: "2276a335d4c8dc48686e931475a634595954956427d485830e1214c0d1a18d07", extract: Extract::None },
-                FileSpec { url: "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/nemo128.onnx", dest_rel: "models/tdt-ultra-int8/nemo128.onnx", size: 139_764, sha256: "a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f", extract: Extract::None },
-                FileSpec { url: "https://huggingface.co/Masterx/parakeet-tdt-0.6b-ultra-onnx/resolve/99b09f030a5a6efeaa13cf2cf54592100ce2c3f1/vocab.txt", dest_rel: "models/tdt-ultra-int8/vocab.txt", size: 93_939, sha256: "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d", extract: Extract::None },
-                FileSpec { url: "https://huggingface.co/Masterx/parakeet-tdt-0.6b-ultra-onnx/resolve/99b09f030a5a6efeaa13cf2cf54592100ce2c3f1/config.json", dest_rel: "models/tdt-ultra-int8/config.json", size: 97, sha256: "666903c76b9798caf2c210afd4f6cd60b08a8dbf9800ec8d7a3bc0d2148ac466", extract: Extract::None },
-            ],
-            markers: &[
-                Marker { rel: "models/tdt-ultra-int8/encoder-model.int8.onnx", expect: 652_183_214 },
-                Marker { rel: "models/tdt-ultra-int8/decoder_joint-model.int8.onnx", expect: 18_202_004 },
-                Marker { rel: "models/tdt-ultra-int8/vocab.txt", expect: 93_939 },
-            ],
+            size: 740_363_168,
+            files: &[FileSpec { url: "https://huggingface.co/handy-computer/parakeet-ultra-gguf/resolve/a1539be1b849ea7463b88343e5277b373d0c4ea9/parakeet-ultra-Q8_0.gguf", dest_rel: "models/asr-gguf-parakeet-ultra/parakeet-ultra-Q8_0.gguf", size: 740_363_168, sha256: "007a59761e9258779f189df396b50d12b83bb5b79e66df4b955c230d2f2a0a59", extract: Extract::None }],
+            markers: &[Marker { rel: "models/asr-gguf-parakeet-ultra/parakeet-ultra-Q8_0.gguf", expect: 740_363_168 }],
             external_url: None,
         },
         // ── АЛЬТЕРНАТИВНЫЙ ASR-ДВИЖОК: Whisper (Purfview standalone faster-whisper) ──────────
@@ -1346,9 +1328,8 @@ fn vram_estimate(id: &str) -> u64 {
         "gemma-q6_k" => gb(11.2),
         "gemma-q8_0" => gb(14.0),
         "parakeet" => gb(1.1),
-        "parakeet-fp32" => gb(2.7),
-        "parakeet-ultra" => gb(2.7),
-        "parakeet-ultra-int8" => gb(1.1),
+        "parakeet-ultra" => gb(1.1),
+
         "sortformer" => gb(0.5),
         "roformer" => gb(0.5),
         "roformer-q5" => gb(0.45),
@@ -1659,7 +1640,7 @@ pub struct ImportReport {
 /// Положить src на место dest: жёсткая ссылка (тот же том — мгновенно и без второй копии гигабайт), иначе
 /// копия через .part + rename (частичной копии под финальным именем не бывает). Без `copy` — только ссылка:
 /// автоподхват у соседних программ не тратит гигабайты места молча.
-fn adopt_file(src: &Path, dest: &Path, copy: bool) -> std::io::Result<()> {
+pub(crate) fn adopt_file(src: &Path, dest: &Path, copy: bool) -> std::io::Result<()> {
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -1732,6 +1713,21 @@ pub fn import_from_dir(repo_root: &Path, src_dir: &Path, only: Option<&str>, cop
 fn taken() -> &'static Mutex<std::collections::BTreeMap<String, String>> {
     static TAKEN: OnceLock<Mutex<std::collections::BTreeMap<String, String>>> = OnceLock::new();
     TAKEN.get_or_init(Default::default)
+}
+
+/// A program's name by its id (CONTRACT.md, "Program ids").
+pub fn program_name(id: &str) -> &str {
+    match id {
+        "yue2" => "YuE2 Studio",
+        "minimax" => "MiniMax Music3 Studio",
+        "ace" => "ACE-Step Studio",
+        "dub" => "Dub Studio",
+        "speech" => "Speech Studio",
+        "dungeon" => "Dungeon Ultimate",
+        "bulka" => "Bulka",
+        "videosos" => "VideoSOS",
+        other => other,
+    }
 }
 
 /// Недостающие веса из папок соседних программ (YuE2, MiniMax, Dungeon...) тем же импортом, что и из папки
@@ -1945,7 +1941,7 @@ pub fn setup_status(repo_root: &Path) -> SetupStatus {
         }
         let is_gemma = c.id.starts_with("gemma") || c.id == "llama";
         let is_higgs = c.id.starts_with("higgs");
-        let is_asr = c.id.starts_with("parakeet") || c.id.starts_with("whisper");
+        let is_asr = c.id.starts_with("parakeet") || c.id.starts_with("whisper") || c.id.starts_with("transcribe-engine");
         if (cloud_llm && is_gemma) || (cloud_tts && is_higgs) || (cloud_asr && is_asr) {
             c.requirement = Requirement::Optional;
         }
@@ -1955,7 +1951,13 @@ pub fn setup_status(repo_root: &Path) -> SetupStatus {
     // первом запуске), а CUDA-движок + CUDA-рантайм — необязательными (не тянем лишние гигабайты).
     // В GPU-режиме наоборот: CPU-движок не нужен.
     let backend = crate::models::local_backend(&mroot);
+    let asr_cpu = crate::models::tcpp_build(&mroot) == dub_asr::tcpp::Build::Cpu;
     for c in comps.iter_mut() {
+        if !cloud_asr && c.id == "transcribe-engine" {
+            c.requirement = if asr_cpu { Requirement::Optional } else { Requirement::Required };
+        } else if !cloud_asr && c.id == "transcribe-engine-cpu" {
+            c.requirement = if asr_cpu { Requirement::Required } else { Requirement::Optional };
+        }
         if backend == "cpu" {
             if c.id == "bsroformer-engine-cpu" {
                 c.requirement = Requirement::Recommended;
@@ -2740,7 +2742,21 @@ fn finish(repo_root: &Path, selected: &[&Component]) -> Value {
 /// Скачать набор компонентов по id (идемпотентно: целые файлы закреплённой версии пропускаются, уже лежащий
 /// файл перед пропуском сверяется по SHA-256). Тело синхронное: зовут фоновый поток менеджера или джоба.
 /// cancel — пауза: скачанное остаётся в .part с манифестом чанков и докачивается следующим запуском.
+/// Скачанный onnxruntime сразу становится библиотекой ort процесса.
 pub fn download_components(
+    repo_root: &Path,
+    ids: &[String],
+    cancel: &dyn Fn() -> bool,
+    progress: &ProgressCb,
+) -> Result<Value, DlError> {
+    let fetched = fetch_components(repo_root, ids, cancel, progress)?;
+    if ids.iter().any(|id| id.starts_with("onnxruntime")) {
+        crate::point_ort(repo_root);
+    }
+    Ok(fetched)
+}
+
+fn fetch_components(
     repo_root: &Path,
     ids: &[String],
     cancel: &dyn Fn() -> bool,
@@ -3198,8 +3214,53 @@ fn write_entry(entry: &mut impl Read, out: &Path, mode: Option<u32>) -> Result<(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+/// Models of a former version that nothing reads any more (Dub Studio 4.3 and earlier: Parakeet on ONNX Runtime), under the models folder.
+const RETIRED: &[&str] = &["tdt", "tdt-fp32", "tdt-ultra", "tdt-ultra-int8"];
+
+/// Removes the retired models, so they do not keep gigabytes that no row of the setup screen shows. A link (another
+/// program's folder linked in) loses only the link; a hard-linked file stays with the program that shares it.
+pub fn remove_retired(models_root: &Path) {
+    for rel in RETIRED {
+        let path = models_root.join(rel);
+        let Ok(meta) = std::fs::symlink_metadata(&path) else { continue };
+        let removed = if meta.file_type().is_symlink() {
+            std::fs::remove_dir(&path).or_else(|_| std::fs::remove_file(&path))
+        } else if meta.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        match removed {
+            Ok(()) => tracing::info!("removed the retired models {}", path.display()),
+            Err(e) => tracing::error!("[ERROR] could not remove the retired models {}: {e}", path.display()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn retired_models_go_and_current_ones_stay() {
+        let root = tempfile::tempdir().unwrap();
+        for rel in RETIRED {
+            let path = root.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            if rel.ends_with(".onnx") {
+                std::fs::write(&path, b"x").unwrap();
+            } else {
+                std::fs::create_dir_all(&path).unwrap();
+                std::fs::write(path.join("encoder-model.int8.onnx"), b"x").unwrap();
+            }
+        }
+        let kept = root.path().join("asr-gguf-parakeet-v3").join("parakeet-tdt-0.6b-v3-Q8_0.gguf");
+        std::fs::create_dir_all(kept.parent().unwrap()).unwrap();
+        std::fs::write(&kept, b"x").unwrap();
+        remove_retired(root.path());
+        assert!(RETIRED.iter().all(|rel| !root.path().join(rel).exists()));
+        assert!(kept.is_file());
+        remove_retired(root.path());
+    }
     use super::*;
 
     fn download_proxy(address: &str, kind: dub_llm::net::ProxyKind) -> Result<ureq::Proxy, String> {
@@ -3245,7 +3306,7 @@ mod tests {
     fn a_downloaded_variant_stands_for_its_model_on_the_first_run() {
         let mut comps = vec![
             model("parakeet", 1.1, Requirement::Required),
-            model("parakeet-ultra", 2.7, Requirement::Optional),
+            model("parakeet-ultra", 1.1, Requirement::Optional),
             model("gemma", 8.5, Requirement::Required),
             model("higgs-engine", 0.0, Requirement::Required),
         ];
@@ -3397,7 +3458,7 @@ mod tests {
 
     #[test]
     fn new_model_components_pinned_and_sized() {
-        for id in ["sortformer", "parakeet-ultra", "parakeet-ultra-int8"] {
+        for id in ["sortformer", "parakeet-ultra"] {
             let c = comp(id);
             let sum: u64 = c.files.iter().map(|f| f.size).sum();
             assert_eq!(c.size, sum, "{id}: size != сумме файлов");
@@ -3463,87 +3524,24 @@ mod tests {
         }
     }
 
-    fn index(files: &[(&str, u64)]) -> std::collections::HashMap<String, Vec<(PathBuf, u64)>> {
-        let mut map: std::collections::HashMap<String, Vec<(PathBuf, u64)>> = Default::default();
-        for (p, sz) in files {
-            let p = PathBuf::from(p);
-            let base = p.file_name().unwrap().to_string_lossy().to_lowercase();
-            map.entry(base).or_default().push((p, *sz));
+
+    /// The recognition models and their engine download the same files as dub_asr::tcpp names, so every program
+    /// that keeps them takes them from its neighbour.
+    #[test]
+    fn transcribe_cpp_components_are_dub_asrs() {
+        for (id, model) in [("parakeet", "parakeet-v3"), ("parakeet-ultra", "parakeet-ultra")] {
+            let m = dub_asr::tcpp::model(model).unwrap();
+            assert_eq!(m.component, id);
+            let c = comp(id);
+            let [f] = c.files else { panic!("{id}: one file") };
+            assert_eq!((f.url, f.size, f.sha256), (m.download.url, m.download.size, m.download.sha256), "{id}");
+            assert_eq!(std::path::Path::new(f.dest_rel), std::path::Path::new("models").join(m.dir).join(m.file), "{id}");
         }
-        map
-    }
-
-    const FP32_DIR: &[(&str, u64)] = &[
-        ("src/fp32/encoder-model.onnx", 41_770_866),
-        ("src/fp32/encoder-model.onnx.data", 2_435_420_160),
-        ("src/fp32/decoder_joint-model.onnx", 72_520_893),
-        ("src/fp32/vocab.txt", 93_939),
-    ];
-    const ULTRA_DIR: &[(&str, u64)] = &[
-        ("src/ultra/encoder-model.onnx", 87_857_063),
-        ("src/ultra/encoder-model.onnx.data", 2_435_420_160),
-        ("src/ultra/decoder_joint-model.onnx", 72_520_894),
-        ("src/ultra/vocab.txt", 93_939),
-    ];
-
-    fn picks(id: &str, map: &std::collections::HashMap<String, Vec<(PathBuf, u64)>>,
-    ) -> Vec<Option<String>> {
-        let c = comp(id);
-        c.markers
-            .iter()
-            .map(|m| pick_import_source(&c, m, map).map(|p| p.to_string_lossy().replace('\\', "/")))
-            .collect()
-    }
-
-    #[test]
-    fn import_never_fills_ultra_from_fp32_folder() {
-        let map = index(FP32_DIR);
-        assert!(picks("parakeet-ultra", &map).iter().all(Option::is_none), "{:?}", picks("parakeet-ultra", &map));
-        assert!(picks("parakeet-fp32", &map).iter().all(Option::is_some));
-    }
-
-    #[test]
-    fn import_never_fills_fp32_from_ultra_folder() {
-        let map = index(ULTRA_DIR);
-        assert!(picks("parakeet-fp32", &map).iter().all(Option::is_none), "{:?}", picks("parakeet-fp32", &map));
-        assert!(picks("parakeet-ultra", &map).iter().all(Option::is_some));
-    }
-
-    const INT8_DIR: &[(&str, u64)] = &[
-        ("src/int8/encoder-model.int8.onnx", 652_183_999),
-        ("src/int8/decoder_joint-model.int8.onnx", 18_202_004),
-        ("src/int8/vocab.txt", 93_939),
-    ];
-    const ULTRA_INT8_DIR: &[(&str, u64)] = &[
-        ("src/ultra-int8/encoder-model.int8.onnx", 652_183_214),
-        ("src/ultra-int8/decoder_joint-model.int8.onnx", 18_202_004),
-        ("src/ultra-int8/vocab.txt", 93_939),
-    ];
-
-    #[test]
-    fn import_never_mixes_base_int8_and_ultra_int8() {
-        let map = index(INT8_DIR);
-        assert!(picks("parakeet-ultra-int8", &map).iter().all(Option::is_none), "{:?}", picks("parakeet-ultra-int8", &map));
-        let map = index(ULTRA_INT8_DIR);
-        assert!(picks("parakeet", &map).iter().all(Option::is_none), "{:?}", picks("parakeet", &map));
-        let both: Vec<(&str, u64)> = INT8_DIR.iter().chain(ULTRA_INT8_DIR).copied().collect();
-        let map = index(&both);
-        for (id, dir) in [("parakeet", "src/int8/"), ("parakeet-ultra-int8", "src/ultra-int8/")] {
-            for p in picks(id, &map) {
-                assert!(p.as_deref().is_some_and(|p| p.starts_with(dir)), "{id}: {p:?}");
-            }
-        }
-    }
-
-    #[test]
-    fn import_takes_each_variant_from_its_own_folder() {
-        let both: Vec<(&str, u64)> = FP32_DIR.iter().chain(ULTRA_DIR).copied().collect();
-        let map = index(&both);
-        for (id, dir) in [("parakeet-ultra", "src/ultra/"), ("parakeet-fp32", "src/fp32/"),
-        ] {
-            for p in picks(id, &map) {
-                assert!(p.as_deref().is_some_and(|p| p.starts_with(dir)), "{id}: {p:?}");
-            }
+        for b in dub_asr::tcpp::Build::ALL.into_iter().filter(|b| *b != dub_asr::tcpp::Build::Vulkan) {
+            let d = b.download();
+            let [f] = comp(b.dir()).files else { panic!("{b:?}: one file") };
+            assert_eq!((f.url, f.size, f.sha256), (d.url, d.size, d.sha256), "{b:?}");
+            assert_eq!(std::path::Path::new(f.dest_rel), std::path::Path::new("models").join(b.dir()).join(dub_asr::tcpp::LIBRARY), "{b:?}");
         }
     }
 

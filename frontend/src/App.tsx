@@ -61,7 +61,7 @@ import { CASTING_CHANGED, JOURNAL_CHANGED, PROJECTS_CHANGED, SETTINGS_CHANGED, V
 import { named } from "./lib/a11y";
 import { goHome, openProject as openProjectIn } from "./lib/openProject";
 import { GlossaryButton } from "./components/GlossaryPanel";
-import { SourceText, TtsSkipNote } from "./components/SegmentText";
+import { SourceText, TtsIgnoredNote, TtsSkipNote } from "./components/SegmentText";
 import { hubChanged, setTelemetry, useHubState } from "./lib/studioHub";
 import { HubBars } from "./components/HubBars";
 import HubTelemetryPreview from "./components/HubTelemetryPreview";
@@ -112,8 +112,7 @@ function LanguageSwitcher() {
 const VARIANT_SLOT: Record<string, [string, string]> = {
   higgs: ["tts", "q8_0"], "higgs-q6_k": ["tts", "q6_k"], "higgs-q4_k_m": ["tts", "q4_k_m"], drama3: ["tts", "drama3"],
   "qwen3-tts": ["tts", "qwen3-tts"], "qwen3-tts-q8_0": ["tts", "qwen3-tts-q8_0"], supertonic3: ["tts", "supertonic3"],
-  parakeet: ["asr", "int8"], "parakeet-fp32": ["asr", "fp32"], "parakeet-ultra": ["asr", "ultra"],
-  "parakeet-ultra-int8": ["asr", "ultra-int8"],
+  parakeet: ["asr", "int8"], "parakeet-ultra": ["asr", "ultra-int8"],
   gemma: ["mt", "q4_0"], "gemma-q5_0": ["mt", "q5_0"], "gemma-q6_k": ["mt", "q6_k"], "gemma-q8_0": ["mt", "q8_0"],
   roformer: ["sep", "Q8_0"], "roformer-q5": ["sep", "Q5_0"], "roformer-q4": ["sep", "Q4_0"],
   "whisper-tiny": ["whisper_model", "tiny"], "whisper-base": ["whisper_model", "base"],
@@ -124,7 +123,7 @@ const VARIANT_SLOT: Record<string, [string, string]> = {
 const activeVariantId = (ids: string[], sel: Selection): string | undefined =>
   ids.find((id) => { const m = VARIANT_SLOT[id]; return !!m && sel[m[0]] === m[1]; });
 
-type VariantI18n = Record<string, { label: "asrVariant.int8" | "asrVariant.fp32" | "asrVariant.ultra" | "asrVariant.ultraInt8" | "ttsVariant.drama3" | "ttsVariant.qwen" | "ttsVariant.qwenQ8" | "ttsVariant.supertonic"; hint: "asrVariant.int8Hint" | "asrVariant.fp32Hint" | "asrVariant.ultraHint" | "asrVariant.ultraInt8Hint" | "ttsVariant.drama3Hint" | "ttsVariant.qwenHint" | "ttsVariant.supertonicHint" }>;
+type VariantI18n = Record<string, { label: "asrVariant.int8" | "asrVariant.ultraInt8" | "ttsVariant.drama3" | "ttsVariant.qwen" | "ttsVariant.qwenQ8" | "ttsVariant.supertonic"; hint: "asrVariant.int8Hint" | "asrVariant.ultraInt8Hint" | "ttsVariant.drama3Hint" | "ttsVariant.qwenHint" | "ttsVariant.supertonicHint" }>;
 // Drama 3 — второй движок озвучки в том же слоте tts, что и кванты Higgs: выбирается из того же списка.
 const TTS_IDS = ["higgs", "higgs-q6_k", "higgs-q4_k_m", "drama3", "qwen3-tts", "qwen3-tts-q8_0", "supertonic3"];
 const TTS_VARIANT_I18N: VariantI18n = {
@@ -137,9 +136,7 @@ const isQwenTts = (v: string | undefined) => v === "qwen3-tts" || v === "qwen3-t
 // Варианты Parakeet: int8 и fp32 — базовая модель NVIDIA, Ultra — её дообученная Moondream версия.
 const ASR_VARIANT_I18N: VariantI18n = {
   parakeet: { label: "asrVariant.int8", hint: "asrVariant.int8Hint" },
-  "parakeet-fp32": { label: "asrVariant.fp32", hint: "asrVariant.fp32Hint" },
-  "parakeet-ultra": { label: "asrVariant.ultra", hint: "asrVariant.ultraHint" },
-  "parakeet-ultra-int8": { label: "asrVariant.ultraInt8", hint: "asrVariant.ultraInt8Hint" },
+  "parakeet-ultra": { label: "asrVariant.ultraInt8", hint: "asrVariant.ultraInt8Hint" },
 };
 
 // 25 европейских языков, которые распознаёт дефолтный ASR Parakeet-TDT v3. Источник вне этого набора
@@ -285,7 +282,7 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
             <BrowseBtn id={c.id} />
             {c.fitsVram === false && !c.installed
               ? <span className="text-[11px] text-[var(--color-warn)]">{t("setup.noVramShort")}</span>
-              : <button onClick={() => dl([c.id])} disabled={!!prog}
+              : <button onClick={() => dl([c.id])} disabled={!!prog} aria-label={`${c.installed ? t("settings.redownload") : t("setup.downloadOne")}: ${c.name}`}
                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[12px] border border-[var(--color-border)] text-[var(--color-accent-2)] hover:border-[var(--color-accent)] disabled:opacity-40">
                   {c.installed ? <RefreshCw size={12} /> : <Download size={12} />}{c.installed ? t("settings.redownload") : t("setup.downloadOne")}
                 </button>}
@@ -478,7 +475,6 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
             );
           })}
         </div>
-        {/* Локальный ASR (Parakeet/Whisper) — на чём считать: свои табы устройства. */}
         {selv("or_asr_on") !== "1" && <BackendTabs k="asr_backend" />}
         {selv("or_asr_on") === "1" ? (
           <div className={`${orRowCls} space-y-2`}>
@@ -486,7 +482,10 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
             <div className="text-[11px] text-[var(--color-muted)]">{t("providers.asrCloudHint")}</div>
           </div>
         ) : asrEngine === "parakeet" ? (
-          <VariantPicker base="Parakeet-TDT 0.6B v3" ids={["parakeet", "parakeet-ultra-int8", "parakeet-fp32", "parakeet-ultra"]} i18n={ASR_VARIANT_I18N} />
+          <>
+            {get("transcribe-engine-cpu")?.requirement === "required" ? rowOf("transcribe-engine-cpu") : rowOf("transcribe-engine")}
+            <VariantPicker base="Parakeet-TDT 0.6B v3" ids={["parakeet", "parakeet-ultra"]} i18n={ASR_VARIANT_I18N} />
+          </>
         ) : (
           <>
             {rowOf("whisper-engine")}
@@ -501,7 +500,7 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
                 </div>
                 <select value={whisperCompute} onChange={(e) => { setWhisperCompute(e.target.value); api.setSelection("whisper_compute", e.target.value).catch(() => {}); }}
                   className="shrink-0 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-md px-2 py-1 text-[11px] mono focus:border-[var(--color-accent)] focus:outline-none">
-                  {(cap?.whisper_computes ?? ["int8", "int8_float16", "float16", "int8_float32", "float32"]).map((q) => <option key={q} value={q}>{q}</option>)}
+                  {(cap?.whisper_computes ?? ["int8", "int8_float16", "int8_float32"]).map((q) => <option key={q} value={q}>{q}</option>)}
                 </select>
               </div>
             </div>
@@ -3216,6 +3215,7 @@ function Editor() {
                     onSelect={(n) => doTakeSelect(seg.id, n)} onPin={(pinned) => doTakePin(seg.id, pinned)} />
                 )}
                 {seg.tts_skip && <TtsSkipNote reason={seg.tts_skip} />}
+                {seg.tts_ignored && seg.tts_ignored.length > 0 && <TtsIgnoredNote tags={seg.tts_ignored} />}
                 {on && (
                   <div className="flex items-center gap-1.5 mt-1.5" onClick={(e) => e.stopPropagation()} title={t("seg.timingHint")}>
                     <Clock size={11} className="text-[var(--color-muted)] shrink-0" />
@@ -4126,9 +4126,37 @@ function FilesPanel() {
 const QUANT_GROUP: Record<string, string> = {
   higgs: "higgs", "higgs-q6_k": "higgs", "higgs-q4_k_m": "higgs",
   gemma: "gemma", "gemma-q5_0": "gemma", "gemma-q6_k": "gemma", "gemma-q8_0": "gemma",
-  parakeet: "parakeet", "parakeet-fp32": "parakeet", "parakeet-ultra": "parakeet", "parakeet-ultra-int8": "parakeet",
+  parakeet: "parakeet", "parakeet-ultra": "parakeet",
   roformer: "roformer", "roformer-q5": "roformer", "roformer-q4": "roformer",
+  "qwen3-tts": "qwen3", "qwen3-tts-q8_0": "qwen3",
+  "whisper-tiny": "whisper", "whisper-base": "whisper", "whisper-small": "whisper", "whisper-medium": "whisper",
+  "whisper-large-v3": "whisper", "whisper-large-v3-turbo": "whisper",
 };
+
+// Engines, runtimes and libraries: the studio takes them for the models chosen and for this computer's card, so they
+// are not a choice on the first-run screen.
+const SERVICE = new Set([
+  "higgs-engine", "qwen3-tts-engine", "transcribe-engine", "transcribe-engine-cpu", "whisper-engine", "whisper-cuda",
+  "bsroformer-engine", "bsroformer-engine-cpu", "llama", "onnxruntime", "onnxruntime-gpu", "ffmpeg", "cuda-runtime", "cudnn",
+  "vcruntime",
+]);
+
+/** The service parts a chosen model runs on; of two builds of one engine, the one the server asks for on this computer. */
+function needs(id: string, s: SetupStatus): string[] {
+  const build = (gpu: string, cpu: string) => {
+    const req = (x: string) => s.components.find((c) => c.id === x)?.requirement ?? "optional";
+    if (req(gpu) !== "optional") return gpu;
+    if (req(cpu) !== "optional") return cpu;
+    return s.gpu?.cuda13Ok ? gpu : cpu;
+  };
+  if (id.startsWith("higgs")) return ["higgs-engine"];
+  if (id.startsWith("qwen3-tts")) return ["qwen3-tts-engine"];
+  if (id.startsWith("parakeet")) return [build("transcribe-engine", "transcribe-engine-cpu")];
+  if (QUANT_GROUP[id] === "whisper") return s.gpu?.nvidia ? ["whisper-engine", "whisper-cuda"] : ["whisper-engine"];
+  if (id.startsWith("roformer")) return [build("bsroformer-engine", "bsroformer-engine-cpu")];
+  if (id.startsWith("gemma")) return ["llama"];
+  return [];
+}
 
 // ── «Первый запуск»: панель автозакачки компонентов (модели/движки/системные библиотеки) ──
 // По умолчанию отмечено всё недостающее скачиваемое, кроме опциональных квантов (их качают вручную).
@@ -4182,7 +4210,11 @@ function FirstRun() {
   const pause = () => { api.setupCancel().then(() => refresh()).catch((e) => setErr(String(e))); };
 
   const toggle = (id: string) => setSel((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const selectedComps = status ? status.components.filter((c) => sel.has(c.id)) : [];
+  // what Download fetches: the models chosen, what they run on and the service parts this computer needs anyway
+  const fetchIds = new Set<string>(sel);
+  if (status) for (const id of sel) needs(id, status).forEach((x) => fetchIds.add(x));
+  const selectedComps = status ? status.components.filter((c) => fetchIds.has(c.id) && c.delivery === "download" && !c.installed) : [];
+  const serviceComps = selectedComps.filter((c) => SERVICE.has(c.id));
   const selectedBytes = selectedComps.reduce((a, c) => a + Math.max(0, c.size - c.bytesOnDisk), 0);
   const selectedSpace = selectedComps.reduce((a, c) => a + c.spaceNeeded, 0);
   const noSpace = status?.freeBytes != null && selectedSpace > status.freeBytes;
@@ -4190,14 +4222,17 @@ function FirstRun() {
   const reqLabel = (r: string) => t(r === "required" ? "setup.required" : r === "recommended" ? "setup.recommended" : "setup.optional");
   const deliveryNote = (c: SetupComponent) =>
     c.delivery === "bundled" ? t("setup.reinstallHint") : c.delivery === "external" ? t("setup.external") : "";
-  const GROUP_LABEL: Record<string, string> = { higgs: t("setup.grpHiggs"), gemma: t("setup.grpGemma"), parakeet: t("setup.grpParakeet"), roformer: t("setup.grpRoformer") };
-  const pickOne = (id: string, group: string) => setSel((prev) => {   // radio внутри семейства: выбрать этот квант, снять остальные того же семейства
+  const GROUP_LABEL: Record<string, string> = {
+    higgs: t("setup.grpHiggs"), gemma: t("setup.grpGemma"), parakeet: t("setup.grpParakeet"), roformer: t("setup.grpRoformer"),
+    qwen3: t("setup.grpQwen"), whisper: t("setup.grpWhisper"),
+  };
+  const pickOne = (id: string | null, group: string) => setSel((prev) => {   // radio внутри семейства: выбрать этот квант, снять остальные того же семейства
     const n = new Set(prev);
     Object.entries(QUANT_GROUP).forEach(([cid, g]) => { if (g === group) n.delete(cid); });
-    n.add(id);
+    if (id) n.add(id);
     return n;
   });
-  const comps = status?.components ?? [];
+  const comps = (status?.components ?? []).filter((c) => !SERVICE.has(c.id) && !(c.delivery === "external" && c.installed));
   const gseen = new Set<string>();
   type SetupRow = { kind: "one"; c: SetupComponent } | { kind: "group"; group: string; members: SetupComponent[] };
   const rows: SetupRow[] = comps.flatMap((c): SetupRow[] => {   // одиночные компоненты + по одной группе квантов (на первом её члене)
@@ -4259,6 +4294,13 @@ function FirstRun() {
                     <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-[color-mix(in_oklab,var(--color-accent)_16%,transparent)] text-[var(--color-accent)]">{t("setup.pickOneQuant")}</span>
                   </div>
                   <div className="space-y-0.5">
+                    {members.every((m) => m.requirement === "optional" && !m.installed) && (
+                      <label className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 cursor-pointer hover:bg-[var(--color-surface-2)]">
+                        <input type="radio" name={`grp-${group}`} checked={members.every((m) => !sel.has(m.id))} onChange={() => pickOne(null, group)} disabled={busy}
+                          className="w-4 h-4 accent-[var(--color-accent)] shrink-0" />
+                        <span className="text-[13px] text-[var(--color-muted)]">{t("setup.notNeeded")}</span>
+                      </label>
+                    )}
                     {members.map((c) => {
                       const isDefault = c.requirement !== "optional";
                       const checked = sel.has(c.id);
@@ -4297,7 +4339,7 @@ function FirstRun() {
               <div key={c.id} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-3">
                 <div className="flex items-center gap-3">
                   {canPick ? (
-                    <input type="checkbox" checked={sel.has(c.id)} onChange={() => toggle(c.id)} disabled={busy}
+                    <input type="checkbox" checked={sel.has(c.id)} onChange={() => toggle(c.id)} disabled={busy} aria-label={c.name}
                       className="w-4 h-4 accent-[var(--color-accent)] shrink-0" />
                   ) : (
                     <span className={`w-4 h-4 shrink-0 grid place-items-center rounded ${c.installed ? "text-[var(--color-accent)]" : "text-[var(--color-muted)]"}`}>
@@ -4329,7 +4371,7 @@ function FirstRun() {
                     ) : (
                       <div className="flex flex-col items-end gap-1">
                         <span className="mono text-[11px] text-[var(--color-muted)]">{fmtBytes(c.size)}</span>
-                        <button onClick={() => download([c.id])} disabled={busy}
+                        <button onClick={() => download([c.id])} disabled={busy} aria-label={`${t("setup.downloadOne")}: ${c.name}`}
                           className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[var(--color-surface-2)] border border-[var(--color-border)] text-[11px] hover:border-[var(--color-accent)] disabled:opacity-40">
                           <Download size={12} />{t("setup.downloadOne")}</button>
                       </div>
@@ -4341,9 +4383,16 @@ function FirstRun() {
           })}
         </div>
 
+        {serviceComps.length > 0 && (
+          <details className="mt-3 text-[12px] text-[var(--color-muted)]">
+            <summary className="cursor-pointer">{t("setup.serviceNote", { size: fmtBytes(serviceComps.reduce((a, c) => a + Math.max(0, c.size - c.bytesOnDisk), 0)) })}</summary>
+            <div className="mt-1 pl-4 leading-relaxed">{serviceComps.map((c) => c.name).join(", ")}</div>
+          </details>
+        )}
+
         <div className="mt-6 flex items-center gap-3">
           {status && !status.ready && (
-            <button onClick={() => { sendTelemetryChoice(); download(selectedComps.filter((c) => c.delivery === "download" && !c.installed).map((c) => c.id)); }} disabled={busy || sel.size === 0 || noSpace} title={noSpace ? t("downloads.noSpace", { need: fmtBytes(selectedSpace), free: fmtBytes(status.freeBytes ?? 0) }) : undefined}
+            <button onClick={() => { sendTelemetryChoice(); download(selectedComps.map((c) => c.id)); }} disabled={busy || selectedComps.length === 0 || noSpace} title={noSpace ? t("downloads.noSpace", { need: fmtBytes(selectedSpace), free: fmtBytes(status.freeBytes ?? 0) }) : undefined}
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[var(--color-accent)] text-[var(--color-on-accent)] text-sm font-semibold disabled:opacity-40 hover:brightness-105">
               {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
               {t("setup.download")} {selectedBytes > 0 && <span className="opacity-80">· {fmtBytes(selectedBytes)}</span>}
@@ -4872,8 +4921,7 @@ export default function App() {
     // ASR в футере — из ФАКТИЧЕСКОГО выбора (active.json), не из статичного имени Parakeet-модели:
     // юзер переключил движок в «Моделях» -> строка обязана показать то, чем реально пойдёт прогон.
     const sel = (c as { selection?: Record<string, string> }).selection ?? {};
-    const asrLabel = sel.asr_engine === "whisper" ? `whisper ${sel.whisper_model || "auto"}` : `${c.asr_model}${sel.asr ? ` ${sel.asr}` : ""}`;
-    const parts = [c.device, `ASR ${asrLabel}`];
+    const parts = [c.device, `ASR ${c.asr_label}`];
     if (c.models?.llm) parts.push(`MT+vision ${base(c.models.llm)}`);
     const ttsQuant = sel.tts || c.tts_quant;
     if (c.models?.tts) parts.push(sel.tts === "drama3" ? "TTS Fish Audio Drama 3 q4" : sel.tts === "supertonic3" ? "TTS Supertonic 3 int8" : isQwenTts(sel.tts) ? `TTS Qwen3-TTS 1.7B ${sel.tts === "qwen3-tts" ? "Q4_K_M" : "Q8_0"}` : `TTS ${c.models.tts}${ttsQuant ? ` ${ttsQuant}` : ""}`);

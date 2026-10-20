@@ -581,6 +581,10 @@
     "grpGemma": "Traducción + texto en pantalla · Gemma-4 12B",
     "grpParakeet": "Reconocimiento de voz · Parakeet-TDT",
     "grpRoformer": "Separación vocal · Mel-Band Roformer",
+    "grpQwen": "Voces · Qwen3-TTS 1.7B",
+    "grpWhisper": "Reconocimiento de otros idiomas · Whisper",
+    "notNeeded": "No hace falta",
+    "serviceNote": "Con lo elegido se descargan los motores y bibliotecas para este equipo: {{size}}",
     "pickOneQuant": "elige uno",
     "default": "predeterminado",
     "alt": "o",
@@ -829,14 +833,10 @@
     }
   },
   "asrVariant": {
-    "int8": "int8",
-    "int8Hint": "Modelo base de NVIDIA, cuantización int8: rápido y ligero (~0,7 GB)",
-    "fp32": "fp32",
-    "fp32Hint": "Modelo base de NVIDIA con precisión completa fp32 (~2,6 GB)",
-    "ultra": "Ultra · fp32",
-    "ultraHint": "Versión del modelo base ajustada por Moondream: menos errores de reconocimiento, los mismos 25 idiomas · fp32 ~2,6 GB",
-    "ultraInt8": "Ultra · int8",
-    "ultraInt8Hint": "Versión del modelo base ajustada por Moondream, cuantizada: menos errores de reconocimiento, los mismos 25 idiomas · int8 ~0,7 GB"
+    "int8": "v3 · Q8_0",
+    "int8Hint": "Modelo base de NVIDIA, cuantización Q8_0: rápido y ligero (~0,7 GB)",
+    "ultraInt8": "Ultra · Q8_0",
+    "ultraInt8Hint": "Versión del modelo base ajustada por Moondream, cuantizada: menos errores de reconocimiento, los mismos 25 idiomas · Q8_0 ~0,7 GB"
   },
   "ttsVariant": {
     "drama3": "Drama 3",
@@ -1279,6 +1279,9 @@
       "sound_only": "Sin voz: solo etiquetas de sonido",
       "no_words": "Sin voz: no hay palabras"
     },
+    "ttsIgnored": "El motor no leerá: {{tags}}",
+    "ttsIgnoredHint": "Marcas de otro motor de voz: el motor elegido no las lee y no entran en el doblaje",
+    "ttsIgnoredStress": "acento «+»",
     "err": {
       "over_limit": "El glosario tiene {{total}} entradas, más de {{max}}.",
       "empty_term": "La entrada {{entry}} no tiene término.",

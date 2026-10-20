@@ -125,7 +125,7 @@ pub struct WhisperAsr {
     model_dir: PathBuf,
     /// Имя модели: tiny|base|small|medium|large-v3|large-v3-turbo.
     model: String,
-    /// compute_type (квант): int8|int8_float32|float32|float16|…
+    /// compute_type (квант): int8|int8_float16|int8_float32
     compute: String,
     /// Устройство исполнения: cpu|cuda.
     device: String,
@@ -337,23 +337,13 @@ impl WhisperAsr {
         }
         let out = dub_core::proc::output(&mut cmd).map_err(|e| AsrError::Parakeet(format!("whisper spawn: {e}")))?;
         if !out.status.success() {
-            // АВТО-ФОЛБЭК cuda -> cpu: дефолт девайса теперь cuda (быстрее в разы на NVIDIA), но на
-            // машине без CUDA/либ сабпроцесс падает — повторяем ОДИН раз на cpu с безопасным int8
-            // (float16 на CPU роняет CTranslate2 — гард #41). device=="cpu" сюда не зайдёт (нет рекурсии).
-            if self.device == "cuda" {
-                let mut fb = self.clone();
-                fb.device = "cpu".into();
-                if matches!(fb.compute.as_str(), "float16" | "bfloat16" | "int8_float16" | "int8_bfloat16") {
-                    fb.compute = "int8".into();
-                }
-                return fb.run_words(wav, lang, threads);
-            }
             let stderr = String::from_utf8_lossy(&out.stderr);
             let stdout = String::from_utf8_lossy(&out.stdout);
             let mut tail: Vec<&str> = stderr.lines().chain(stdout.lines()).rev().take(10).collect();
             tail.reverse();
+            let on_card = if self.device == "cuda" { " on the graphics card (choose the processor for recognition if the card cannot run it)" } else { "" };
             return Err(AsrError::Parakeet(format!(
-                "whisper exit code {:?}: {}",
+                "whisper exit code {:?}{on_card}: {}",
                 out.status.code(),
                 tail.join(" | ")
             )));

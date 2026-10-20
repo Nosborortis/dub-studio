@@ -4,7 +4,28 @@ What changed, newest first. Dates are release dates; the app is versioned by its
 build. Every change a user can see is written here in the commit that makes it, and the
 release notes on GitHub are taken from the release's section.
 
-## 2026-10-20 — 4.3.1
+## 2026-10-21 — 4.4.0
+
+### Changed
+
+- **First run asks only what to have**: voices, recognition (one Whisper model or none) and extras; the engines, runtimes and the build for this computer's card come with them by themselves, named in one line with their size.
+- **Speech recognition on transcribe.cpp.** Parakeet-TDT v3 and Parakeet Ultra run as GGUF Q8_0 on the transcribe.cpp engine instead of ONNX Runtime, and the model loads once for a whole job and leaves the card when the job ends; the full-precision fp32 variants are gone, a choice of them now takes the Q8_0 of the same model. Whisper stays on faster-whisper for its word times. The engine and the models are the ones Speech Studio uses, so either program takes them from the other. Checking the voiced lines by ear recognises them in batches.
+- **Recognition without an NVIDIA card.** transcribe.cpp comes in a CUDA build and a processor build; the one for where recognition runs (Settings - Models, Recognition: GPU or CPU, or Auto by the card) is the one downloaded and used, and switching takes effect on the next job without a restart.
+- The ONNX Parakeet models of 4.3 and earlier (int8, fp32, Ultra, Ultra int8; up to 5.7 GB) are removed at start: transcribe.cpp does not read them.
+
+### Fixed
+
+- **Whisper is downloaded on first use, as Parakeet is.** A job whose recogniser is Whisper fetches its program and the model the settings name (and its CUDA libraries when recognition runs on the card), then runs on it; before, a Whisper chosen but not downloaded silently ran Parakeet.
+- **Whisper on the graphics card keeps int8 weights** (int8_float16 by default); only the int8 computes are offered, and a saved float16 or float32 falls back to the default.
+- **A Whisper that fails on the graphics card says so** and tells to choose the processor for recognition, instead of running again on the processor without a word.
+- **The recognition model leaves the graphics card when a job ends**, so its memory goes back to voicing and translation.
+- **The status line names the recogniser that runs**: the transcribe.cpp model, its quantization and build, or Whisper's model and compute (it showed the ONNX Parakeet int8 of before).
+- **The voice pack is taken from another program** (Speech Studio) whose voices folder has all of its files, each checked by its SHA-256, instead of downloading it again.
+- **A recognition model chosen but not downloaded is downloaded before the job**, in analysis and in subtitle alignment, instead of failing with "TDT model path must be a directory"; so is the engine build of the chosen backend.
+- **The hardware preset names a card's memory as its box does**: an RTX 4090 is 24 GB, not 26 (memory is counted in 2³⁰-byte gigabytes, as the resource monitor already did); so is the diagnostics report.
+- **The first-run screen's component ticks and Download buttons carry the component's name**, so an agent and a screen reader know which one they are; so do the Download and Re-download buttons in Settings - Models.
+
+## 4.3.1 — not released on its own; its fixes are part of 4.4.0
 
 ### Fixed
 

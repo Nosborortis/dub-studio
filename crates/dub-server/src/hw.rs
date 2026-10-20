@@ -8,6 +8,9 @@ use nvml_wrapper::Nvml;
 use serde::Serialize;
 use sysinfo::{Pid, System};
 
+/// Байт в гигабайте, которым меряют память: карта «24 ГБ» — это 24 × 2³⁰ байт, а не 24 × 10⁹.
+pub const GIB: f64 = (1u64 << 30) as f64;
+
 #[derive(Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HardwareSnapshot {
@@ -320,6 +323,14 @@ fn driver_api_probe(sym: impl Fn(&[u8]) -> *mut std::ffi::c_void) -> CudaProbe {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_card_reads_as_its_box_says() {
+        let rtx4090 = 24_564u64 << 20;
+        assert_eq!(format!("{:.0}", rtx4090 as f64 / GIB), "24");
+        let rtx4060 = 8_188u64 << 20;
+        assert_eq!(format!("{:.0}", rtx4060 as f64 / GIB), "8");
+    }
 
     #[test]
     fn cuda13_needs_turing_and_a_cuda13_driver() {

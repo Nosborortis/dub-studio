@@ -261,6 +261,11 @@ tts-silent-after-cleanup = без речи после чистки текста 
     [few] фразы
    *[many] фраз
 } ({ $lines })
+tts-markup-ignored = движок озвучки не читает эту разметку — она снята: { $count } { $count ->
+    [one] фраза
+    [few] фразы
+   *[many] фраз
+} ({ $lines })
 mcp-bad-speaker-count = speaker_count: ожидается целое число от 0 до { $max }
 mcp-speakers-without-diarize = speaker_count больше 1 несовместим с diarize=false
 
@@ -487,6 +492,11 @@ voices-pack-unpacking = распаковка
 voices-open-zip = открыть zip: { $error }
 voices-create-file = создать { $name }: { $error }
 voices-unpack-file = распаковка { $name }: { $error }
+voices-pack-taken = взято у { $app }: { $count } { $count ->
+    [one] файл
+    [few] файла
+   *[many] файлов
+}
 voices-pack-done = готово: { $count } { $count ->
     [one] файл
     [few] файла
@@ -697,9 +707,10 @@ setup-comp-gemma-q5-0-purpose = Перевод и надписи — точне�
 setup-comp-gemma-q6-k-purpose = Перевод и надписи — ещё точнее
 setup-comp-gemma-q8-0-purpose = Перевод и надписи — самый точный и самый тяжёлый
 setup-comp-parakeet-purpose = Распознаёт речь в ролике с точным временем каждого слова
+setup-comp-transcribe-engine-purpose = Движок распознавания transcribe.cpp на видеокарте; на нём работает Parakeet
+setup-comp-transcribe-engine-cpu-purpose = Движок распознавания transcribe.cpp на процессоре, для компьютера без NVIDIA; на нём работает Parakeet, медленнее
 setup-comp-higgs-q6-k-purpose = Озвучка — вариант полегче Q8_0
 setup-comp-higgs-q4-k-m-purpose = Озвучка — самый лёгкий вариант
-setup-comp-parakeet-fp32-purpose = Распознавание речи — полная точность, тяжелее
 setup-comp-parakeet-ultra-purpose = Распознавание речи — дообученная версия, меньше ошибок
 setup-comp-whisper-engine-name = Whisper — распознавание для других языков
 setup-comp-whisper-engine-purpose = Нужен только для языков вне Европы: Parakeet знает 25 европейских языков, Whisper — 99. Вместе с ним скачайте одну модель Whisper ниже

@@ -587,6 +587,10 @@
     "grpGemma": "Translation + on-screen text · Gemma-4 12B",
     "grpParakeet": "Speech recognition · Parakeet-TDT",
     "grpRoformer": "Vocal separation · Mel-Band Roformer",
+    "grpQwen": "Voices · Qwen3-TTS 1.7B",
+    "grpWhisper": "Recognition of other languages · Whisper",
+    "notNeeded": "Not needed",
+    "serviceNote": "The engines and libraries for this computer come with what is chosen: {{size}}",
     "pickOneQuant": "pick one",
     "default": "default",
     "alt": "or",
@@ -818,14 +822,10 @@
     }
   },
   "asrVariant": {
-    "int8": "int8",
-    "int8Hint": "NVIDIA base model, int8 quant — fast and light (~0.7 GB)",
-    "fp32": "fp32",
-    "fp32Hint": "NVIDIA base model at full fp32 precision (~2.6 GB)",
-    "ultra": "Ultra · fp32",
-    "ultraHint": "Moondream fine-tune of the base model: fewer recognition errors, same 25 languages · fp32 ~2.6 GB",
-    "ultraInt8": "Ultra · int8",
-    "ultraInt8Hint": "Moondream fine-tune of the base model, quantized: fewer recognition errors, same 25 languages · int8 ~0.7 GB"
+    "int8": "v3 · Q8_0",
+    "int8Hint": "NVIDIA base model, Q8_0 quant — fast and light (~0.7 GB)",
+    "ultraInt8": "Ultra · Q8_0",
+    "ultraInt8Hint": "Moondream fine-tune of the base model, quantized: fewer recognition errors, same 25 languages · Q8_0 ~0.7 GB"
   },
   "ttsVariant": {
     "drama3": "Drama 3",
@@ -1267,6 +1267,9 @@
       "sound_only": "Not voiced: only sound tags",
       "no_words": "Not voiced: no words"
     },
+    "ttsIgnored": "The engine will not read: {{tags}}",
+    "ttsIgnoredHint": "Markup of another voice engine: the chosen engine does not read it, so it is left out of the dub",
+    "ttsIgnoredStress": "stress “+”",
     "err": {
       "over_limit": "The glossary has {{total}} entries — more than {{max}}.",
       "empty_term": "Entry {{entry}} has no term.",

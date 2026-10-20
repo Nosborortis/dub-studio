@@ -247,6 +247,10 @@ tts-silent-after-cleanup = no speech left after cleaning the text, so silence: {
     [one] line
    *[other] lines
 } ({ $lines })
+tts-markup-ignored = the voice engine does not read this markup, so it was taken off: { $count } { $count ->
+    [one] line
+   *[other] lines
+} ({ $lines })
 mcp-bad-speaker-count = speaker_count: a whole number from 0 to { $max } is expected
 mcp-speakers-without-diarize = speaker_count above 1 does not go with diarize=false
 
@@ -466,6 +470,10 @@ voices-pack-unpacking = unpacking
 voices-open-zip = opening the zip: { $error }
 voices-create-file = creating { $name }: { $error }
 voices-unpack-file = unpacking { $name }: { $error }
+voices-pack-taken = taken from { $app }: { $count } { $count ->
+    [one] file
+   *[other] files
+}
 voices-pack-done = done: { $count } { $count ->
     [one] file
    *[other] files
@@ -691,9 +699,10 @@ setup-comp-gemma-q5-0-purpose = Translation and on-screen text — more accurate
 setup-comp-gemma-q6-k-purpose = Translation and on-screen text — more accurate still
 setup-comp-gemma-q8-0-purpose = Translation and on-screen text — the most accurate and the heaviest
 setup-comp-parakeet-purpose = Recognises the speech in the video, with the timing of every word
+setup-comp-transcribe-engine-purpose = The transcribe.cpp recognition engine on the GPU; Parakeet runs on it
+setup-comp-transcribe-engine-cpu-purpose = The transcribe.cpp recognition engine on the processor, for a computer without NVIDIA; Parakeet runs on it, slower
 setup-comp-higgs-q6-k-purpose = Voices — a lighter variant than Q8_0
 setup-comp-higgs-q4-k-m-purpose = Voices — the lightest variant
-setup-comp-parakeet-fp32-purpose = Speech recognition — full precision, heavier
 setup-comp-parakeet-ultra-purpose = Speech recognition — a fine-tuned version with fewer mistakes
 setup-comp-whisper-engine-name = Whisper — recognition for other languages
 setup-comp-whisper-engine-purpose = Needed only for languages outside Europe: Parakeet knows 25 European languages, Whisper 99. Download one Whisper model below with it

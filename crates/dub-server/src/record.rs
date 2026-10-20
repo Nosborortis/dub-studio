@@ -327,10 +327,59 @@ pub fn fetch_voice(dir: &std::path::Path, name: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The files of the pack's archive: name, size and SHA-256 of each.
+fn pack_files() -> impl Iterator<Item = (&'static str, u64, &'static str)> {
+    include_str!("voice_pack.tsv").lines().filter_map(|l| {
+        let mut f = l.split('\t');
+        Some((f.next()?, f.next()?.parse().ok()?, f.next()?))
+    })
+}
+
+/// The whole pack linked from the `voices` folder of another program that has every file of it (only the pack's own
+/// files, each by its SHA-256: the rest of that folder is the person's voices and is not touched); the program's id,
+/// empty when the pack is here already, or None when no program has all of it (a file already here and whole is kept).
+fn take_pack_from_neighbor(dir: &std::path::Path) -> Option<String> {
+    let whole = |p: &std::path::Path, size: u64, sha256: &str| {
+        p.metadata().is_ok_and(|m| m.len() == size) && matches!(crate::setup::sha256_file(p, &|| false), Ok(Some(h)) if h == sha256)
+    };
+    let missing: Vec<_> = pack_files().filter(|(name, size, sha256)| !whole(&dir.join(name), *size, sha256)).collect();
+    if missing.is_empty() {
+        return Some(String::new());
+    }
+    for (app, data_dir) in crate::hub::neighbors() {
+        let theirs = data_dir.join("voices");
+        if !missing.iter().all(|(name, size, _)| theirs.join(name).metadata().is_ok_and(|m| m.len() == *size)) {
+            continue;
+        }
+        let taken = missing.iter().all(|(name, size, sha256)| {
+            let (from, to) = (theirs.join(name), dir.join(name));
+            let placed = crate::setup::adopt_file(&from, &to, true).map_err(|e| e.to_string()).and_then(|()| {
+                if whole(&to, *size, sha256) { Ok(()) } else { Err("not the pack's file".to_string()) }
+            });
+            if let Err(e) = &placed {
+                std::fs::remove_file(&to).ok();
+                tracing::warn!("{name} from {app} ({}): {e}", theirs.display());
+            }
+            placed.is_ok()
+        });
+        if taken {
+            tracing::info!("[OK] the voice pack taken from {app} instead of downloading");
+            return Some(app);
+        }
+    }
+    None
+}
+
 /// Скачать пак голосов (VibeVoice) закреплённой ревизии, сверить SHA-256 и распаковать в `dir` (плоско, .mp3+.txt
-/// пары). Прогресс -> cb.
+/// пары). Прогресс -> cb. Пак, который уже лежит у другой программы timoncool (Speech Studio), берётся у неё без закачки.
 pub fn download_pack(dir: &std::path::Path, cb: &dyn Fn(serde_json::Value)) -> Result<serde_json::Value, String> {
     std::fs::create_dir_all(dir).map_err(|e| t!("common-create-dir", path = dir.display().to_string(), error = e.to_string()))?;
+    if let Some(app) = take_pack_from_neighbor(dir) {
+        let count = pack_files().count();
+        let msg = if app.is_empty() { t!("voices-pack-done", count = count) } else { t!("voices-pack-taken", count = count, app = crate::setup::program_name(&app).to_string()) };
+        cb(serde_json::json!({ "stage": "voicepack", "msg": msg, "pct": 100 }));
+        return Ok(serde_json::json!({ "extracted": count, "taken_from": (!app.is_empty()).then_some(app) }));
+    }
     cb(serde_json::json!({ "stage": "voicepack", "msg": t!("voices-pack-downloading"), "pct": 0 }));
     let client = dub_llm::net::builder()
         .timeout(None)
@@ -373,6 +422,15 @@ pub fn download_pack(dir: &std::path::Path, cb: &dyn Fn(serde_json::Value)) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_pack_lists_every_file_of_its_archive_with_size_and_hash() {
+        let files: Vec<_> = pack_files().collect();
+        assert_eq!(files.len(), 100);
+        assert!(files.iter().all(|(name, size, sha)| !name.is_empty() && *size > 0 && sha.len() == 64 && sha.bytes().all(|b| b.is_ascii_hexdigit())));
+        let names: std::collections::HashSet<_> = files.iter().map(|f| f.0).collect();
+        assert_eq!(names.len(), files.len());
+    }
 
     #[test]
     fn voice_downloads_are_pinned_to_a_commit() {

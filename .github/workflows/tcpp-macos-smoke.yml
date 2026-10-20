@@ -1,0 +1,45 @@
+name: tcpp-macos-smoke
+
+# transcribe.cpp on a Mac through dub-tcpp: the engine of the release dub-tcpp names, for this Mac's architecture, hears
+# a spoken sentence with Parakeet v3. Runs only when the tcpp-macos-smoke branch is pushed.
+on:
+  push:
+    branches: [tcpp-macos-smoke]
+
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            engine: libtranscribe_engine-macos-arm64.dylib
+            sha256: 683456e64f2cd16442895e0ac293c146b2b773f18a2aaedd2d7d6b6a90523829
+          - runner: macos-15-intel
+            engine: libtranscribe_engine-macos-x86_64.dylib
+            sha256: 7f9d0d154540673227880fc27a6178e2bd2ebbdff73e8f9a1a18d7cb262a9290
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Engine and model
+        run: |
+          mkdir -p eng
+          curl -fsSL -o eng/libtranscribe_engine.dylib "https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.1.1/${{ matrix.engine }}"
+          echo "${{ matrix.sha256 }}  eng/libtranscribe_engine.dylib" | shasum -a 256 -c
+          curl -fsSL -o parakeet.gguf "https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v3-gguf/resolve/d8d8c32cb2017c57e5307767343e97870f8a7f53/parakeet-tdt-0.6b-v3-Q8_0.gguf"
+          echo "5859f77944efcd8eafa23a6350731960b2b55b2203df51f319665c807d802cc7  parakeet.gguf" | shasum -a 256 -c
+      - name: A spoken sentence, 16 kHz mono f32
+        run: |
+          say -o speech.aiff "In the ancient land of Eldoria there lived a dragon who loved music."
+          afconvert -f WAVE -d LEI16@16000 -c 1 speech.aiff speech.wav
+          python3 -c "import wave,struct; w=wave.open('speech.wav'); d=w.readframes(w.getnframes()); s=struct.unpack('<%dh'%(len(d)//2),d); open('speech.f32','wb').write(struct.pack('<%df'%len(s),*[x/32768 for x in s]))"
+      - name: dub-tcpp hears it
+        env:
+          TCPP_ENGINE_DIR: ${{ github.workspace }}/eng
+          TCPP_MODEL: ${{ github.workspace }}/parakeet.gguf
+          TCPP_PCM: ${{ github.workspace }}/speech.f32
+          TCPP_EXPECT: ancient dragon music
+          # the repository pins the Windows toolchain
+          RUSTUP_TOOLCHAIN: stable
+        run: cargo test -p dub-tcpp --release -- --ignored the_engine_hears_a_recording --nocapture

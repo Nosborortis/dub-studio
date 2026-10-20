@@ -146,7 +146,7 @@ pub fn verify_captions_e2e(
         input: input_video.to_path_buf(),
         work_dir: work_dir.to_path_buf(),
         repo_root: repo_root.to_path_buf(),
-        asr: models::AsrChoice::Parakeet(unused.clone()), // ocr::stage не трогает ASR (verify-путь)
+        asr: models::AsrChoice::unused(), // ocr::stage не трогает ASR (verify-путь)
         sortformer_onnx: unused.clone(),
         llama_bin: dub_llm::resolve_llama_bin(&repo_root.join("tools").join("llama")),
         mt_model,
@@ -183,8 +183,6 @@ pub struct AppState {
     pub web_root: Option<PathBuf>,
     pub opts: Arc<EngineOpts>,
     pub jobs: JobQueue,
-    /// Каталог TDT-модели ASR (analyze). Env DUB_STUDIO_TDT, иначе <models_root>/tdt.
-    pub tdt_dir: PathBuf,
     /// Путь к модели диаризации (Nemotron 3 Diarization .onnx). Env DUB_STUDIO_SORTFORMER, иначе
     /// <models_root>/nemotron-diar/nemotron3_diar_v3.onnx.
     pub sortformer_onnx: PathBuf,
@@ -280,6 +278,7 @@ pub fn set_ort_dylib_env(repo_root: &Path, beside_exe: &Path) {
     if std::env::var_os("ORT_DYLIB_PATH").is_some() {
         return;
     }
+    ORT_PATH_OURS.store(true, std::sync::atomic::Ordering::SeqCst);
     let rt = repo_root.join("models").join("runtime");
     let found = dub_core::runtime::ort_candidates(&repo_root.join("models"))
         .into_iter()
@@ -291,7 +290,28 @@ pub fn set_ort_dylib_env(repo_root: &Path, beside_exe: &Path) {
     .find(|cand| cand.is_file());
     match found {
         Some(cand) => std::env::set_var("ORT_DYLIB_PATH", cand),
-        None => eprintln!("[ERROR] onnxruntime 1.28 not found in {}: recognition and diarization will not start until the ONNX Runtime component is downloaded", rt.display()),
+        None => {
+            // без пути ort взял бы системную 1.17 и упал паникой; путь сборки этой машины даёт ошибку «нет файла»,
+            // а закачка onnxruntime ставит его на скачанную (point_ort)
+            let mut candidates = dub_core::runtime::ort_candidates(&repo_root.join("models"));
+            let expected = if crate::hw::gpu_report().cuda13_ok { candidates.remove(0) } else { candidates.remove(candidates.len() - 1) };
+            eprintln!("[ERROR] onnxruntime 1.28 not found in {}: recognition and diarization will not start until the ONNX Runtime component is downloaded", rt.display());
+            std::env::set_var("ORT_DYLIB_PATH", expected);
+        }
+    }
+}
+
+/// ORT_DYLIB_PATH поставила студия, а не пользователь: только такой путь переставляется после закачки.
+static ORT_PATH_OURS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// После закачки onnxruntime — путь на первую установленную сборку. ort связывается с библиотекой при первом
+/// касании, поэтому перестановка действует, пока ни одна стадия его не тронула.
+pub fn point_ort(repo_root: &Path) {
+    if !ORT_PATH_OURS.load(std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    if let Some(found) = dub_core::runtime::ort_candidates(&repo_root.join("models")).into_iter().find(|cand| cand.is_file()) {
+        std::env::set_var("ORT_DYLIB_PATH", found);
     }
 }
 
@@ -353,6 +373,7 @@ impl AppState {
         }
         let web_root = spa::find_web_root(&repo_root);
         let mroot = models_root(&repo_root);
+        setup::remove_retired(&mroot);
         match credentials::migrate_legacy_selection(&mroot) {
             Ok(moved) if moved.openrouter_key || moved.proxy_password => {
                 tracing::info!("secrets moved from active.json to the secret store: {moved:?}")
@@ -360,9 +381,6 @@ impl AppState {
             Ok(_) => {}
             Err(e) => tracing::error!("secrets from active.json were not moved to the store: {e:#}"),
         }
-        let tdt_dir = std::env::var("DUB_STUDIO_TDT")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| mroot.join("tdt"));
         let sortformer_onnx = std::env::var("DUB_STUDIO_SORTFORMER")
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
@@ -395,7 +413,6 @@ impl AppState {
             web_root,
             opts: Arc::new(EngineOpts::default()),
             jobs: JobQueue::new(),
-            tdt_dir,
             sortformer_onnx,
             llama_bin,
             bsroformer_cli,
@@ -676,6 +693,7 @@ async fn capabilities(State(st): State<AppState>) -> Json<Value> {
         "device": o.device,
         "tts_quant": o.tts_quant,
         "asr_model": o.asr_model,
+        "asr_label": models::resolve_asr_choice(&st.repo_root, &st.models_root, &models::load_selection(&st.models_root)).label(),
         "models": {
             "asr": o.asr_model,
             "llm": o.mt_model_path.to_string_lossy(),
@@ -690,7 +708,7 @@ async fn capabilities(State(st): State<AppState>) -> Json<Value> {
         "asr_engines": ["parakeet","whisper"],
         "whisper_models": ["tiny","base","small","medium","large-v3","large-v3-turbo"],
         // Кванты Whisper (compute_type): float16 / int8_float16 задействуют Tensor Cores на CUDA GPU.
-        "whisper_computes": ["int8","int8_float16","float16","int8_float32","float32"],
+        "whisper_computes": ["int8","int8_float16","int8_float32"],
         // Видимые лимиты RAM (настройки, не авто-магия): против OOM на слабой памяти. "0" = авто (дефолт).
         "llama_ubatches": ["0","512","256","128"],      // prefill-батч Gemma (меньше = меньше RAM)
         "higgs_ref_secs_opts": ["12","8","6","4"],       // длина реф-клипа клона (сек; <12 спасает 32ГБ)
@@ -808,7 +826,9 @@ async fn setup_remove(State(st): State<AppState>, Json(body): Json<Value>) -> Re
 fn open_folder(dir: &Path) -> std::io::Result<()> {
     #[cfg(windows)]
     let cmd = "explorer.exe";
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    let cmd = "open";
+    #[cfg(all(not(windows), not(target_os = "macos")))]
     let cmd = "xdg-open";
     std::process::Command::new(cmd).arg(dir).spawn().map(|_| ())
 }
@@ -822,6 +842,11 @@ async fn setup_open_models(State(st): State<AppState>) -> Response {
             .into_response();
     }
     Json(json!({ "path": dir.to_string_lossy() })).into_response()
+}
+
+/// The recogniser a job runs, read again after `ensure_job_components`: one chosen and downloaded in the job counts.
+fn job_asr(repo_root: &Path, models_root: &Path) -> models::AsrChoice {
+    models::resolve_asr_choice(repo_root, models_root, &models::load_selection(models_root))
 }
 
 /// ON-DEMAND: перед джобой догружаем компоненты, нужные ИМЕННО ДЛЯ ЭТОЙ функции/конфига, если их нет
@@ -852,9 +877,10 @@ fn ensure_job_components(
     if casting && missing("casting") {
         need.push("casting".to_string());
     }
-    // Любая локальная стадия на GPU → полный CUDA-стек: диаризация/ASR грузят onnxruntime-GPU + cuDNN,
-    // ggml-движки (сепарация/Higgs) — cuda-runtime (cudart/cublas/cuFFT). Без cuFFT CUDA-EP не поднимется.
-    let gpu = ["sep_backend", "diar_backend", "asr_backend"]
+    // Сепарация или диаризация на GPU → полный CUDA-стек: диаризация грузит onnxruntime-GPU + cuDNN, ggml-движки
+    // (сепарация/Higgs) — cuda-runtime (cudart/cublas/cuFFT). Без cuFFT CUDA-EP не поднимется. Распознавание на GPU
+    // (transcribe.cpp) берёт из него только cuda-runtime, Whisper — свои библиотеки (whisper-cuda ниже).
+    let gpu = ["sep_backend", "diar_backend"]
         .iter()
         .any(|k| models::stage_backend(models_root, k) == "gpu");
     if gpu {
@@ -864,6 +890,8 @@ fn ensure_job_components(
                 need.push(id.to_string());
             }
         }
+    } else if models::stage_backend(models_root, "asr_backend") == "gpu" && missing("cuda-runtime") {
+        need.push("cuda-runtime".to_string());
     }
     // Whisper на GPU: CTranslate2 требует cuBLAS12 + cuDNN8 РЯДОМ с whisper-faster.exe (наш ONNX-стек
     // выше — CUDA 13, whisper'у не подходит). Без них whisper молча идёт на CPU. Тянем их только когда
@@ -874,6 +902,27 @@ fn ensure_job_components(
         == Some("whisper");
     if asr_whisper && models::stage_backend(models_root, "asr_backend") == "gpu" && missing("whisper-cuda") {
         need.push("whisper-cuda".to_string());
+    }
+    // Whisper chosen → its program and the model the settings name, downloaded on first use as Parakeet's are
+    if asr_whisper && !models::openrouter_asr_on(models_root) {
+        let sel = models::load_selection(models_root);
+        let model = sel.get("whisper_model").and_then(|v| v.as_str()).filter(|m| !m.is_empty()).unwrap_or("large-v3-turbo");
+        for id in ["whisper-engine".to_string(), format!("whisper-{model}")] {
+            if missing(&id) {
+                need.push(id);
+            }
+        }
+    }
+    // Parakeet → its chosen variant and the transcribe.cpp build of the recognition backend (CUDA or CPU), which the
+    // settings may have changed after the first run.
+    if !asr_whisper && !models::openrouter_asr_on(models_root) {
+        if let models::AsrChoice::Ggml { build, model, .. } = models::resolve_asr_choice(repo_root, models_root, &models::load_selection(models_root)) {
+            for id in [build.dir(), model.component] {
+                if missing(id) {
+                    need.push(id.to_string());
+                }
+            }
+        }
     }
     // Диаризация (дубляж/транскрипт) → модель Nemotron 3 Diarization. Её сбой закачки не валит джобу:
     // анализ штатно деградирует в single-speaker и пишет об этом в журнал (см. analyze::run).
@@ -2140,6 +2189,9 @@ async fn analyze_enqueue(st: &AppState, pid: &str, args_json: Value,
         // до анализа. Иначе кастинг «не видел» бы лиц, а GPU-стадии падали бы с ошибкой CUDA.
         ensure_job_components(&paths.repo_root, &paths.models_root, args.casting, analyze::wants_diarization(&args), &cb,
         )?;
+        // the recogniser named at enqueue may have been downloaded just now
+        let mut paths = paths;
+        paths.asr = job_asr(&paths.repo_root, &paths.models_root);
         jobs::check_cancelled()?;
         // Трекинг затрат OpenRouter в ДОЛЛАРАХ (перевод/vision через облако): total_usage до/после.
         let cost_before = openrouter::total_usage_usd(&paths.models_root);
@@ -2378,6 +2430,8 @@ async fn render_enqueue(st: &AppState, pid: &str) -> Result<String, Box<Response
         let cb = |ev: Value| progress(ev);
         // On-demand: GPU-стадии рендера (Higgs TTS / сепарация на CUDA) без CUDA-стека -> догрузить сейчас.
         ensure_job_components(&repo_root_for_job, &paths.models_root, false, false, &cb)?;
+        let mut paths = paths;
+        paths.asr = job_asr(&repo_root_for_job, &paths.models_root);
         jobs::check_cancelled()?;
         // Загрузить свежий Project (правки могли прийти после enqueue).
         let text = std::fs::read_to_string(&proj_path).map_err(|e| e.to_string())?;
@@ -2945,13 +2999,43 @@ fn reveal_in_explorer(path: String) {
                 .arg(format!("/select,{path}"))
                 .spawn();
         }
-        #[cfg(not(windows))]
+        #[cfg(target_os = "macos")]
         {
-            // прочие ОС: открыть родительский каталог (выделение файла непортабельно).
-            let parent = std::path::Path::new(&path).parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from("."));
-            let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
+            let _ = std::process::Command::new("open").arg("-R").arg(&path).spawn();
+        }
+        #[cfg(all(not(windows), not(target_os = "macos")))]
+        {
+            // freedesktop FileManager1.ShowItems выделяет файл (Dolphin, Nautilus, Nemo, Thunar); без него — каталог
+            let path = std::path::Path::new(&path);
+            let shown = std::process::Command::new("dbus-send")
+                .args(["--session", "--print-reply", "--reply-timeout=3000", "--dest=org.freedesktop.FileManager1", "/org/freedesktop/FileManager1", "org.freedesktop.FileManager1.ShowItems"])
+                .arg(format!("array:string:{}", file_uri(path)))
+                .arg("string:")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .is_ok_and(|status| status.success());
+            if !shown {
+                let parent = path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from("."));
+                let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
+            }
         }
     });
+}
+
+/// `file://` и путь, где каждый байт вне незарезервированных экранирован.
+#[cfg(all(not(windows), not(target_os = "macos")))]
+fn file_uri(path: &std::path::Path) -> String {
+    use std::os::unix::ffi::OsStrExt;
+    let mut uri = String::from("file://");
+    for &byte in path.as_os_str().as_bytes() {
+        if byte.is_ascii_alphanumeric() || b"/-._~".contains(&byte) {
+            uri.push(byte as char);
+        } else {
+            uri.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    uri
 }
 
 /// POST /projects/{pid}/reveal — показать файл (по имени в каталоге проекта) в проводнике с выделением.
@@ -3240,11 +3324,10 @@ async fn align_enqueue(st: &AppState, pid: &str) -> Result<String, Box<Response>
         return Err(Box::new((StatusCode::CONFLICT, "project not analyzed yet").into_response(),
         ));
     }
-    let sel = models::load_selection(&st.models_root);
-    let asr = models::resolve_asr_choice(&st.repo_root, &st.models_root, &sel);
     let backend = models::stage_backend(&st.models_root, "asr_backend");
     let dir_for_job = dir.clone();
     let pid_res = pid.to_string();
+    let (repo_root, models_root) = (st.repo_root.clone(), st.models_root.clone());
     let job: jobs::JobFn = Box::new(move |progress: jobs::ProgressFn| {
         let proj = Project::from_json(&std::fs::read_to_string(dir_for_job.join("project.json")).map_err(|e| e.to_string())?,
         )
@@ -3257,6 +3340,8 @@ async fn align_enqueue(st: &AppState, pid: &str) -> Result<String, Box<Response>
             .map(|f| dir_for_job.join(f))
             .find(|p| p.is_file())
             .ok_or_else(|| t!("align-no-vocals"))?;
+        ensure_job_components(&repo_root, &models_root, false, false, &|ev| progress(ev))?;
+        let asr = job_asr(&repo_root, &models_root);
         progress(json!({ "stage": "asr", "msg": t!("align-recognizing") }));
         std::env::set_var("DUB_ASR_BACKEND", &backend);
         let words: Vec<subalign::Heard> = models::build_engine(&asr)
