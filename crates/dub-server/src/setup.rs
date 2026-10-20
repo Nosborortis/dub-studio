@@ -199,16 +199,21 @@ mod platform {
     // GitHub: deno 2.9.7 (denoland/deno) — JS-рантайм, без которого yt-dlp не решает задачи YouTube (yt-dlp-ejs уже внутри
     // yt-dlp.exe; вики yt-dlp EJS: deno не ниже 2.3.0).
     const GH_DENO: &str = "https://github.com/denoland/deno/releases/download/v2.9.7/deno-x86_64-pc-windows-msvc.zip";
-    // transcribe.cpp (fork timoncool/transcribe.cpp, branch studio): libtranscribe and ggml whole in one library,
-    // CUDA 13, sm 75/80/86/89/90/100/120 without PTX; cudart and cuBLAS come from cuda-runtime.
+    // transcribe.cpp (fork timoncool/transcribe.cpp, branch studio, scripts/build-engine-windows.cmd): libtranscribe and
+    // ggml whole in one library. CUDA 13, sm 75/80/86/89/90/100/120 without PTX, cudart and cuBLAS from cuda-runtime;
+    // the CPU build for a computer without a card CUDA 13 runs on.
+    const TCPP_CUDA: dub_asr::tcpp::Download = dub_asr::tcpp::Build::Cuda.download();
     pub const TRANSCRIBE_ENGINE: Parts = Parts {
-        size: 144_462_848,
-        files: &[
-            FileSpec { url: "https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.1.0/transcribe_engine.dll", dest_rel: "models/transcribe-engine/transcribe_engine.dll", size: 144_462_848, sha256: "3dd4a84a225797dd54de41f9a542f5b402270e7ae766348b7882e8d0154b279b", extract: Extract::None },
-        ],
-        markers: &[Marker { rel: "models/transcribe-engine/transcribe_engine.dll", expect: 144_462_848 }],
+        size: TCPP_CUDA.size,
+        files: &[FileSpec { url: TCPP_CUDA.url, dest_rel: "models/transcribe-engine/transcribe_engine.dll", size: TCPP_CUDA.size, sha256: TCPP_CUDA.sha256, extract: Extract::None }],
+        markers: &[Marker { rel: "models/transcribe-engine/transcribe_engine.dll", expect: TCPP_CUDA.size }],
     };
-
+    const TCPP_CPU: dub_asr::tcpp::Download = dub_asr::tcpp::Build::Cpu.download();
+    pub const TRANSCRIBE_ENGINE_CPU: Parts = Parts {
+        size: TCPP_CPU.size,
+        files: &[FileSpec { url: TCPP_CPU.url, dest_rel: "models/transcribe-engine-cpu/transcribe_engine.dll", size: TCPP_CPU.size, sha256: TCPP_CPU.sha256, extract: Extract::None }],
+        markers: &[Marker { rel: "models/transcribe-engine-cpu/transcribe_engine.dll", expect: TCPP_CPU.size }],
+    };
     pub const HIGGS_ENGINE: Parts = Parts {
         size: 129_390_080,
         files: &[
@@ -351,16 +356,21 @@ mod platform {
 
     // Движок Higgs, собранный под Linux из исходника (timoncool/Higgs-Ultimate, sm 75/80/86/89/90/120a): RUNPATH
     // $ORIGIN, CUDA-библиотеки берёт из своего каталога (их кладёт cuda-runtime).
-    // transcribe.cpp (fork timoncool/transcribe.cpp, scripts/build-engine-linux-docker.sh: CUDA 13.3, Ubuntu 22.04,
-    // sm 75/80/86/89/90/100/120): RUNPATH $ORIGIN and ../higgs-engine, where libcudart and libcublas come from cuda-runtime.
+    // transcribe.cpp (fork timoncool/transcribe.cpp, scripts/build-engine-linux-docker.sh: Ubuntu 22.04). CUDA 13.3,
+    // sm 75/80/86/89/90/100/120, RUNPATH $ORIGIN and ../higgs-engine, where libcudart and libcublas come from
+    // cuda-runtime; the CPU build for a computer without a card CUDA 13 runs on.
+    const TCPP_CUDA: dub_asr::tcpp::Download = dub_asr::tcpp::Build::Cuda.download();
     pub const TRANSCRIBE_ENGINE: Parts = Parts {
-        size: 160_907_152,
-        files: &[
-            FileSpec { url: "https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.1.0/libtranscribe_engine.so", dest_rel: "models/transcribe-engine/libtranscribe_engine.so", size: 160_907_152, sha256: "95c5bd50b4ee034826c8cced8faca9680883eb3da13c46932cc61088407f168c", extract: Extract::None },
-        ],
-        markers: &[Marker { rel: "models/transcribe-engine/libtranscribe_engine.so", expect: 160_907_152 }],
+        size: TCPP_CUDA.size,
+        files: &[FileSpec { url: TCPP_CUDA.url, dest_rel: "models/transcribe-engine/libtranscribe_engine.so", size: TCPP_CUDA.size, sha256: TCPP_CUDA.sha256, extract: Extract::None }],
+        markers: &[Marker { rel: "models/transcribe-engine/libtranscribe_engine.so", expect: TCPP_CUDA.size }],
     };
-
+    const TCPP_CPU: dub_asr::tcpp::Download = dub_asr::tcpp::Build::Cpu.download();
+    pub const TRANSCRIBE_ENGINE_CPU: Parts = Parts {
+        size: TCPP_CPU.size,
+        files: &[FileSpec { url: TCPP_CPU.url, dest_rel: "models/transcribe-engine-cpu/libtranscribe_engine.so", size: TCPP_CPU.size, sha256: TCPP_CPU.sha256, extract: Extract::None }],
+        markers: &[Marker { rel: "models/transcribe-engine-cpu/libtranscribe_engine.so", expect: TCPP_CPU.size }],
+    };
     pub const HIGGS_ENGINE: Parts = Parts {
         size: 136_774_464,
         files: &[
@@ -715,8 +725,8 @@ pub fn manifest() -> Vec<Component> {
             markers: &[Marker { rel: "models/asr-gguf-parakeet-v3/parakeet-tdt-0.6b-v3-Q8_0.gguf", expect: 739_508_576 }],
             external_url: None,
         },
-        // Recognition by transcribe.cpp (ggml, CUDA), the same engine and files as Speech Studio (dub_asr::tcpp), so
-        // either program takes them from the other.
+        // Recognition by transcribe.cpp (ggml), the same engine and files as Speech Studio (dub_asr::tcpp), so either
+        // program takes them from the other: the CUDA build on the card, the CPU build without one (asr_backend).
         Component {
             id: "transcribe-engine",
             name: "transcribe.cpp (CUDA)".into(),
@@ -726,6 +736,17 @@ pub fn manifest() -> Vec<Component> {
             size: platform::TRANSCRIBE_ENGINE.size,
             files: platform::TRANSCRIBE_ENGINE.files,
             markers: platform::TRANSCRIBE_ENGINE.markers,
+            external_url: None,
+        },
+        Component {
+            id: "transcribe-engine-cpu",
+            name: "transcribe.cpp (CPU)".into(),
+            purpose: t!("setup-comp-transcribe-engine-cpu-purpose"),
+            requirement: Requirement::Optional,
+            delivery: Delivery::Download,
+            size: platform::TRANSCRIBE_ENGINE_CPU.size,
+            files: platform::TRANSCRIBE_ENGINE_CPU.files,
+            markers: platform::TRANSCRIBE_ENGINE_CPU.markers,
             external_url: None,
         },
         // Альтернативные кванты TTS Higgs (выбор в настройках; своя папка на квант, aux те же).
@@ -1909,7 +1930,7 @@ pub fn setup_status(repo_root: &Path) -> SetupStatus {
         }
         let is_gemma = c.id.starts_with("gemma") || c.id == "llama";
         let is_higgs = c.id.starts_with("higgs");
-        let is_asr = c.id.starts_with("parakeet") || c.id.starts_with("whisper") || c.id == "transcribe-engine";
+        let is_asr = c.id.starts_with("parakeet") || c.id.starts_with("whisper") || c.id.starts_with("transcribe-engine");
         if (cloud_llm && is_gemma) || (cloud_tts && is_higgs) || (cloud_asr && is_asr) {
             c.requirement = Requirement::Optional;
         }
@@ -1919,7 +1940,13 @@ pub fn setup_status(repo_root: &Path) -> SetupStatus {
     // первом запуске), а CUDA-движок + CUDA-рантайм — необязательными (не тянем лишние гигабайты).
     // В GPU-режиме наоборот: CPU-движок не нужен.
     let backend = crate::models::local_backend(&mroot);
+    let asr_cpu = crate::models::tcpp_build(&mroot) == dub_asr::tcpp::Build::Cpu;
     for c in comps.iter_mut() {
+        if !cloud_asr && c.id == "transcribe-engine" {
+            c.requirement = if asr_cpu { Requirement::Optional } else { Requirement::Required };
+        } else if !cloud_asr && c.id == "transcribe-engine-cpu" {
+            c.requirement = if asr_cpu { Requirement::Required } else { Requirement::Optional };
+        }
         if backend == "cpu" {
             if c.id == "bsroformer-engine-cpu" {
                 c.requirement = Requirement::Recommended;
@@ -3434,14 +3461,18 @@ mod tests {
     fn transcribe_cpp_components_are_dub_asrs() {
         for (id, model) in [("parakeet", "parakeet-v3"), ("parakeet-ultra", "parakeet-ultra")] {
             let m = dub_asr::tcpp::model(model).unwrap();
+            assert_eq!(m.component, id);
             let c = comp(id);
             let [f] = c.files else { panic!("{id}: one file") };
             assert_eq!((f.url, f.size, f.sha256), (m.download.url, m.download.size, m.download.sha256), "{id}");
             assert_eq!(std::path::Path::new(f.dest_rel), std::path::Path::new("models").join(m.dir).join(m.file), "{id}");
         }
-        let e = comp("transcribe-engine");
-        let d = &dub_asr::tcpp::ENGINE;
-        assert!(e.files.iter().any(|f| (f.url, f.size, f.sha256) == (d.url, d.size, d.sha256)));
+        for b in dub_asr::tcpp::Build::ALL.into_iter().filter(|b| *b != dub_asr::tcpp::Build::Vulkan) {
+            let d = b.download();
+            let [f] = comp(b.dir()).files else { panic!("{b:?}: one file") };
+            assert_eq!((f.url, f.size, f.sha256), (d.url, d.size, d.sha256), "{b:?}");
+            assert_eq!(std::path::Path::new(f.dest_rel), std::path::Path::new("models").join(b.dir()).join(dub_asr::tcpp::LIBRARY), "{b:?}");
+        }
     }
 
     /// Имена архивов в каталоге закачек не пересекаются (два _engine.zip разных движков).

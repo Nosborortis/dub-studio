@@ -475,8 +475,7 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
             );
           })}
         </div>
-        {/* Whisper — на чём считать: свои табы устройства; Parakeet на transcribe.cpp идёт на видеокарте. */}
-        {selv("or_asr_on") !== "1" && asrEngine === "whisper" && <BackendTabs k="asr_backend" />}
+        {selv("or_asr_on") !== "1" && <BackendTabs k="asr_backend" />}
         {selv("or_asr_on") === "1" ? (
           <div className={`${orRowCls} space-y-2`}>
             {orModelSelect("asr", "or_asr", t("providers.pickAsrModel"))}
@@ -484,7 +483,7 @@ function ModelsSection({ part = "models" }: { part?: "models" | "cloud" }) {
           </div>
         ) : asrEngine === "parakeet" ? (
           <>
-            {rowOf("transcribe-engine")}
+            {get("transcribe-engine-cpu")?.requirement === "required" ? rowOf("transcribe-engine-cpu") : rowOf("transcribe-engine")}
             <VariantPicker base="Parakeet-TDT 0.6B v3" ids={["parakeet", "parakeet-ultra"]} i18n={ASR_VARIANT_I18N} />
           </>
         ) : (

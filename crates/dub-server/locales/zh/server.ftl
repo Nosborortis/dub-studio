@@ -530,6 +530,7 @@ setup-comp-gemma-q6-k-purpose = 翻译与画面文字——更加准确
 setup-comp-gemma-q8-0-purpose = 翻译与画面文字——最准确，也最大
 setup-comp-parakeet-purpose = 识别视频中的语音，并给出每个词的时间
 setup-comp-transcribe-engine-purpose = GPU 上的 transcribe.cpp 识别引擎；Parakeet 在它上面运行
+setup-comp-transcribe-engine-cpu-purpose = 处理器上的 transcribe.cpp 识别引擎，适用于没有 NVIDIA 显卡的电脑；Parakeet 在它上面运行，较慢
 setup-comp-higgs-q6-k-purpose = 配音——比 Q8_0 更轻的版本
 setup-comp-higgs-q4-k-m-purpose = 配音——最轻的版本
 setup-comp-parakeet-ultra-purpose = 语音识别——微调版本，错误更少

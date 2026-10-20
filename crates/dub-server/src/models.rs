@@ -248,6 +248,11 @@ pub fn stage_backend(mroot: &Path, key: &str) -> &'static str {
         .unwrap_or(if crate::hw::gpu_report().cuda13_ok { "gpu" } else { "cpu" })
 }
 
+/// Сборка transcribe.cpp под backend распознавания: GPU — CUDA, CPU — CPU-сборка.
+pub fn tcpp_build(mroot: &Path) -> dub_asr::tcpp::Build {
+    if stage_backend(mroot, "asr_backend") == "cpu" { dub_asr::tcpp::Build::Cpu } else { dub_asr::tcpp::Build::Cuda }
+}
+
 /// Глобальный backend локальных стадий (обратная совместимость: пресеты/старые вызовы).
 /// Per-stage: `stage_backend(mroot, "<sep|diar|asr>_backend")`.
 pub fn local_backend(mroot: &Path) -> &'static str {
@@ -553,8 +558,8 @@ pub fn higgs_ref_secs(mroot: &Path) -> f64 {
 /// Выбор ASR-движка для одной джобы: Parakeet на transcribe.cpp (GGUF) либо Whisper (бинарь + модель + квант + девайс).
 #[derive(Debug, Clone)]
 pub enum AsrChoice {
-    /// A GGUF model run by transcribe.cpp on the GPU (`dub_asr::tcpp`).
-    Ggml { models_root: PathBuf, model: &'static dub_asr::tcpp::Model },
+    /// A GGUF model run by transcribe.cpp (`dub_asr::tcpp`), on the build of the recognition backend.
+    Ggml { models_root: PathBuf, build: dub_asr::tcpp::Build, model: &'static dub_asr::tcpp::Model },
     Whisper { bin: PathBuf, model_dir: PathBuf, model: String, compute: String, device: String,
     },
 }
@@ -583,7 +588,7 @@ impl AsrChoice {
 
     /// A choice for a job that never recognises anything (verification, composition): Parakeet v3 under no folder.
     pub fn unused() -> AsrChoice {
-        AsrChoice::Ggml { models_root: PathBuf::new(), model: dub_asr::tcpp::model("parakeet-v3").expect("parakeet-v3 is in dub_asr::tcpp::MODELS") }
+        AsrChoice::Ggml { models_root: PathBuf::new(), build: dub_asr::tcpp::Build::Cuda, model: dub_asr::tcpp::model("parakeet-v3").expect("parakeet-v3 is in dub_asr::tcpp::MODELS") }
     }
 }
 
@@ -661,7 +666,7 @@ pub fn resolve_asr_choice(repo_root: &Path, mroot: &Path, sel: &Value) -> AsrCho
     let model = dub_asr::tcpp::chosen(pick(sel, "asr_engine").unwrap_or(""), pick(sel, "asr"))
         .or_else(|| dub_asr::tcpp::model("parakeet-v3"))
         .expect("parakeet-v3 is in dub_asr::tcpp::MODELS");
-    AsrChoice::Ggml { models_root: mroot.to_path_buf(), model }
+    AsrChoice::Ggml { models_root: mroot.to_path_buf(), build: tcpp_build(mroot), model }
 }
 
 /// Лежат ли рядом с whisper-faster.exe CUDA-библиотеки CTranslate2 (cuBLAS 11/12 + cuDNN).
@@ -696,7 +701,7 @@ fn whisper_cuda_libs_present(bin: &std::path::Path) -> bool {
 /// Построить ASR-движок из выбора (boxed trait-object): analyze не знает деталей резолва.
 pub fn build_engine(choice: &AsrChoice) -> Box<dyn dub_asr::AsrEngine> {
     match choice {
-        AsrChoice::Ggml { models_root, model } => Box::new(dub_asr::tcpp::TcppEngine::new(models_root, model)),
+        AsrChoice::Ggml { models_root, build, model } => Box::new(dub_asr::tcpp::TcppEngine::new(models_root, *build, model)),
         AsrChoice::Whisper { bin, model_dir, model, compute, device,
         } => Box::new(dub_asr::WhisperAsr::new(bin, model_dir, model, compute, device,
         )),

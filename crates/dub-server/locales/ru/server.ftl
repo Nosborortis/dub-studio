@@ -698,6 +698,7 @@ setup-comp-gemma-q6-k-purpose = Перевод и надписи — ещё то
 setup-comp-gemma-q8-0-purpose = Перевод и надписи — самый точный и самый тяжёлый
 setup-comp-parakeet-purpose = Распознаёт речь в ролике с точным временем каждого слова
 setup-comp-transcribe-engine-purpose = Движок распознавания transcribe.cpp на видеокарте; на нём работает Parakeet
+setup-comp-transcribe-engine-cpu-purpose = Движок распознавания transcribe.cpp на процессоре, для компьютера без NVIDIA; на нём работает Parakeet, медленнее
 setup-comp-higgs-q6-k-purpose = Озвучка — вариант полегче Q8_0
 setup-comp-higgs-q4-k-m-purpose = Озвучка — самый лёгкий вариант
 setup-comp-parakeet-ultra-purpose = Распознавание речи — дообученная версия, меньше ошибок

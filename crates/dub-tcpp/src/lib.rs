@@ -1,4 +1,4 @@
-//! Распознавание речи через transcribe.cpp (ggml, CUDA) для всех программ: Dub Studio, Speech Studio, музыкальных
+//! Распознавание речи через transcribe.cpp (ggml: CUDA, Vulkan, CPU) для всех программ: Dub Studio, Speech Studio, музыкальных
 //! студий. Только загрузка движка во время работы (`libloading`), без ONNX Runtime: программа запускается без движка,
 //! движок и модели скачиваются компонентами.
 
@@ -7,8 +7,6 @@ use std::ffi::{c_char, c_int, CStr, CString};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-/// Папка движка в каталоге моделей.
-pub const ENGINE_DIR: &str = "transcribe-engine";
 #[cfg(windows)]
 pub const LIBRARY: &str = "transcribe_engine.dll";
 #[cfg(not(windows))]
@@ -23,18 +21,69 @@ pub struct Download {
     pub sha256: &'static str,
 }
 
-#[cfg(windows)]
-pub const ENGINE: Download = Download {
-    url: "https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.1.0/transcribe_engine.dll",
-    size: 144_462_848,
-    sha256: "3dd4a84a225797dd54de41f9a542f5b402270e7ae766348b7882e8d0154b279b",
-};
-#[cfg(not(windows))]
-pub const ENGINE: Download = Download {
-    url: "https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.1.0/libtranscribe_engine.so",
-    size: 160_907_152,
-    sha256: "95c5bd50b4ee034826c8cced8faca9680883eb3da13c46932cc61088407f168c",
-};
+/// Сборка движка: CUDA (NVIDIA), Vulkan с CPU (AMD, Intel), CPU (без годной видеокарты). Какую ставить и грузить,
+/// программа решает по своему железу; у каждой своя папка в каталоге моделей, и другая сборка за неё не подставляется.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Build {
+    Cuda,
+    Vulkan,
+    Cpu,
+}
+
+impl Build {
+    pub const ALL: [Build; 3] = [Build::Cuda, Build::Vulkan, Build::Cpu];
+
+    /// Папка сборки в каталоге моделей (= id компонента).
+    pub fn dir(self) -> &'static str {
+        match self {
+            Build::Cuda => "transcribe-engine",
+            Build::Vulkan => "transcribe-engine-vulkan",
+            Build::Cpu => "transcribe-engine-cpu",
+        }
+    }
+
+    #[cfg(windows)]
+    pub const fn download(self) -> Download {
+        match self {
+            Build::Cuda => Download {
+                url: "https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.1.1/transcribe_engine.dll",
+                size: 144_513_536,
+                sha256: "80b90f1294f7d63dfb658fb5ebc6e06627d3d97931a2552bb8553deb7eeb9b52",
+            },
+            Build::Vulkan => Download {
+                url: "https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.1.1/transcribe_engine-vulkan.dll",
+                size: 48_914_432,
+                sha256: "55c1fadb50f74128e796e30f908b833935b4f32a01b8d30efc19baed79a5c5f0",
+            },
+            Build::Cpu => Download {
+                url: "https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.1.1/transcribe_engine-cpu.dll",
+                size: 3_666_432,
+                sha256: "92511dcc9490fb4deb75c0d31c78de21ee826e50d90db1ffbeeff23865602be4",
+            },
+        }
+    }
+
+    #[cfg(not(windows))]
+    pub const fn download(self) -> Download {
+        match self {
+            Build::Cuda => Download {
+                url: "https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.1.1/libtranscribe_engine.so",
+                size: 160_931_720,
+                sha256: "1dff339818952e1cf547d85bb216dae36dccf1d8654612f2197f98a75950368e",
+            },
+            Build::Vulkan => Download {
+                url: "https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.1.1/libtranscribe_engine-vulkan.so",
+                size: 50_963_160,
+                sha256: "029377f780bf97a5c794f7ed12fcac39d318f6c594f0fc2d40b5b2fc58283ec6",
+            },
+            Build::Cpu => Download {
+                url: "https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.1.1/libtranscribe_engine-cpu.so",
+                size: 5_002_200,
+                sha256: "8120113acb4f9a7b4b6c623e5e758b9260883ab3467eed07f712d6cb28f66c4f",
+            },
+        }
+    }
+}
 
 /// Модель распознавания на transcribe.cpp: её id, имя, папка (= id компонента) и файл в каталоге моделей, закачка и
 /// языки из карточки (пусто — любой).
@@ -43,6 +92,8 @@ pub struct Model {
     pub id: &'static str,
     pub name: &'static str,
     pub dir: &'static str,
+    /// Компонент программы, что скачивает модель: один у всех программ, поэтому соседи узнают файлы друг друга.
+    pub component: &'static str,
     pub file: &'static str,
     pub download: Download,
     pub languages: &'static [&'static str],
@@ -53,6 +104,7 @@ pub const MODELS: &[Model] = &[
         id: "parakeet-v3",
         name: "Parakeet TDT v3",
         dir: "asr-gguf-parakeet-v3",
+        component: "parakeet",
         file: "parakeet-tdt-0.6b-v3-Q8_0.gguf",
         download: Download {
             url: "https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v3-gguf/resolve/d8d8c32cb2017c57e5307767343e97870f8a7f53/parakeet-tdt-0.6b-v3-Q8_0.gguf",
@@ -65,6 +117,7 @@ pub const MODELS: &[Model] = &[
         id: "parakeet-ultra",
         name: "Parakeet Ultra",
         dir: "asr-gguf-parakeet-ultra",
+        component: "parakeet-ultra",
         file: "parakeet-ultra-Q8_0.gguf",
         download: Download {
             url: "https://huggingface.co/handy-computer/parakeet-ultra-gguf/resolve/a1539be1b849ea7463b88343e5277b373d0c4ea9/parakeet-ultra-Q8_0.gguf",
@@ -77,6 +130,7 @@ pub const MODELS: &[Model] = &[
         id: "nemotron",
         name: "Nemotron 3.5",
         dir: "asr-gguf-nemotron",
+        component: "asr-gguf-nemotron",
         file: "nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf",
         download: Download {
             url: "https://huggingface.co/handy-computer/nemotron-3.5-asr-streaming-0.6b-gguf/resolve/53ce288f69326b415aeef030cfcb02a08a8096dd/nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf",
@@ -105,16 +159,16 @@ pub fn chosen(engine: &str, variant: Option<&str>) -> Option<&'static Model> {
     }
 }
 
-pub fn engine_dir(models_root: &Path) -> PathBuf {
-    models_root.join(ENGINE_DIR)
+pub fn engine_dir(models_root: &Path, build: Build) -> PathBuf {
+    models_root.join(build.dir())
 }
 
 pub fn model_path(models_root: &Path, m: &Model) -> PathBuf {
     models_root.join(m.dir).join(m.file)
 }
 
-pub fn installed(models_root: &Path, m: &Model) -> bool {
-    engine_dir(models_root).join(LIBRARY).is_file() && model_path(models_root, m).is_file()
+pub fn installed(models_root: &Path, build: Build, m: &Model) -> bool {
+    engine_dir(models_root, build).join(LIBRARY).is_file() && model_path(models_root, m).is_file()
 }
 
 /// Вспомогательная модель transcribe.cpp: разметка речи (Silero VAD v6.2, только F32, считается на CPU) и определение
@@ -349,15 +403,19 @@ struct Api {
 /// Куда читается структура возможностей движка: с запасом на её рост, первые поля читает `Capabilities`.
 type CapsBuffer = [u64; 64];
 
-/// Библиотека грузится один раз на процесс: статический инициализатор ggml второй загрузки не переживает.
-static LOADED: Mutex<Option<(Library, Api)>> = Mutex::new(None);
+/// Каждая сборка грузится один раз на процесс и не выгружается (статический инициализатор ggml второй загрузки той же
+/// библиотеки не переживает); смена сборки в настройках берёт другую, уже загруженную или новую.
+static LOADED: Mutex<Vec<(PathBuf, Library, Api)>> = Mutex::new(Vec::new());
 
 fn library(dir: &Path) -> Result<Api, String> {
     let mut loaded = LOADED.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some((_, api)) = loaded.as_ref() {
+    if let Some((_, _, api)) = loaded.iter().find(|(d, _, _)| d == dir) {
         return Ok(*api);
     }
     let path = dir.join(LIBRARY);
+    if !path.is_file() {
+        return Err(format!("transcribe.cpp: the engine is not installed: {}", path.display()));
+    }
     let lib = unsafe { Library::new(&path) }.map_err(|e| format!("{}: {e}", path.display()))?;
     let api = unsafe {
         macro_rules! sym {
@@ -433,14 +491,14 @@ fn library(dir: &Path) -> Result<Api, String> {
     // the load params grow at their end (`no_mmap` came after engine-0.1.0): the library stamps its own size, and only the
     // backend and the device before it are set here
     let load = unsafe { (api.abi_size)(ABI_MODEL_LOAD_PARAMS) };
-    if load < std::mem::offset_of!(LoadParams, no_mmap) {
-        return Err(format!("transcribe.cpp {}: its model load params struct is {load} bytes, shorter than the backend field needs", path.display()));
+    if load < std::mem::offset_of!(LoadParams, no_mmap) || load > std::mem::size_of::<LoadParams>() {
+        return Err(format!("transcribe.cpp {}: its model load params struct is {load} bytes, ours {}", path.display(), std::mem::size_of::<LoadParams>()));
     }
     let caps = unsafe { (api.abi_size)(ABI_CAPABILITIES) };
     if caps < std::mem::size_of::<Capabilities>() || caps > std::mem::size_of::<CapsBuffer>() {
         return Err(format!("transcribe.cpp {}: its capabilities struct is {caps} bytes, we read {}..{}", path.display(), std::mem::size_of::<Capabilities>(), std::mem::size_of::<CapsBuffer>()));
     }
-    *loaded = Some((lib, api));
+    loaded.push((dir.to_path_buf(), lib, api));
     Ok(api)
 }
 
@@ -491,6 +549,9 @@ impl TcppAsr {
     /// Загрузить модель `model` движком из `engine_dir`.
     pub fn load(engine_dir: &Path, model: &Path) -> Result<TcppAsr, String> {
         let api = library(engine_dir)?;
+        if !model.is_file() {
+            return Err(format!("transcribe.cpp: the model is not downloaded: {}", model.display()));
+        }
         let c_path = CString::new(model.to_string_lossy().as_bytes()).map_err(|e| e.to_string())?;
         let status = |s: c_int| text(unsafe { (api.status_string)(s) });
         let mut raw: *mut RawModel = std::ptr::null_mut();
@@ -759,6 +820,9 @@ impl TcppStream {
 
 /// Мелкая модель (разметка речи, определение языка) — на CPU: поднять её на видеокарту дольше, чем она считает.
 fn load_helper(api: &Api, path: &Path) -> Result<*mut RawModel, String> {
+    if !path.is_file() {
+        return Err(format!("transcribe.cpp: the model is not downloaded: {}", path.display()));
+    }
     let c_path = CString::new(path.to_string_lossy().as_bytes()).map_err(|e| e.to_string())?;
     let mut raw: *mut RawModel = std::ptr::null_mut();
     let mut lp = std::mem::MaybeUninit::<LoadParams>::zeroed();
@@ -791,13 +855,14 @@ impl Drop for Vad {
     }
 }
 
-static VAD_LOADED: Mutex<Option<(PathBuf, Vad)>> = Mutex::new(None);
+static VAD_LOADED: Mutex<Option<((PathBuf, PathBuf), Vad)>> = Mutex::new(None);
 
 /// Вероятность речи на каждый кадр в 32 мс (512 отсчётов 16 кГц моно) по Silero VAD v6.2 из `model`.
 pub fn vad_probabilities(engine_dir: &Path, model: &Path, pcm: &[f32]) -> Result<Vec<f32>, String> {
     let api = library(engine_dir)?;
+    let key = (engine_dir.to_path_buf(), model.to_path_buf());
     let mut slot = VAD_LOADED.lock().unwrap_or_else(|e| e.into_inner());
-    if slot.as_ref().is_none_or(|(p, _)| p != model) {
+    if slot.as_ref().is_none_or(|(k, _)| *k != key) {
         *slot = None;
         let raw = load_helper(&api, model)?;
         let mut session: *mut RawVad = std::ptr::null_mut();
@@ -806,7 +871,7 @@ pub fn vad_probabilities(engine_dir: &Path, model: &Path, pcm: &[f32]) -> Result
             unsafe { (api.model_free)(raw) };
             return Err(format!("transcribe.cpp {}: {}", model.display(), text(unsafe { (api.status_string)(s) })));
         }
-        *slot = Some((model.to_path_buf(), Vad { api, model: raw, session }));
+        *slot = Some((key, Vad { api, model: raw, session }));
     }
     let vad = &slot.as_ref().expect("loaded above").1;
     let mut probs = Vec::with_capacity(pcm.len() / 512 + 1);
@@ -817,10 +882,15 @@ pub fn vad_probabilities(engine_dir: &Path, model: &Path, pcm: &[f32]) -> Result
         let mut r = std::mem::MaybeUninit::<VadResult>::zeroed();
         unsafe {
             (api.vad_result_init)(r.as_mut_ptr());
-            if (api.vad_get_result)(vad.session, r.as_mut_ptr()) != 0 {
-                return Ok(());
+            let got = (api.vad_get_result)(vad.session, r.as_mut_ptr());
+            if got != 0 {
+                return Err(format!("transcribe.cpp vad result: {}", text((api.status_string)(got))));
             }
-            let n = r.assume_init().n_probs.max(0) as usize;
+            let r = r.assume_init();
+            if r.n_probs > 0 && r.first_frame != probs.len() as i64 {
+                return Err(format!("transcribe.cpp vad: frame {} came after {} frames", r.first_frame, probs.len()));
+            }
+            let n = r.n_probs.max(0) as usize;
             let p = (api.vad_probs)(vad.session);
             if n > 0 && !p.is_null() {
                 probs.extend_from_slice(std::slice::from_raw_parts(p, n));
@@ -853,7 +923,7 @@ impl Drop for LangId {
     }
 }
 
-static LANGID_LOADED: Mutex<Option<(PathBuf, LangId)>> = Mutex::new(None);
+static LANGID_LOADED: Mutex<Option<((PathBuf, PathBuf), LangId)>> = Mutex::new(None);
 
 /// Короче этого (0,5 с) определение языка не слушает: `INPUT_TOO_SHORT`.
 pub const LANGID_MIN_SAMPLES: usize = 8_000;
@@ -869,8 +939,9 @@ pub struct LangGuess {
 /// Язык речи 16 кГц моно по VoxLingua107 из `model` (первые 30 с), выбор среди `allowed` (пусто — все 107).
 pub fn detect_language(engine_dir: &Path, model: &Path, pcm: &[f32], allowed: &[&str]) -> Result<LangGuess, String> {
     let api = library(engine_dir)?;
+    let key = (engine_dir.to_path_buf(), model.to_path_buf());
     let mut slot = LANGID_LOADED.lock().unwrap_or_else(|e| e.into_inner());
-    if slot.as_ref().is_none_or(|(p, _)| p != model) {
+    if slot.as_ref().is_none_or(|(k, _)| *k != key) {
         *slot = None;
         let raw = load_helper(&api, model)?;
         let mut session: *mut RawLangId = std::ptr::null_mut();
@@ -879,7 +950,7 @@ pub fn detect_language(engine_dir: &Path, model: &Path, pcm: &[f32], allowed: &[
             unsafe { (api.model_free)(raw) };
             return Err(format!("transcribe.cpp {}: {}", model.display(), text(unsafe { (api.status_string)(s) })));
         }
-        *slot = Some((model.to_path_buf(), LangId { api, model: raw, session }));
+        *slot = Some((key, LangId { api, model: raw, session }));
     }
     let id = &slot.as_ref().expect("loaded above").1;
     let codes: Vec<CString> = allowed.iter().map(|c| CString::new(*c).map_err(|e| e.to_string())).collect::<Result<_, _>>()?;
@@ -924,19 +995,20 @@ pub fn detect_language(engine_dir: &Path, model: &Path, pcm: &[f32], allowed: &[
 }
 
 /// Загруженная модель процесса: одна на видеокарте, общая для всех задач, пока не попросят другую или `unload`.
-static SHARED: Mutex<Option<(PathBuf, Arc<Mutex<TcppAsr>>)>> = Mutex::new(None);
+static SHARED: Mutex<Option<((PathBuf, PathBuf), Arc<Mutex<TcppAsr>>)>> = Mutex::new(None);
 
-/// Модель `model` из кэша процесса; другая модель в кэше выгружается.
+/// Модель `model` сборки `engine_dir` из кэша процесса; другая модель или сборка в кэше выгружается.
 pub fn shared(engine_dir: &Path, model: &Path) -> Result<Arc<Mutex<TcppAsr>>, String> {
+    let key = (engine_dir.to_path_buf(), model.to_path_buf());
     let mut slot = SHARED.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some((path, asr)) = slot.as_ref() {
-        if path == model {
+    if let Some((k, asr)) = slot.as_ref() {
+        if *k == key {
             return Ok(asr.clone());
         }
     }
     *slot = None;
     let asr = Arc::new(Mutex::new(TcppAsr::load(engine_dir, model)?));
-    *slot = Some((model.to_path_buf(), asr.clone()));
+    *slot = Some((key, asr.clone()));
     Ok(asr)
 }
 
@@ -955,10 +1027,32 @@ mod tests {
         dirs.sort();
         dirs.dedup();
         assert_eq!(dirs.len(), MODELS.len());
+        let mut components: Vec<&str> = MODELS.iter().map(|m| m.component).collect();
+        components.sort();
+        components.dedup();
+        assert_eq!(components.len(), MODELS.len());
         for m in MODELS {
             assert!(m.download.url.contains("/resolve/") && m.download.url.ends_with(m.file), "{}", m.id);
             assert_eq!(m.download.sha256.len(), 64, "{}", m.id);
             assert!(m.download.size > 0, "{}", m.id);
+        }
+    }
+
+    #[test]
+    fn every_build_has_its_own_folder_and_a_pinned_download() {
+        let mut dirs: Vec<&str> = Build::ALL.iter().map(|b| b.dir()).collect();
+        dirs.sort();
+        dirs.dedup();
+        assert_eq!(dirs.len(), Build::ALL.len());
+        let mut urls: Vec<&str> = Build::ALL.iter().map(|b| b.download().url).collect();
+        urls.sort();
+        urls.dedup();
+        assert_eq!(urls.len(), Build::ALL.len(), "one release holds every build, so their file names differ");
+        for b in Build::ALL {
+            let d = b.download();
+            assert!(d.url.contains("/releases/download/engine-"), "{b:?}");
+            assert_eq!(d.sha256.len(), 64, "{b:?}");
+            assert!(d.size > 0, "{b:?}");
         }
     }
 

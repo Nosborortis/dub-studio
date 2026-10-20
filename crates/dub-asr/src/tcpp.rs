@@ -2,8 +2,8 @@
 //! распознавании, слова режутся на реплики как у остальных движков.
 
 pub use dub_tcpp::{
-    chosen, detect_language, engine_dir, helper_path, installed, knows, model, model_path, shared, unload, vad_probabilities, Download, Helper,
-    LangGuess, Model, TcppAsr, TcppStream, ENGINE, ENGINE_DIR, LANGID, LANGID_MIN_SAMPLES, LIBRARY, MODELS, VAD,
+    chosen, detect_language, engine_dir, helper_path, installed, knows, model, model_path, shared, unload, vad_probabilities, Build, Download,
+    Helper, LangGuess, Model, TcppAsr, TcppStream, LANGID, LANGID_MIN_SAMPLES, LIBRARY, MODELS, VAD,
 };
 
 use crate::{segment_words, AsrEngine, AsrError, Segment, SpeakerSegment, Turn, Word, SEG_MAX_DUR, SEG_MAX_GAP};
@@ -25,8 +25,8 @@ pub struct TcppEngine {
 }
 
 impl TcppEngine {
-    pub fn new(models_root: &Path, m: &Model) -> TcppEngine {
-        TcppEngine { engine_dir: engine_dir(models_root), model: model_path(models_root, m) }
+    pub fn new(models_root: &Path, build: Build, m: &Model) -> TcppEngine {
+        TcppEngine { engine_dir: engine_dir(models_root, build), model: model_path(models_root, m) }
     }
 
     fn words(&self, pcm: &[f32], lang: &str) -> Result<Vec<Word>, AsrError> {

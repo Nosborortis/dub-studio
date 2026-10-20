@@ -692,6 +692,7 @@ setup-comp-gemma-q6-k-purpose = Translation and on-screen text — more accurate
 setup-comp-gemma-q8-0-purpose = Translation and on-screen text — the most accurate and the heaviest
 setup-comp-parakeet-purpose = Recognises the speech in the video, with the timing of every word
 setup-comp-transcribe-engine-purpose = The transcribe.cpp recognition engine on the GPU; Parakeet runs on it
+setup-comp-transcribe-engine-cpu-purpose = The transcribe.cpp recognition engine on the processor, for a computer without NVIDIA; Parakeet runs on it, slower
 setup-comp-higgs-q6-k-purpose = Voices — a lighter variant than Q8_0
 setup-comp-higgs-q4-k-m-purpose = Voices — the lightest variant
 setup-comp-parakeet-ultra-purpose = Speech recognition — a fine-tuned version with fewer mistakes

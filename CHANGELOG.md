@@ -9,9 +9,11 @@ release notes on GitHub are taken from the release's section.
 ### Changed
 
 - **Speech recognition on transcribe.cpp.** Parakeet-TDT v3 and Parakeet Ultra run as GGUF Q8_0 on the transcribe.cpp engine instead of ONNX Runtime, and the model stays loaded between jobs instead of loading for each one; the full-precision fp32 variants are gone, a choice of them now takes the Q8_0 of the same model. Whisper stays on faster-whisper for its word times. The engine and the models are the ones Speech Studio uses, so either program takes them from the other. Checking the voiced lines by ear recognises them in batches.
+- **Recognition without an NVIDIA card.** transcribe.cpp comes in a CUDA build and a processor build; the one for where recognition runs (Settings - Models, Recognition: GPU or CPU, or Auto by the card) is the one downloaded and used, and switching takes effect on the next job without a restart.
 
 ### Fixed
 
+- **A recognition model chosen but not downloaded is downloaded before the job**, in analysis and in subtitle alignment, instead of failing with "TDT model path must be a directory"; so is the engine build of the chosen backend.
 - **The hardware preset names a card's memory as its box does**: an RTX 4090 is 24 GB, not 26 (memory is counted in 2³⁰-byte gigabytes, as the resource monitor already did); so is the diagnostics report.
 - **The first-run screen's component ticks and Download buttons carry the component's name**, so an agent and a screen reader know which one they are; so do the Download and Re-download buttons in Settings - Models.
 
