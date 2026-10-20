@@ -1640,7 +1640,7 @@ pub struct ImportReport {
 /// Положить src на место dest: жёсткая ссылка (тот же том — мгновенно и без второй копии гигабайт), иначе
 /// копия через .part + rename (частичной копии под финальным именем не бывает). Без `copy` — только ссылка:
 /// автоподхват у соседних программ не тратит гигабайты места молча.
-fn adopt_file(src: &Path, dest: &Path, copy: bool) -> std::io::Result<()> {
+pub(crate) fn adopt_file(src: &Path, dest: &Path, copy: bool) -> std::io::Result<()> {
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -1713,6 +1713,21 @@ pub fn import_from_dir(repo_root: &Path, src_dir: &Path, only: Option<&str>, cop
 fn taken() -> &'static Mutex<std::collections::BTreeMap<String, String>> {
     static TAKEN: OnceLock<Mutex<std::collections::BTreeMap<String, String>>> = OnceLock::new();
     TAKEN.get_or_init(Default::default)
+}
+
+/// A program's name by its id (CONTRACT.md, "Program ids").
+pub fn program_name(id: &str) -> &str {
+    match id {
+        "yue2" => "YuE2 Studio",
+        "minimax" => "MiniMax Music3 Studio",
+        "ace" => "ACE-Step Studio",
+        "dub" => "Dub Studio",
+        "speech" => "Speech Studio",
+        "dungeon" => "Dungeon Ultimate",
+        "bulka" => "Bulka",
+        "videosos" => "VideoSOS",
+        other => other,
+    }
 }
 
 /// Недостающие веса из папок соседних программ (YuE2, MiniMax, Dungeon...) тем же импортом, что и из папки

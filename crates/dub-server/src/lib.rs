@@ -844,6 +844,11 @@ async fn setup_open_models(State(st): State<AppState>) -> Response {
     Json(json!({ "path": dir.to_string_lossy() })).into_response()
 }
 
+/// The recogniser a job runs, read again after `ensure_job_components`: one chosen and downloaded in the job counts.
+fn job_asr(repo_root: &Path, models_root: &Path) -> models::AsrChoice {
+    models::resolve_asr_choice(repo_root, models_root, &models::load_selection(models_root))
+}
+
 /// ON-DEMAND: перед джобой догружаем компоненты, нужные ИМЕННО ДЛЯ ЭТОЙ функции/конфига, если их нет
 /// на диске. Юзер запросил кастинг, но модели лиц не скачаны -> тянем их тут же (прогресс в тот же SSE)
 /// и продолжаем — вместо «0 лиц/все SPK0». Аналогично GPU-стадия без CUDA-стека -> догружаем cuFFT/onnx-GPU/
@@ -898,9 +903,19 @@ fn ensure_job_components(
     if asr_whisper && models::stage_backend(models_root, "asr_backend") == "gpu" && missing("whisper-cuda") {
         need.push("whisper-cuda".to_string());
     }
+    // Whisper chosen → its program and the model the settings name, downloaded on first use as Parakeet's are
+    if asr_whisper && !models::openrouter_asr_on(models_root) {
+        let sel = models::load_selection(models_root);
+        let model = sel.get("whisper_model").and_then(|v| v.as_str()).filter(|m| !m.is_empty()).unwrap_or("large-v3-turbo");
+        for id in ["whisper-engine".to_string(), format!("whisper-{model}")] {
+            if missing(&id) {
+                need.push(id);
+            }
+        }
+    }
     // Parakeet → its chosen variant and the transcribe.cpp build of the recognition backend (CUDA or CPU), which the
     // settings may have changed after the first run.
-    if !models::openrouter_asr_on(models_root) {
+    if !asr_whisper && !models::openrouter_asr_on(models_root) {
         if let models::AsrChoice::Ggml { build, model, .. } = models::resolve_asr_choice(repo_root, models_root, &models::load_selection(models_root)) {
             for id in [build.dir(), model.component] {
                 if missing(id) {
@@ -2174,6 +2189,9 @@ async fn analyze_enqueue(st: &AppState, pid: &str, args_json: Value,
         // до анализа. Иначе кастинг «не видел» бы лиц, а GPU-стадии падали бы с ошибкой CUDA.
         ensure_job_components(&paths.repo_root, &paths.models_root, args.casting, analyze::wants_diarization(&args), &cb,
         )?;
+        // the recogniser named at enqueue may have been downloaded just now
+        let mut paths = paths;
+        paths.asr = job_asr(&paths.repo_root, &paths.models_root);
         jobs::check_cancelled()?;
         // Трекинг затрат OpenRouter в ДОЛЛАРАХ (перевод/vision через облако): total_usage до/после.
         let cost_before = openrouter::total_usage_usd(&paths.models_root);
@@ -2412,6 +2430,8 @@ async fn render_enqueue(st: &AppState, pid: &str) -> Result<String, Box<Response
         let cb = |ev: Value| progress(ev);
         // On-demand: GPU-стадии рендера (Higgs TTS / сепарация на CUDA) без CUDA-стека -> догрузить сейчас.
         ensure_job_components(&repo_root_for_job, &paths.models_root, false, false, &cb)?;
+        let mut paths = paths;
+        paths.asr = job_asr(&repo_root_for_job, &paths.models_root);
         jobs::check_cancelled()?;
         // Загрузить свежий Project (правки могли прийти после enqueue).
         let text = std::fs::read_to_string(&proj_path).map_err(|e| e.to_string())?;
@@ -3304,8 +3324,6 @@ async fn align_enqueue(st: &AppState, pid: &str) -> Result<String, Box<Response>
         return Err(Box::new((StatusCode::CONFLICT, "project not analyzed yet").into_response(),
         ));
     }
-    let sel = models::load_selection(&st.models_root);
-    let asr = models::resolve_asr_choice(&st.repo_root, &st.models_root, &sel);
     let backend = models::stage_backend(&st.models_root, "asr_backend");
     let dir_for_job = dir.clone();
     let pid_res = pid.to_string();
@@ -3323,6 +3341,7 @@ async fn align_enqueue(st: &AppState, pid: &str) -> Result<String, Box<Response>
             .find(|p| p.is_file())
             .ok_or_else(|| t!("align-no-vocals"))?;
         ensure_job_components(&repo_root, &models_root, false, false, &|ev| progress(ev))?;
+        let asr = job_asr(&repo_root, &models_root);
         progress(json!({ "stage": "asr", "msg": t!("align-recognizing") }));
         std::env::set_var("DUB_ASR_BACKEND", &backend);
         let words: Vec<subalign::Heard> = models::build_engine(&asr)

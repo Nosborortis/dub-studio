@@ -470,6 +470,10 @@ voices-pack-unpacking = descompactando
 voices-open-zip = abrindo o zip: { $error }
 voices-create-file = criando { $name }: { $error }
 voices-unpack-file = descompactando { $name }: { $error }
+voices-pack-taken = obtido de { $app }: { $count } { $count ->
+    [one] arquivo
+   *[other] arquivos
+}
 voices-pack-done = pronto: { $count } { $count ->
     [one] arquivo
    *[other] arquivos

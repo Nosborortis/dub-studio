@@ -492,6 +492,11 @@ voices-pack-unpacking = распаковка
 voices-open-zip = открыть zip: { $error }
 voices-create-file = создать { $name }: { $error }
 voices-unpack-file = распаковка { $name }: { $error }
+voices-pack-taken = взято у { $app }: { $count } { $count ->
+    [one] файл
+    [few] файла
+   *[many] файлов
+}
 voices-pack-done = готово: { $count } { $count ->
     [one] файл
     [few] файла
