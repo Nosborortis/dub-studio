@@ -808,7 +808,9 @@ async fn setup_remove(State(st): State<AppState>, Json(body): Json<Value>) -> Re
 fn open_folder(dir: &Path) -> std::io::Result<()> {
     #[cfg(windows)]
     let cmd = "explorer.exe";
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    let cmd = "open";
+    #[cfg(all(not(windows), not(target_os = "macos")))]
     let cmd = "xdg-open";
     std::process::Command::new(cmd).arg(dir).spawn().map(|_| ())
 }
@@ -2945,13 +2947,43 @@ fn reveal_in_explorer(path: String) {
                 .arg(format!("/select,{path}"))
                 .spawn();
         }
-        #[cfg(not(windows))]
+        #[cfg(target_os = "macos")]
         {
-            // прочие ОС: открыть родительский каталог (выделение файла непортабельно).
-            let parent = std::path::Path::new(&path).parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from("."));
-            let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
+            let _ = std::process::Command::new("open").arg("-R").arg(&path).spawn();
+        }
+        #[cfg(all(not(windows), not(target_os = "macos")))]
+        {
+            // freedesktop FileManager1.ShowItems выделяет файл (Dolphin, Nautilus, Nemo, Thunar); без него — каталог
+            let path = std::path::Path::new(&path);
+            let shown = std::process::Command::new("dbus-send")
+                .args(["--session", "--print-reply", "--reply-timeout=3000", "--dest=org.freedesktop.FileManager1", "/org/freedesktop/FileManager1", "org.freedesktop.FileManager1.ShowItems"])
+                .arg(format!("array:string:{}", file_uri(path)))
+                .arg("string:")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .is_ok_and(|status| status.success());
+            if !shown {
+                let parent = path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from("."));
+                let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
+            }
         }
     });
+}
+
+/// `file://` и путь, где каждый байт вне незарезервированных экранирован.
+#[cfg(all(not(windows), not(target_os = "macos")))]
+fn file_uri(path: &std::path::Path) -> String {
+    use std::os::unix::ffi::OsStrExt;
+    let mut uri = String::from("file://");
+    for &byte in path.as_os_str().as_bytes() {
+        if byte.is_ascii_alphanumeric() || b"/-._~".contains(&byte) {
+            uri.push(byte as char);
+        } else {
+            uri.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    uri
 }
 
 /// POST /projects/{pid}/reveal — показать файл (по имени в каталоге проекта) в проводнике с выделением.
