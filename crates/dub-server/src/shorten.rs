@@ -532,7 +532,7 @@ mod tests {
             higgs_threads: 1,
             max_stretch: 1.25,
             voices_dir: none.clone(),
-            asr: crate::models::AsrChoice::Parakeet(none.clone()),
+            asr: crate::models::AsrChoice::unused(),
             bench: false,
             ref_secs: 12.0,
             models_root: models_root.to_path_buf(),

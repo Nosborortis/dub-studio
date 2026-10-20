@@ -94,6 +94,20 @@ pub fn model(id: &str) -> Option<&'static Model> {
     MODELS.iter().find(|m| m.id == id)
 }
 
+/// Модель, что называют настройки программы: `asr_engine` nemotron, иначе Parakeet в своём варианте (`asr`: `ultra` и
+/// `ultra-int8` — Ultra, остальное — v3; слот хранит имена прежних ONNX-сборок, выбор, сделанный тогда, остаётся).
+/// None — Whisper или облако.
+pub fn chosen(engine: &str, variant: Option<&str>) -> Option<&'static Model> {
+    match engine {
+        "nemotron" => model("nemotron"),
+        "" | "parakeet" => match variant {
+            Some("ultra") | Some("ultra-int8") => model("parakeet-ultra"),
+            _ => model("parakeet-v3"),
+        },
+        _ => None,
+    }
+}
+
 pub fn engine_dir(models_root: &Path) -> PathBuf {
     models_root.join(ENGINE_DIR)
 }
@@ -1004,6 +1018,17 @@ mod tests {
             assert_eq!(m.download.sha256.len(), 64, "{}", m.id);
             assert!(m.download.size > 0, "{}", m.id);
         }
+    }
+
+    #[test]
+    fn the_settings_name_their_model() {
+        assert_eq!(chosen("", None).unwrap().id, "parakeet-v3");
+        assert_eq!(chosen("parakeet", Some("int8")).unwrap().id, "parakeet-v3");
+        assert_eq!(chosen("parakeet", Some("fp32")).unwrap().id, "parakeet-v3");
+        assert_eq!(chosen("parakeet", Some("ultra")).unwrap().id, "parakeet-ultra");
+        assert_eq!(chosen("parakeet", Some("ultra-int8")).unwrap().id, "parakeet-ultra");
+        assert_eq!(chosen("nemotron", None).unwrap().id, "nemotron");
+        assert!(chosen("whisper", None).is_none());
     }
 
     #[test]

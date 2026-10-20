@@ -146,7 +146,7 @@ pub fn verify_captions_e2e(
         input: input_video.to_path_buf(),
         work_dir: work_dir.to_path_buf(),
         repo_root: repo_root.to_path_buf(),
-        asr: models::AsrChoice::Parakeet(unused.clone()), // ocr::stage не трогает ASR (verify-путь)
+        asr: models::AsrChoice::unused(), // ocr::stage не трогает ASR (verify-путь)
         sortformer_onnx: unused.clone(),
         llama_bin: dub_llm::resolve_llama_bin(&repo_root.join("tools").join("llama")),
         mt_model,
@@ -183,8 +183,6 @@ pub struct AppState {
     pub web_root: Option<PathBuf>,
     pub opts: Arc<EngineOpts>,
     pub jobs: JobQueue,
-    /// Каталог TDT-модели ASR (analyze). Env DUB_STUDIO_TDT, иначе <models_root>/tdt.
-    pub tdt_dir: PathBuf,
     /// Путь к модели диаризации (Nemotron 3 Diarization .onnx). Env DUB_STUDIO_SORTFORMER, иначе
     /// <models_root>/nemotron-diar/nemotron3_diar_v3.onnx.
     pub sortformer_onnx: PathBuf,
@@ -360,9 +358,6 @@ impl AppState {
             Ok(_) => {}
             Err(e) => tracing::error!("secrets from active.json were not moved to the store: {e:#}"),
         }
-        let tdt_dir = std::env::var("DUB_STUDIO_TDT")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| mroot.join("tdt"));
         let sortformer_onnx = std::env::var("DUB_STUDIO_SORTFORMER")
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
@@ -395,7 +390,6 @@ impl AppState {
             web_root,
             opts: Arc::new(EngineOpts::default()),
             jobs: JobQueue::new(),
-            tdt_dir,
             sortformer_onnx,
             llama_bin,
             bsroformer_cli,
