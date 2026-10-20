@@ -247,6 +247,10 @@ tts-silent-after-cleanup = plus de parole après le nettoyage du texte, donc sil
     [one] réplique
    *[other] répliques
 } ({ $lines })
+tts-markup-ignored = le moteur de voix ne lit pas ce balisage, il a été retiré : { $count } { $count ->
+    [one] réplique
+   *[other] répliques
+} ({ $lines })
 mcp-bad-speaker-count = speaker_count : un entier de 0 à { $max } est attendu
 mcp-speakers-without-diarize = speaker_count supérieur à 1 est incompatible avec diarize=false
 

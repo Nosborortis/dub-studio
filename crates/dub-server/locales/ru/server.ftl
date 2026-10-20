@@ -261,6 +261,11 @@ tts-silent-after-cleanup = без речи после чистки текста 
     [few] фразы
    *[many] фраз
 } ({ $lines })
+tts-markup-ignored = движок озвучки не читает эту разметку — она снята: { $count } { $count ->
+    [one] фраза
+    [few] фразы
+   *[many] фраз
+} ({ $lines })
 mcp-bad-speaker-count = speaker_count: ожидается целое число от 0 до { $max }
 mcp-speakers-without-diarize = speaker_count больше 1 несовместим с diarize=false
 

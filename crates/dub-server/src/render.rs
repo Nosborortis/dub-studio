@@ -4128,7 +4128,7 @@ mod tests {
             seg("s1", 2.5, 3.0, "[музыка]"),
             seg("s2", 4.0, 5.0, "Всё"),
         ];
-        let view = crate::tts_text::synthesis_view(&shown, crate::tts_text::Speak { caps: true, symbols: true }, &|_| {});
+        let view = crate::tts_text::synthesis_view(&shown, crate::tts_text::Speak { caps: true, symbols: true, engine: crate::tts_text::Engine::Cloud }, &|_| {});
         assert_ne!(view.segments[0].tgt_text, shown.segments[0].tgt_text, "текст для синтеза очищен");
         let segs: Vec<(usize, &Segment)> =
             view.segments.iter().enumerate().filter(|(_, s)| !s.tgt_text.trim().is_empty()).collect();

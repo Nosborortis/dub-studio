@@ -1279,6 +1279,9 @@
       "sound_only": "Sin voz: solo etiquetas de sonido",
       "no_words": "Sin voz: no hay palabras"
     },
+    "ttsIgnored": "El motor no leerá: {{tags}}",
+    "ttsIgnoredHint": "Marcas de otro motor de voz: el motor elegido no las lee y no entran en el doblaje",
+    "ttsIgnoredStress": "acento «+»",
     "err": {
       "over_limit": "El glosario tiene {{total}} entradas, más de {{max}}.",
       "empty_term": "La entrada {{entry}} no tiene término.",

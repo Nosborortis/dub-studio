@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { BookA, Check, Loader2, VolumeX, X } from "lucide-react";
+import { BookA, Check, Loader2, Tag as TagIcon, VolumeX, X } from "lucide-react";
 import { api, type Segment, type TtsSkip } from "../lib/api";
 import { wordSwap } from "../lib/wordSwap";
 import { useStore } from "../store";
@@ -80,6 +80,16 @@ export function SourceText({ pid, seg }: { pid: string; seg: Segment }) {
 }
 
 // Фраза не озвучивается: после чистки текста для синтеза в ней не осталось слов.
+export function TtsIgnoredNote({ tags }: { tags: string[] }) {
+  const { t } = useTranslation();
+  const named = tags.map((tag) => (tag === "+" ? t("glossary.ttsIgnoredStress") : tag)).join(" ");
+  return (
+    <div className="mt-1 inline-flex items-center gap-1 text-[10.5px] text-[var(--color-warn)]" title={t("glossary.ttsIgnoredHint")}>
+      <TagIcon size={11} className="shrink-0" />{t("glossary.ttsIgnored", { tags: named })}
+    </div>
+  );
+}
+
 export function TtsSkipNote({ reason }: { reason: TtsSkip }) {
   const { t } = useTranslation();
   return (

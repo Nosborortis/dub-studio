@@ -1279,6 +1279,9 @@
       "sound_only": "Sem voz: só marcas de som",
       "no_words": "Sem voz: não há palavras"
     },
+    "ttsIgnored": "O motor não vai ler: {{tags}}",
+    "ttsIgnoredHint": "Marcação de outro motor de voz: o motor escolhido não a lê, então ela fica fora da dublagem",
+    "ttsIgnoredStress": "acento «+»",
     "err": {
       "over_limit": "O glossário tem {{total}} entradas, mais que {{max}}.",
       "empty_term": "A entrada {{entry}} não tem termo.",

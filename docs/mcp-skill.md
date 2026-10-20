@@ -269,7 +269,10 @@ choose or correct. They combine: `transcribe_file`, then `project_get` with its
 
 A line whose `tts_skip` is set in `project_get` is not voiced: nothing is left to say once sound tags
 ([music], (laughs), ♪…♪), speaker labels and markup are taken out; `tts_text` shows what the voice says
-when it differs from the translation.
+when it differs from the translation. The chosen voice engine keeps its own expression tags in the text
+(Higgs `<|emotion:anger|>`, Drama 3 `[laughs]` and `<whisper>…</whisper>`, Supertonic `<laugh>`);
+`tts_ignored` names the markup it does not read and that is taken off: another engine's tags, `+` stress
+for an engine that does not read it.
 
 **A batch into one folder**
 

@@ -1267,6 +1267,9 @@
       "sound_only": "Not voiced: only sound tags",
       "no_words": "Not voiced: no words"
     },
+    "ttsIgnored": "The engine will not read: {{tags}}",
+    "ttsIgnoredHint": "Markup of another voice engine: the chosen engine does not read it, so it is left out of the dub",
+    "ttsIgnoredStress": "stress “+”",
     "err": {
       "over_limit": "The glossary has {{total}} entries — more than {{max}}.",
       "empty_term": "Entry {{entry}} has no term.",

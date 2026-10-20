@@ -1,7 +1,9 @@
-//! Текст, уходящий в синтез (Higgs и облачный TTS): без тегов неречевых звуков, меток спикеров, разметки
-//! HTML/ASS и петель, с нормальными пробелами и кавычками и с произношением глоссария. Отображаемый tgt_text
-//! не меняется. Фраза, в которой после чистки не осталось слов, не синтезируется (тишина), причина — в
-//! segment.extra.tts_skip.
+//! Текст, уходящий в синтез: без тегов неречевых звуков, меток спикеров, разметки HTML/ASS и петель, с нормальными
+//! пробелами и кавычками и с произношением глоссария. Теги экспрессии, которые читает выбранный движок, доходят до
+//! него (Higgs `<|emotion:anger|>`, Drama 3 `[laughs]` и `<whisper>…</whisper>`, Supertonic `<laugh>`); теги других
+//! движков и ударение «+» для движка, который его не читает, снимаются и называются в segment.extra.tts_ignored.
+//! Отображаемый tgt_text не меняется. Фраза, в которой после чистки не осталось слов, не синтезируется (тишина),
+//! причина — в segment.extra.tts_skip.
 
 use std::sync::LazyLock;
 
@@ -18,6 +20,38 @@ pub const SKIP_NO_WORDS: &str = "no_words";
 pub struct TtsText {
     pub text: String,
     pub skip: Option<&'static str>,
+    /// Разметка, которую движок не читает и которая снята: теги других движков, «+».
+    pub ignored: Vec<String>,
+}
+
+/// Движок озвучки проекта: от него зависит, какая разметка экспрессии доходит до синтеза.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Engine {
+    Higgs,
+    Drama,
+    Supertonic,
+    Qwen,
+    Cloud,
+}
+
+impl Engine {
+    pub fn load(models_root: &std::path::Path) -> Self {
+        if crate::models::cloud_tts_on(models_root) {
+            return Engine::Cloud;
+        }
+        let sel = crate::models::load_selection(models_root);
+        match crate::models::resolve_tts(models_root, &sel).1.as_str() {
+            crate::models::DRAMA_TTS => Engine::Drama,
+            crate::models::SUPERTONIC_TTS => Engine::Supertonic,
+            q if crate::models::qwen_quant(q).is_some() => Engine::Qwen,
+            _ => Engine::Higgs,
+        }
+    }
+
+    /// Ударение «+» перед гласной: Supertonic и Qwen3-TTS переводят его в знак ударения при синтезе.
+    fn reads_stress(self) -> bool {
+        matches!(self, Engine::Supertonic | Engine::Qwen)
+    }
 }
 
 /// Правки текста для синтеза, которые включает пользователь.
@@ -27,12 +61,17 @@ pub struct Speak {
     pub caps: bool,
     /// Служебные знаки, оставшиеся после разметки, — убрать.
     pub symbols: bool,
+    pub engine: Engine,
 }
 
 impl Speak {
     pub fn load(models_root: &std::path::Path) -> Self {
         let sel = crate::models::load_selection(models_root);
-        Speak { caps: crate::checks::on(&sel, "tts_caps"), symbols: crate::checks::on(&sel, "tts_symbols") }
+        Speak {
+            caps: crate::checks::on(&sel, "tts_caps"),
+            symbols: crate::checks::on(&sel, "tts_symbols"),
+            engine: Engine::load(models_root),
+        }
     }
 }
 
@@ -47,6 +86,84 @@ static SPEAKER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?m)^\s*(?:([\p{Lu}][\p{Lu}\d .'#-]{1,30}):\s+|[-–—]\s+)").expect("speaker label"));
 static STRAY_MARKS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[_|~^\\{}<>#*]+").expect("stray marks"));
 static WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\p{L}+").expect("word"));
+static HIGGS_TAG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<\|[^<>\n]{0,48}\|>").expect("higgs tag"));
+static HIGGS_PARTS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^<\|(\w+):(\w+)\|>$").expect("higgs parts"));
+static ANGLE_TAG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"</?\s*([a-z][a-z -]{0,30}?)\s*>").expect("angle tag"));
+static DRAMA_POINT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([a-z][a-z '-]{0,38})\]").expect("drama point"));
+static STRESS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\+([АаЕеЁёИиОоУуЫыЭэЮюЯяAaEeIiOoUuYy])").expect("stress"));
+static KEPT: LazyLock<Regex> = LazyLock::new(|| Regex::new("\u{E000}(\\d+)\u{E001}").expect("kept tag"));
+
+/// Теги экспрессии Higgs: категория -> значения (белый список HiggsAudio-Studio `director_worker.py`, как в Speech
+/// Studio).
+pub const HIGGS_TAGS: [(&str, &[&str]); 4] = [
+    ("emotion", &["affection", "amusement", "anger", "arousal", "awe", "bitterness", "confusion", "contemplation", "contentment", "determination", "disgust", "elation", "enthusiasm", "fear", "helplessness", "longing", "pride", "relief", "sadness", "shame", "surprise"]),
+    ("prosody", &["speed_very_slow", "speed_slow", "speed_fast", "speed_very_fast", "pitch_low", "pitch_high", "expressive_high", "expressive_low", "pause", "long_pause"]),
+    ("style", &["singing", "shouting", "whispering"]),
+    ("sfx", &["cough", "laughter", "crying", "screaming", "burping", "humming", "sigh", "sniff", "sneeze"]),
+];
+
+/// Палитра Drama 3 — примеры приложения C техотчёта (Table 10): события по месту и подача отрезка.
+pub const DRAMA_EVENTS: &[&str] = &["laughs", "sighs", "gasps", "clears throat", "hesitates", "pause"];
+pub const DRAMA_SCOPES: &[&str] = &["whisper", "slow", "emphasis"];
+
+/// Теги Supertonic 3 по карточке `Supertone/supertonic-3`: по месту.
+pub const SUPERTONIC_TAGS: &[&str] = &["laugh", "breath", "sigh"];
+
+/// Разметка экспрессии: что читает `engine`, прячется за метку и вернётся после чистки; разметка других движков и
+/// непрочитанное «+» снимаются в `ignored`. Теги звуков субтитров (`[music]`) и HTML субтитров здесь не трогаются.
+fn engine_markup(text: &str, engine: Engine, kept: &mut Vec<String>, ignored: &mut Vec<String>) -> String {
+    let keep = |kept: &mut Vec<String>, tag: &str| {
+        kept.push(tag.to_string());
+        format!("\u{E000}{}\u{E001}", kept.len() - 1)
+    };
+    let t = HIGGS_TAG.replace_all(text, |c: &regex::Captures| {
+        let known = HIGGS_PARTS
+            .captures(&c[0])
+            .is_some_and(|h| HIGGS_TAGS.iter().any(|(cat, values)| *cat == &h[1] && values.contains(&&h[2])));
+        if engine == Engine::Higgs && known {
+            keep(kept, &c[0])
+        } else {
+            ignored.push(c[0].to_string());
+            String::new()
+        }
+    });
+    let t = ANGLE_TAG.replace_all(&t, |c: &regex::Captures| {
+        let name = c[1].trim();
+        let closing = c[0].starts_with("</");
+        let ours = match engine {
+            Engine::Drama => DRAMA_SCOPES.contains(&name),
+            Engine::Supertonic => !closing && SUPERTONIC_TAGS.contains(&name),
+            _ => false,
+        };
+        if ours {
+            keep(kept, &c[0])
+        } else if DRAMA_SCOPES.contains(&name) || SUPERTONIC_TAGS.contains(&name) {
+            ignored.push(c[0].to_string());
+            String::new()
+        } else {
+            c[0].to_string()
+        }
+    });
+    let t = if engine == Engine::Drama {
+        DRAMA_POINT.replace_all(&t, |c: &regex::Captures| {
+            if DRAMA_EVENTS.contains(&c[1].trim()) { keep(kept, &c[0]) } else { c[0].to_string() }
+        })
+    } else {
+        t
+    };
+    if engine.reads_stress() {
+        return t.into_owned();
+    }
+    let mut stress = false;
+    let t = STRESS.replace_all(&t, |c: &regex::Captures| {
+        stress = true;
+        c[1].to_string()
+    });
+    if stress {
+        ignored.push("+".to_string());
+    }
+    t.into_owned()
+}
 
 const VOWELS: &str = "aeiouyаеёиоуыэюяіїє";
 
@@ -172,7 +289,10 @@ fn normalize_quotes(s: &str) -> String {
 /// озвучивается как сказана; схлопывается только петля перевода.
 pub fn tts_text(tgt: &str, src: &str, lang: &str, glossary: &[GlossaryEntry], speak: Speak) -> TtsText {
     let original_has_words = has_words(tgt);
-    let t = ASS_OVERRIDE.replace_all(tgt, "");
+    let mut kept: Vec<String> = Vec::new();
+    let mut ignored: Vec<String> = Vec::new();
+    let t = engine_markup(tgt, speak.engine, &mut kept, &mut ignored);
+    let t = ASS_OVERRIDE.replace_all(&t, "");
     let t = ASS_BREAK.replace_all(&t, "\n").replace("\\h", " ");
     let t = HTML_TAG.replace_all(&t, "");
     let t = SQUARE.replace_all(&t, " ");
@@ -201,29 +321,35 @@ pub fn tts_text(tgt: &str, src: &str, lang: &str, glossary: &[GlossaryEntry], sp
     }
     let t = normalize_quotes(&t);
     let t = t.trim().trim_start_matches([',', ';', ':']).trim().to_string();
-    if has_words(&t) {
-        return TtsText { text: t, skip: None };
+    if has_words(&KEPT.replace_all(&t, "")) {
+        let text = KEPT.replace_all(&t, |c: &regex::Captures| c[1].parse::<usize>().ok().and_then(|i| kept.get(i)).cloned().unwrap_or_default());
+        return TtsText { text: text.into_owned(), skip: None, ignored };
     }
     let skip = if original_has_words { SKIP_SOUND_ONLY } else { SKIP_NO_WORDS };
-    TtsText { text: String::new(), skip: Some(skip) }
+    TtsText { text: String::new(), skip: Some(skip), ignored }
 }
 
 fn loops_in(s: &str) -> bool {
     collapse_loops(s) != s
 }
 
-/// Показ в окне и в project_get: `tts_skip` у фраз, которые не озвучиваются, и `tts_text` у фраз, чей текст
-/// для синтеза отличается от показанного. Не хранится — считается при чтении.
+/// Показ в окне и в project_get: `tts_skip` у фраз, которые не озвучиваются, `tts_text` у фраз, чей текст
+/// для синтеза отличается от показанного, `tts_ignored` — разметка, которую движок не прочтёт. Не хранится —
+/// считается при чтении.
 pub fn annotate(proj: &mut Project, speak: Speak) {
     let glossary = dub_core::glossary::for_target(&proj.glossary, &proj.tgt_lang);
     let lang = proj.tgt_lang.clone();
     for s in &mut proj.segments {
         s.extra.remove("tts_skip");
         s.extra.remove("tts_text");
+        s.extra.remove("tts_ignored");
         if s.tgt_text.trim().is_empty() {
             continue;
         }
         let t = tts_text(&s.tgt_text, &s.src_text, &lang, &glossary, speak);
+        if !t.ignored.is_empty() {
+            s.extra.insert("tts_ignored".into(), Value::from(t.ignored.clone()));
+        }
         match t.skip {
             Some(reason) => {
                 s.extra.insert("tts_skip".into(), Value::String(reason.into()));
@@ -242,12 +368,16 @@ pub fn synthesis_view(proj: &Project, speak: Speak, progress: &crate::analyze::P
     let mut view = proj.clone();
     let glossary = dub_core::glossary::for_target(&proj.glossary, &proj.tgt_lang);
     let mut skipped: Vec<String> = Vec::new();
+    let mut ignored: Vec<String> = Vec::new();
     for s in &mut view.segments {
         let keep_original = s.extra.get("keep_original").and_then(Value::as_bool).unwrap_or(false);
         if keep_original || s.tgt_text.trim().is_empty() {
             continue;
         }
         let t = tts_text(&s.tgt_text, &s.src_text, &proj.tgt_lang, &glossary, speak);
+        if !t.ignored.is_empty() {
+            ignored.push(format!("{} {}", s.id, t.ignored.join(" ")));
+        }
         if let Some(reason) = t.skip {
             skipped.push(format!("{} «{}»", s.id, s.tgt_text.trim().chars().take(40).collect::<String>()));
             s.extra.insert("tts_skip".into(), Value::String(reason.into()));
@@ -260,6 +390,12 @@ pub fn synthesis_view(proj: &Project, speak: Speak, progress: &crate::analyze::P
             "msg": t!("tts-silent-after-cleanup", count = skipped.len(), lines = skipped.join("; ")),
         }));
     }
+    if !ignored.is_empty() {
+        progress(serde_json::json!({
+            "stage": "tts",
+            "msg": t!("tts-markup-ignored", count = ignored.len(), lines = ignored.join("; ")),
+        }));
+    }
     view
 }
 
@@ -267,8 +403,8 @@ pub fn synthesis_view(proj: &Project, speak: Speak, progress: &crate::analyze::P
 mod tests {
     use super::*;
 
-    const ALL: Speak = Speak { caps: true, symbols: true };
-    const NONE: Speak = Speak { caps: false, symbols: false };
+    const ALL: Speak = Speak { caps: true, symbols: true, engine: Engine::Cloud };
+    const NONE: Speak = Speak { caps: false, symbols: false, engine: Engine::Cloud };
 
     fn ru(t: &str, speak: Speak) -> String {
         tts_text(t, "", "ru", &[], speak).text
@@ -348,10 +484,39 @@ mod tests {
 
     #[test]
     fn nothing_left_to_say_is_silence_with_a_reason() {
-        assert_eq!(clean("[music]"), TtsText { text: String::new(), skip: Some(SKIP_SOUND_ONLY) });
+        assert_eq!(clean("[music]"), TtsText { text: String::new(), skip: Some(SKIP_SOUND_ONLY), ignored: vec![] });
         assert_eq!(clean("♪ ♪").skip, Some(SKIP_NO_WORDS));
-        assert_eq!(clean("..."), TtsText { text: String::new(), skip: Some(SKIP_NO_WORDS) });
+        assert_eq!(clean("..."), TtsText { text: String::new(), skip: Some(SKIP_NO_WORDS), ignored: vec![] });
         assert_eq!(tts_text("(вздыхает)", "", "ru", &[], ALL).skip, Some(SKIP_SOUND_ONLY));
+    }
+
+    fn on(engine: Engine, t: &str) -> TtsText {
+        tts_text(t, "", "ru", &[], Speak { engine, ..ALL })
+    }
+
+    #[test]
+    fn each_engine_gets_its_own_tags_and_the_rest_are_named() {
+        let line = "<|emotion:anger|> Хватит! [laughs] <whisper>тише</whisper> <laugh> з+амок <|emotion:rage|>";
+        let higgs = on(Engine::Higgs, line);
+        assert_eq!(higgs.text, "<|emotion:anger|> Хватит! тише замок");
+        assert_eq!(higgs.ignored, vec!["<|emotion:rage|>", "<whisper>", "</whisper>", "<laugh>", "+"]);
+        let drama = on(Engine::Drama, line);
+        assert_eq!(drama.text, "Хватит! [laughs] <whisper>тише</whisper> замок");
+        assert_eq!(drama.ignored, vec!["<|emotion:anger|>", "<|emotion:rage|>", "<laugh>", "+"]);
+        let supertonic = on(Engine::Supertonic, line);
+        assert_eq!(supertonic.text, "Хватит! тише <laugh> з+амок");
+        assert_eq!(supertonic.ignored, vec!["<|emotion:anger|>", "<|emotion:rage|>", "<whisper>", "</whisper>"]);
+        assert_eq!(on(Engine::Qwen, line).text, "Хватит! тише з+амок");
+        assert_eq!(on(Engine::Cloud, line).text, "Хватит! тише замок");
+    }
+
+    #[test]
+    fn subtitle_sounds_and_markup_are_still_cleaned_for_an_engine_with_tags() {
+        assert_eq!(on(Engine::Drama, "[music] <i>Привет</i> [door slams]").text, "Привет");
+        assert!(on(Engine::Drama, "<i>Привет</i>").ignored.is_empty());
+        assert_eq!(on(Engine::Drama, "[laughs]").skip, Some(SKIP_SOUND_ONLY), "a tag alone is not a line");
+        assert_eq!(on(Engine::Higgs, "<|sfx:laughter|>").skip, Some(SKIP_SOUND_ONLY));
+        assert_eq!(on(Engine::Higgs, "<|emotion:elation|><|sfx:laughter|>Ха-ха!").text, "<|emotion:elation|><|sfx:laughter|>Ха-ха!");
     }
 
     #[test]
@@ -370,5 +535,9 @@ mod tests {
         assert_eq!(p.segments[0].extra["tts_skip"], SKIP_SOUND_ONLY);
         assert_eq!(p.segments[1].extra["tts_text"], "Привет");
         assert!(!p.segments[2].extra.contains_key("tts_text"));
+        p.segments[2].tgt_text = "<|emotion:anger|> Привет".into();
+        annotate(&mut p, ALL);
+        assert_eq!(p.segments[2].extra["tts_ignored"], serde_json::json!(["<|emotion:anger|>"]));
+        assert_eq!(p.segments[2].extra["tts_text"], "Привет");
     }
 }
