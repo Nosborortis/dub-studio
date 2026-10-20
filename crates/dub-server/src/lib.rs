@@ -693,6 +693,7 @@ async fn capabilities(State(st): State<AppState>) -> Json<Value> {
         "device": o.device,
         "tts_quant": o.tts_quant,
         "asr_model": o.asr_model,
+        "asr_label": models::resolve_asr_choice(&st.repo_root, &st.models_root, &models::load_selection(&st.models_root)).label(),
         "models": {
             "asr": o.asr_model,
             "llm": o.mt_model_path.to_string_lossy(),

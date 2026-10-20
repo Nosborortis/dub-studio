@@ -578,6 +578,23 @@ impl AsrChoice {
         }
     }
 
+    /// What the window names as the recogniser: the model, its quantization and the transcribe.cpp build, or Whisper's
+    /// model and compute.
+    pub fn label(&self) -> String {
+        match self {
+            AsrChoice::Ggml { model, build, .. } => {
+                let quant = model.file.trim_end_matches(".gguf").rsplit('-').next().unwrap_or(model.file);
+                let on = match build {
+                    dub_asr::tcpp::Build::Cuda => "CUDA",
+                    dub_asr::tcpp::Build::Vulkan => "Vulkan",
+                    dub_asr::tcpp::Build::Cpu => "CPU",
+                };
+                format!("{} {quant} ({on})", model.name)
+            }
+            AsrChoice::Whisper { model, compute, .. } => format!("Whisper {model} {compute}"),
+        }
+    }
+
     /// Whether it transcribes `lang` (`""` or `auto` is any).
     pub fn knows(&self, lang: &str) -> bool {
         match self {

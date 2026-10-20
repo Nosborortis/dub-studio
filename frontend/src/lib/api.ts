@@ -167,7 +167,7 @@ export const slot = (sel: Selection | undefined, key: string): string | undefine
   return typeof v === "string" ? v : undefined;
 };
 export type Capabilities = {
-  device: string; tts_quant: string; asr_model: string; ffmpeg: boolean;
+  device: string; tts_quant: string; asr_model: string; asr_label: string; ffmpeg: boolean;
   languages: string[]; voice_modes: string[]; models?: ModelStack;
   // Выбор ASR-движка (active.json): движок parakeet|whisper + модель/квант Whisper.
   selection?: Selection;

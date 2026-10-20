@@ -4921,8 +4921,7 @@ export default function App() {
     // ASR в футере — из ФАКТИЧЕСКОГО выбора (active.json), не из статичного имени Parakeet-модели:
     // юзер переключил движок в «Моделях» -> строка обязана показать то, чем реально пойдёт прогон.
     const sel = (c as { selection?: Record<string, string> }).selection ?? {};
-    const asrLabel = sel.asr_engine === "whisper" ? `whisper ${sel.whisper_model || "auto"}` : `${c.asr_model}${sel.asr ? ` ${sel.asr}` : ""}`;
-    const parts = [c.device, `ASR ${asrLabel}`];
+    const parts = [c.device, `ASR ${c.asr_label}`];
     if (c.models?.llm) parts.push(`MT+vision ${base(c.models.llm)}`);
     const ttsQuant = sel.tts || c.tts_quant;
     if (c.models?.tts) parts.push(sel.tts === "drama3" ? "TTS Fish Audio Drama 3 q4" : sel.tts === "supertonic3" ? "TTS Supertonic 3 int8" : isQwenTts(sel.tts) ? `TTS Qwen3-TTS 1.7B ${sel.tts === "qwen3-tts" ? "Q4_K_M" : "Q8_0"}` : `TTS ${c.models.tts}${ttsQuant ? ` ${ttsQuant}` : ""}`);
