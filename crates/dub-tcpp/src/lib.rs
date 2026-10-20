@@ -9,7 +9,9 @@ use std::sync::{Arc, Mutex};
 
 #[cfg(windows)]
 pub const LIBRARY: &str = "transcribe_engine.dll";
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+pub const LIBRARY: &str = "libtranscribe_engine.dylib";
+#[cfg(not(any(windows, target_os = "macos")))]
 pub const LIBRARY: &str = "libtranscribe_engine.so";
 
 /// Файл закачки: адрес по закреплённой ревизии, размер и SHA-256. Одни и те же у всех программ, поэтому соседи берут
@@ -63,7 +65,26 @@ impl Build {
         }
     }
 
-    #[cfg(not(windows))]
+    /// На Mac одна сборка на архитектуру, в папке процессорной: Metal и процессор на Apple silicon, процессор (и Metal
+    /// карт Intel-Маков) на x86_64. CUDA и Vulkan на Mac нет, их место занимает она же.
+    #[cfg(target_os = "macos")]
+    pub const fn download(self) -> Download {
+        let _ = self;
+        #[cfg(target_arch = "aarch64")]
+        return Download {
+            url: "https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.1.1/libtranscribe_engine-macos-arm64.dylib",
+            size: 8_994_040,
+            sha256: "683456e64f2cd16442895e0ac293c146b2b773f18a2aaedd2d7d6b6a90523829",
+        };
+        #[cfg(not(target_arch = "aarch64"))]
+        return Download {
+            url: "https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.1.1/libtranscribe_engine-macos-x86_64.dylib",
+            size: 9_918_736,
+            sha256: "7f9d0d154540673227880fc27a6178e2bd2ebbdff73e8f9a1a18d7cb262a9290",
+        };
+    }
+
+    #[cfg(not(any(windows, target_os = "macos")))]
     pub const fn download(self) -> Download {
         match self {
             Build::Cuda => Download {
@@ -1044,10 +1065,14 @@ mod tests {
         dirs.sort();
         dirs.dedup();
         assert_eq!(dirs.len(), Build::ALL.len());
-        let mut urls: Vec<&str> = Build::ALL.iter().map(|b| b.download().url).collect();
-        urls.sort();
-        urls.dedup();
-        assert_eq!(urls.len(), Build::ALL.len(), "one release holds every build, so their file names differ");
+        // a Mac has one build, in every slot
+        #[cfg(not(target_os = "macos"))]
+        {
+            let mut urls: Vec<&str> = Build::ALL.iter().map(|b| b.download().url).collect();
+            urls.sort();
+            urls.dedup();
+            assert_eq!(urls.len(), Build::ALL.len(), "one release holds every build, so their file names differ");
+        }
         for b in Build::ALL {
             let d = b.download();
             assert!(d.url.contains("/releases/download/engine-"), "{b:?}");
@@ -1065,6 +1090,23 @@ mod tests {
         assert_eq!(chosen("parakeet", Some("ultra-int8")).unwrap().id, "parakeet-ultra");
         assert_eq!(chosen("nemotron", None).unwrap().id, "nemotron");
         assert!(chosen("whisper", None).is_none());
+    }
+
+    /// The engine of `TCPP_ENGINE_DIR` hears `TCPP_PCM` (16 kHz mono f32 little-endian) with `TCPP_MODEL` and finds every
+    /// word of `TCPP_EXPECT` in it.
+    #[test]
+    #[ignore = "needs TCPP_ENGINE_DIR, TCPP_MODEL, TCPP_PCM and TCPP_EXPECT"]
+    fn the_engine_hears_a_recording() {
+        let var = |name: &str| std::env::var(name).unwrap_or_else(|_| panic!("{name}"));
+        let bytes = std::fs::read(var("TCPP_PCM")).expect("the recording");
+        let pcm: Vec<f32> = bytes.chunks_exact(4).map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]])).collect();
+        let asr = shared(Path::new(&var("TCPP_ENGINE_DIR")), Path::new(&var("TCPP_MODEL"))).expect("load");
+        let words = asr.lock().unwrap().words(&pcm, "en").expect("recognition");
+        let heard: String = words.iter().map(|w| w.word.as_str()).collect::<Vec<_>>().join(" ").to_lowercase();
+        eprintln!("heard: {heard}");
+        for expected in var("TCPP_EXPECT").split_whitespace() {
+            assert!(heard.contains(&expected.to_lowercase()), "{expected} is not in: {heard}");
+        }
     }
 
     #[test]
