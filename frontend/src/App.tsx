@@ -123,7 +123,7 @@ const VARIANT_SLOT: Record<string, [string, string]> = {
 const activeVariantId = (ids: string[], sel: Selection): string | undefined =>
   ids.find((id) => { const m = VARIANT_SLOT[id]; return !!m && sel[m[0]] === m[1]; });
 
-type VariantI18n = Record<string, { label: "asrVariant.int8" | "asrVariant.ultraInt8" | "ttsVariant.drama3" | "ttsVariant.qwen" | "ttsVariant.qwenQ8" | "ttsVariant.supertonic"; hint: "asrVariant.int8Hint" | "asrVariant.fp32Hint" | "asrVariant.ultraHint" | "asrVariant.ultraInt8Hint" | "ttsVariant.drama3Hint" | "ttsVariant.qwenHint" | "ttsVariant.supertonicHint" }>;
+type VariantI18n = Record<string, { label: "asrVariant.int8" | "asrVariant.ultraInt8" | "ttsVariant.drama3" | "ttsVariant.qwen" | "ttsVariant.qwenQ8" | "ttsVariant.supertonic"; hint: "asrVariant.int8Hint" | "asrVariant.ultraInt8Hint" | "ttsVariant.drama3Hint" | "ttsVariant.qwenHint" | "ttsVariant.supertonicHint" }>;
 // Drama 3 — второй движок озвучки в том же слоте tts, что и кванты Higgs: выбирается из того же списка.
 const TTS_IDS = ["higgs", "higgs-q6_k", "higgs-q4_k_m", "drama3", "qwen3-tts", "qwen3-tts-q8_0", "supertonic3"];
 const TTS_VARIANT_I18N: VariantI18n = {
