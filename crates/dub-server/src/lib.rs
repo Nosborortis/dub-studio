@@ -280,6 +280,7 @@ pub fn set_ort_dylib_env(repo_root: &Path, beside_exe: &Path) {
     if std::env::var_os("ORT_DYLIB_PATH").is_some() {
         return;
     }
+    ORT_PATH_OURS.store(true, std::sync::atomic::Ordering::SeqCst);
     let rt = repo_root.join("models").join("runtime");
     let found = dub_core::runtime::ort_candidates(&repo_root.join("models"))
         .into_iter()
@@ -291,7 +292,28 @@ pub fn set_ort_dylib_env(repo_root: &Path, beside_exe: &Path) {
     .find(|cand| cand.is_file());
     match found {
         Some(cand) => std::env::set_var("ORT_DYLIB_PATH", cand),
-        None => eprintln!("[ERROR] onnxruntime 1.28 not found in {}: recognition and diarization will not start until the ONNX Runtime component is downloaded", rt.display()),
+        None => {
+            // без пути ort взял бы системную 1.17 и упал паникой; путь сборки этой машины даёт ошибку «нет файла»,
+            // а закачка onnxruntime ставит его на скачанную (point_ort)
+            let mut candidates = dub_core::runtime::ort_candidates(&repo_root.join("models"));
+            let expected = if crate::hw::gpu_report().cuda13_ok { candidates.remove(0) } else { candidates.remove(candidates.len() - 1) };
+            eprintln!("[ERROR] onnxruntime 1.28 not found in {}: recognition and diarization will not start until the ONNX Runtime component is downloaded", rt.display());
+            std::env::set_var("ORT_DYLIB_PATH", expected);
+        }
+    }
+}
+
+/// ORT_DYLIB_PATH поставила студия, а не пользователь: только такой путь переставляется после закачки.
+static ORT_PATH_OURS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// После закачки onnxruntime — путь на первую установленную сборку. ort связывается с библиотекой при первом
+/// касании, поэтому перестановка действует, пока ни одна стадия его не тронула.
+pub fn point_ort(repo_root: &Path) {
+    if !ORT_PATH_OURS.load(std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    if let Some(found) = dub_core::runtime::ort_candidates(&repo_root.join("models")).into_iter().find(|cand| cand.is_file()) {
+        std::env::set_var("ORT_DYLIB_PATH", found);
     }
 }
 

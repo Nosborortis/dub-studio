@@ -2740,7 +2740,21 @@ fn finish(repo_root: &Path, selected: &[&Component]) -> Value {
 /// Скачать набор компонентов по id (идемпотентно: целые файлы закреплённой версии пропускаются, уже лежащий
 /// файл перед пропуском сверяется по SHA-256). Тело синхронное: зовут фоновый поток менеджера или джоба.
 /// cancel — пауза: скачанное остаётся в .part с манифестом чанков и докачивается следующим запуском.
+/// Скачанный onnxruntime сразу становится библиотекой ort процесса.
 pub fn download_components(
+    repo_root: &Path,
+    ids: &[String],
+    cancel: &dyn Fn() -> bool,
+    progress: &ProgressCb,
+) -> Result<Value, DlError> {
+    let fetched = fetch_components(repo_root, ids, cancel, progress)?;
+    if ids.iter().any(|id| id.starts_with("onnxruntime")) {
+        crate::point_ort(repo_root);
+    }
+    Ok(fetched)
+}
+
+fn fetch_components(
     repo_root: &Path,
     ids: &[String],
     cancel: &dyn Fn() -> bool,
