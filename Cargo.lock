@@ -883,8 +883,8 @@ dependencies = [
  "audioadapter",
  "audioadapter-buffers",
  "dub-core",
+ "dub-tcpp",
  "hound",
- "libloading 0.9.0",
  "ort",
  "parakeet-rs",
  "rubato",
@@ -1028,6 +1028,13 @@ dependencies = [
  "uuid",
  "windows-sys 0.61.2",
  "zip",
+]
+
+[[package]]
+name = "dub-tcpp"
+version = "2.0.0"
+dependencies = [
+ "libloading 0.9.0",
 ]
 
 [[package]]

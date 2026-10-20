@@ -3427,15 +3427,6 @@ mod tests {
         }
     }
 
-    fn index(files: &[(&str, u64)]) -> std::collections::HashMap<String, Vec<(PathBuf, u64)>> {
-        let mut map: std::collections::HashMap<String, Vec<(PathBuf, u64)>> = Default::default();
-        for (p, sz) in files {
-            let p = PathBuf::from(p);
-            let base = p.file_name().unwrap().to_string_lossy().to_lowercase();
-            map.entry(base).or_default().push((p, *sz));
-        }
-        map
-    }
 
     /// The recognition models and their engine download the same files as dub_asr::tcpp names, so every program
     /// that keeps them takes them from its neighbour.

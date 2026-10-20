@@ -1,0 +1,10 @@
+[package]
+name = "dub-tcpp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Speech recognition by transcribe.cpp (Parakeet, Nemotron, Silero VAD, VoxLingua107) loaded at run time"
+
+[dependencies]
+# transcribe_engine (transcribe.cpp) is loaded at run time, as the voice engines are: the program starts without it.
+libloading = "0.9"
