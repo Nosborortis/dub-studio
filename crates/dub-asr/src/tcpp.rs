@@ -1,0 +1,453 @@
+//! Распознавание через transcribe.cpp (ggml, CUDA): Parakeet TDT v3 и Ultra, Nemotron 3.5 из GGUF.
+//! Движок — одна библиотека `transcribe_engine` (форк timoncool/transcribe.cpp, ветка studio): libtranscribe и ggml
+//! целиком внутри, с ggml движков озвучки в том же процессе не делится. Грузится один раз на процесс; модель держится
+//! загруженной между задачами (`shared`), пока её не выгрузят (`unload`).
+//! Whisper сюда не входит: у порта Whisper в transcribe.cpp нет времени слов, он остаётся на whisper-faster.
+
+use crate::{segment_words, AsrEngine, AsrError, Segment, SpeakerSegment, Turn, Word, SEG_MAX_DUR, SEG_MAX_GAP};
+use libloading::Library;
+use std::ffi::{c_char, c_int, CStr, CString};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
+/// Папка движка в каталоге моделей.
+pub const ENGINE_DIR: &str = "transcribe-engine";
+#[cfg(windows)]
+pub const LIBRARY: &str = "transcribe_engine.dll";
+#[cfg(not(windows))]
+pub const LIBRARY: &str = "libtranscribe_engine.so";
+
+/// Файл закачки: адрес по закреплённой ревизии, размер и SHA-256. Одни и те же у всех программ, поэтому соседи берут
+/// файлы друг у друга.
+#[derive(Debug)]
+pub struct Download {
+    pub url: &'static str,
+    pub size: u64,
+    pub sha256: &'static str,
+}
+
+#[cfg(windows)]
+pub const ENGINE: Download = Download {
+    url: "https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.1.0/transcribe_engine.dll",
+    size: 144_462_848,
+    sha256: "3dd4a84a225797dd54de41f9a542f5b402270e7ae766348b7882e8d0154b279b",
+};
+#[cfg(not(windows))]
+pub const ENGINE: Download = Download {
+    url: "https://github.com/timoncool/transcribe.cpp/releases/download/engine-0.1.0/libtranscribe_engine.so",
+    size: 160_907_152,
+    sha256: "95c5bd50b4ee034826c8cced8faca9680883eb3da13c46932cc61088407f168c",
+};
+
+/// Модель распознавания на transcribe.cpp: её id, имя, папка (= id компонента) и файл в каталоге моделей, закачка и
+/// языки из карточки (пусто — любой).
+#[derive(Debug)]
+pub struct Model {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub dir: &'static str,
+    pub file: &'static str,
+    pub download: Download,
+    pub languages: &'static [&'static str],
+}
+
+pub const MODELS: &[Model] = &[
+    Model {
+        id: "parakeet-v3",
+        name: "Parakeet TDT v3",
+        dir: "asr-gguf-parakeet-v3",
+        file: "parakeet-tdt-0.6b-v3-Q8_0.gguf",
+        download: Download {
+            url: "https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v3-gguf/resolve/d8d8c32cb2017c57e5307767343e97870f8a7f53/parakeet-tdt-0.6b-v3-Q8_0.gguf",
+            size: 739_508_576,
+            sha256: "5859f77944efcd8eafa23a6350731960b2b55b2203df51f319665c807d802cc7",
+        },
+        languages: &["bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de", "el", "hu", "it", "lv", "lt", "mt", "pl", "pt", "ro", "ru", "sk", "sl", "es", "sv", "uk"],
+    },
+    Model {
+        id: "parakeet-ultra",
+        name: "Parakeet Ultra",
+        dir: "asr-gguf-parakeet-ultra",
+        file: "parakeet-ultra-Q8_0.gguf",
+        download: Download {
+            url: "https://huggingface.co/handy-computer/parakeet-ultra-gguf/resolve/a1539be1b849ea7463b88343e5277b373d0c4ea9/parakeet-ultra-Q8_0.gguf",
+            size: 740_363_168,
+            sha256: "007a59761e9258779f189df396b50d12b83bb5b79e66df4b955c230d2f2a0a59",
+        },
+        languages: &["en", "de", "fr", "es", "it", "pt", "ru", "uk", "hr", "sl", "lv", "lt", "et", "fi", "sv", "da", "nl", "pl", "cs", "sk", "hu", "ro", "bg", "el", "mt"],
+    },
+    Model {
+        id: "nemotron",
+        name: "Nemotron 3.5",
+        dir: "asr-gguf-nemotron",
+        file: "nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf",
+        download: Download {
+            url: "https://huggingface.co/handy-computer/nemotron-3.5-asr-streaming-0.6b-gguf/resolve/53ce288f69326b415aeef030cfcb02a08a8096dd/nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf",
+            size: 751_094_240,
+            sha256: "b94545b313b3223fda7b2857a52681da813935c2127643d1e9ff0c23d988089c",
+        },
+        languages: &["en", "es", "fr", "it", "pt", "nl", "de", "tr", "ru", "ar", "hi", "ja", "ko", "vi", "uk", "pl", "sv", "cs", "nb", "da", "bg", "fi", "hr", "sk", "zh", "hu", "ro", "et"],
+    },
+];
+
+pub fn model(id: &str) -> Option<&'static Model> {
+    MODELS.iter().find(|m| m.id == id)
+}
+
+pub fn engine_dir(models_root: &Path) -> PathBuf {
+    models_root.join(ENGINE_DIR)
+}
+
+pub fn model_path(models_root: &Path, m: &Model) -> PathBuf {
+    models_root.join(m.dir).join(m.file)
+}
+
+pub fn installed(models_root: &Path, m: &Model) -> bool {
+    engine_dir(models_root).join(LIBRARY).is_file() && model_path(models_root, m).is_file()
+}
+
+/// Знает ли модель `lang`; пусто или auto — язык определяет она сама.
+pub fn knows(m: &Model, lang: &str) -> bool {
+    lang.is_empty() || lang == "auto" || m.languages.is_empty() || m.languages.contains(&lang)
+}
+
+#[repr(C)]
+struct RunParams {
+    struct_size: u64,
+    task: c_int,
+    timestamps: c_int,
+    pnc: c_int,
+    itn: c_int,
+    diarize: c_int,
+    language: *const c_char,
+    target_language: *const c_char,
+    keep_special_tags: bool,
+    family: *const std::ffi::c_void,
+    spec_k_drafts: i32,
+    vocabulary: *const *const c_char,
+    n_vocabulary: i32,
+    prompt: *const c_char,
+    prefix: *const c_char,
+}
+
+#[repr(C)]
+struct RawWord {
+    struct_size: u64,
+    t0_ms: i64,
+    t1_ms: i64,
+    seg_index: c_int,
+    first_token: c_int,
+    n_tokens: c_int,
+    text: *const c_char,
+}
+
+#[repr(C)]
+struct Limits {
+    struct_size: u64,
+    effective_n_ctx: i32,
+    effective_max_audio_ms: i64,
+    max_kv_bytes: i64,
+}
+
+#[repr(C)]
+struct Capabilities {
+    struct_size: u64,
+    native_sample_rate: i32,
+    n_languages: c_int,
+    languages: *const *const c_char,
+    rest: [u8; 0],
+}
+
+const ABI_RUN_PARAMS: c_int = 2;
+const ABI_CAPABILITIES: c_int = 4;
+const ABI_WORD: c_int = 7;
+const ABI_SESSION_LIMITS: c_int = 11;
+const TIMESTAMPS_WORD: c_int = 3;
+
+enum RawModel {}
+enum RawSession {}
+
+#[derive(Clone, Copy)]
+struct Api {
+    status_string: unsafe extern "C" fn(c_int) -> *const c_char,
+    abi_size: unsafe extern "C" fn(c_int) -> usize,
+    load: unsafe extern "C" fn(*const c_char, *const std::ffi::c_void, *mut *mut RawModel) -> c_int,
+    model_free: unsafe extern "C" fn(*mut RawModel),
+    session_init: unsafe extern "C" fn(*mut RawModel, *const std::ffi::c_void, *mut *mut RawSession) -> c_int,
+    session_free: unsafe extern "C" fn(*mut RawSession),
+    run_params_init: unsafe extern "C" fn(*mut RunParams),
+    run: unsafe extern "C" fn(*mut RawSession, *const f32, c_int, *const RunParams) -> c_int,
+    n_words: unsafe extern "C" fn(*const RawSession) -> c_int,
+    word_init: unsafe extern "C" fn(*mut RawWord),
+    get_word: unsafe extern "C" fn(*const RawSession, c_int, *mut RawWord) -> c_int,
+    limits_init: unsafe extern "C" fn(*mut Limits),
+    get_limits: unsafe extern "C" fn(*const RawSession, *mut Limits) -> c_int,
+    caps_init: unsafe extern "C" fn(*mut Capabilities),
+    get_caps: unsafe extern "C" fn(*const RawModel, *mut Capabilities) -> c_int,
+}
+
+/// Куда читается структура возможностей движка: с запасом на её рост, первые поля читает `Capabilities`.
+type CapsBuffer = [u64; 64];
+
+/// Библиотека грузится один раз на процесс: статический инициализатор ggml второй загрузки не переживает.
+static LOADED: Mutex<Option<(Library, Api)>> = Mutex::new(None);
+
+fn library(dir: &Path) -> Result<Api, String> {
+    let mut loaded = LOADED.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((_, api)) = loaded.as_ref() {
+        return Ok(*api);
+    }
+    let path = dir.join(LIBRARY);
+    let lib = unsafe { Library::new(&path) }.map_err(|e| format!("{}: {e}", path.display()))?;
+    let api = unsafe {
+        macro_rules! sym {
+            ($name:literal) => {
+                *lib.get(concat!($name, "\0").as_bytes()).map_err(|e| format!("transcribe.cpp {}: {e}", $name))?
+            };
+        }
+        Api {
+            status_string: sym!("transcribe_status_string"),
+            abi_size: sym!("transcribe_abi_struct_size"),
+            load: sym!("transcribe_model_load_file"),
+            model_free: sym!("transcribe_model_free"),
+            session_init: sym!("transcribe_session_init"),
+            session_free: sym!("transcribe_session_free"),
+            run_params_init: sym!("transcribe_run_params_init"),
+            run: sym!("transcribe_run"),
+            n_words: sym!("transcribe_n_words"),
+            word_init: sym!("transcribe_word_init"),
+            get_word: sym!("transcribe_get_word"),
+            limits_init: sym!("transcribe_session_limits_init"),
+            get_limits: sym!("transcribe_session_get_limits"),
+            caps_init: sym!("transcribe_capabilities_init"),
+            get_caps: sym!("transcribe_model_get_capabilities"),
+        }
+    };
+    // структуры разложены здесь вручную: библиотеку другой раскладки отвергаем до первого вызова, что их заполняет
+    for (which, ours, name) in [(ABI_RUN_PARAMS, std::mem::size_of::<RunParams>(), "run params"), (ABI_WORD, std::mem::size_of::<RawWord>(), "word"), (ABI_SESSION_LIMITS, std::mem::size_of::<Limits>(), "session limits")] {
+        let theirs = unsafe { (api.abi_size)(which) };
+        if theirs != ours {
+            return Err(format!("transcribe.cpp {}: its {name} struct is {theirs} bytes, ours {ours}", path.display()));
+        }
+    }
+    let caps = unsafe { (api.abi_size)(ABI_CAPABILITIES) };
+    if caps < std::mem::size_of::<Capabilities>() || caps > std::mem::size_of::<CapsBuffer>() {
+        return Err(format!("transcribe.cpp {}: its capabilities struct is {caps} bytes, we read {}..{}", path.display(), std::mem::size_of::<Capabilities>(), std::mem::size_of::<CapsBuffer>()));
+    }
+    *loaded = Some((lib, api));
+    Ok(api)
+}
+
+fn text(p: *const c_char) -> String {
+    if p.is_null() {
+        return String::new();
+    }
+    unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()
+}
+
+fn engine_err(e: String) -> AsrError {
+    AsrError::Parakeet(e)
+}
+
+/// Модель на видеокарте и её сессия; освобождаются при drop.
+pub struct TcppAsr {
+    api: Api,
+    model: *mut RawModel,
+    session: *mut RawSession,
+    languages: Vec<String>,
+    /// Самый длинный звук за один прогон, с; 0 — без предела (длинное семейство режет само).
+    max_secs: f64,
+}
+
+// Один прогон на сессию за раз держит вызывающий (через &mut или Mutex).
+unsafe impl Send for TcppAsr {}
+
+impl Drop for TcppAsr {
+    fn drop(&mut self) {
+        unsafe {
+            (self.api.session_free)(self.session);
+            (self.api.model_free)(self.model);
+        }
+    }
+}
+
+impl TcppAsr {
+    /// Загрузить модель `model` движком из `engine_dir`.
+    pub fn load(engine_dir: &Path, model: &Path) -> Result<TcppAsr, String> {
+        let api = library(engine_dir)?;
+        let c_path = CString::new(model.to_string_lossy().as_bytes()).map_err(|e| e.to_string())?;
+        let status = |s: c_int| text(unsafe { (api.status_string)(s) });
+        let mut raw: *mut RawModel = std::ptr::null_mut();
+        let s = unsafe { (api.load)(c_path.as_ptr(), std::ptr::null(), &mut raw) };
+        if s != 0 || raw.is_null() {
+            return Err(format!("transcribe.cpp {}: {}", model.display(), status(s)));
+        }
+        let mut session: *mut RawSession = std::ptr::null_mut();
+        let s = unsafe { (api.session_init)(raw, std::ptr::null(), &mut session) };
+        if s != 0 || session.is_null() {
+            unsafe { (api.model_free)(raw) };
+            return Err(format!("transcribe.cpp {}: {}", model.display(), status(s)));
+        }
+        let mut caps = std::mem::MaybeUninit::<CapsBuffer>::zeroed();
+        let caps_ptr = caps.as_mut_ptr() as *mut Capabilities;
+        let mut languages = Vec::new();
+        unsafe {
+            (api.caps_init)(caps_ptr);
+            if (api.get_caps)(raw, caps_ptr) == 0 {
+                let c = &*caps_ptr;
+                let listed = if c.languages.is_null() { 0 } else { c.n_languages.max(0) as usize };
+                for i in 0..listed {
+                    languages.push(text(*c.languages.add(i)));
+                }
+            }
+        }
+        let mut limits = Limits { struct_size: 0, effective_n_ctx: 0, effective_max_audio_ms: 0, max_kv_bytes: 0 };
+        let max_secs = unsafe {
+            (api.limits_init)(&mut limits);
+            if (api.get_limits)(session, &mut limits) == 0 { limits.effective_max_audio_ms.max(0) as f64 / 1000.0 } else { 0.0 }
+        };
+        Ok(TcppAsr { api, model: raw, session, languages, max_secs })
+    }
+
+    /// Имя `lang` у самой модели: «ru» — это «ru-RU» у модели, что пишет языки с регионом.
+    fn language(&self, lang: &str) -> Result<Option<CString>, AsrError> {
+        if lang.is_empty() || lang == "auto" || self.languages.is_empty() {
+            return Ok(None);
+        }
+        let prefix = format!("{}-", lang.to_ascii_lowercase());
+        let found = self.languages.iter().find(|l| l.eq_ignore_ascii_case(lang)).or_else(|| self.languages.iter().find(|l| l.to_ascii_lowercase().starts_with(&prefix)));
+        match found {
+            Some(l) => Ok(Some(CString::new(l.as_str()).map_err(|e| engine_err(e.to_string()))?)),
+            None => Err(engine_err(format!("transcribe.cpp: the model does not recognise «{lang}» (it knows {})", self.languages.join(", ")))),
+        }
+    }
+
+    /// Слова 16 кГц моно со временем от его начала, с.
+    pub fn words(&mut self, pcm: &[f32], lang: &str) -> Result<Vec<Word>, AsrError> {
+        let language = self.language(lang)?;
+        let window = if self.max_secs > 0.0 { (self.max_secs * 16_000.0) as usize } else { pcm.len() }.max(16_000);
+        let mut out = Vec::new();
+        for (n, piece) in pcm.chunks(window).enumerate() {
+            let offset = (n * window) as f64 / 16_000.0;
+            let mut p = std::mem::MaybeUninit::<RunParams>::zeroed();
+            let params = unsafe {
+                (self.api.run_params_init)(p.as_mut_ptr());
+                let mut params = p.assume_init();
+                params.timestamps = TIMESTAMPS_WORD;
+                params.language = language.as_ref().map_or(std::ptr::null(), |l| l.as_ptr());
+                params
+            };
+            let s = unsafe { (self.api.run)(self.session, piece.as_ptr(), piece.len() as c_int, &params) };
+            if s != 0 {
+                return Err(engine_err(format!("transcribe.cpp: {}", text(unsafe { (self.api.status_string)(s) }))));
+            }
+            let n_words = unsafe { (self.api.n_words)(self.session) };
+            for i in 0..n_words.max(0) {
+                let mut w = std::mem::MaybeUninit::<RawWord>::zeroed();
+                unsafe {
+                    (self.api.word_init)(w.as_mut_ptr());
+                    if (self.api.get_word)(self.session, i, w.as_mut_ptr()) != 0 {
+                        continue;
+                    }
+                    let w = w.assume_init();
+                    let word = text(w.text);
+                    if word.trim().is_empty() {
+                        continue;
+                    }
+                    out.push(Word { word: word.trim().to_string(), start: offset + w.t0_ms as f64 / 1000.0, end: offset + w.t1_ms as f64 / 1000.0 });
+                }
+            }
+        }
+        Ok(out)
+    }
+}
+
+/// Загруженная модель процесса: одна на видеокарте, общая для всех задач, пока не попросят другую или `unload`.
+static SHARED: Mutex<Option<(PathBuf, Arc<Mutex<TcppAsr>>)>> = Mutex::new(None);
+
+/// Модель `model` из кэша процесса; другая модель в кэше выгружается.
+pub fn shared(engine_dir: &Path, model: &Path) -> Result<Arc<Mutex<TcppAsr>>, AsrError> {
+    let mut slot = SHARED.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((path, asr)) = slot.as_ref() {
+        if path == model {
+            return Ok(asr.clone());
+        }
+    }
+    *slot = None;
+    let asr = Arc::new(Mutex::new(TcppAsr::load(engine_dir, model).map_err(engine_err)?));
+    *slot = Some((model.to_path_buf(), asr.clone()));
+    Ok(asr)
+}
+
+/// Выгрузить модель из кэша процесса (видеопамять освобождается, когда её отпустит последняя задача).
+pub fn unload() {
+    *SHARED.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+/// Распознаватель задачи: берёт модель из кэша процесса при первом распознавании (студия строит его до того, как
+/// знает, понадобится ли он).
+pub struct TcppEngine {
+    engine_dir: PathBuf,
+    model: PathBuf,
+}
+
+impl TcppEngine {
+    pub fn new(models_root: &Path, m: &Model) -> TcppEngine {
+        TcppEngine { engine_dir: engine_dir(models_root), model: model_path(models_root, m) }
+    }
+
+    fn words(&self, pcm: &[f32], lang: &str) -> Result<Vec<Word>, AsrError> {
+        let asr = shared(&self.engine_dir, &self.model)?;
+        let mut asr = asr.lock().unwrap_or_else(|e| e.into_inner());
+        asr.words(pcm, lang)
+    }
+}
+
+impl AsrEngine for TcppEngine {
+    fn transcribe(&mut self, wav: &Path, lang: &str) -> Result<Vec<Segment>, AsrError> {
+        let (pcm, _) = crate::load_wav_16k_mono(wav)?;
+        Ok(segment_words(&self.words(&pcm, lang)?, SEG_MAX_GAP, SEG_MAX_DUR))
+    }
+
+    fn transcribe_turns(&mut self, wav: &Path, turns: &[Turn], lang: &str) -> Result<Vec<SpeakerSegment>, AsrError> {
+        let (pcm, _) = crate::load_wav_16k_mono(wav)?;
+        let mut out = Vec::new();
+        for t in turns {
+            let a = (t.start * 16_000.0) as usize;
+            let b = ((t.end * 16_000.0) as usize).min(pcm.len());
+            if b <= a || b - a < 3_200 {
+                continue;
+            }
+            for s in segment_words(&self.words(&pcm[a..b], lang)?, SEG_MAX_GAP, SEG_MAX_DUR) {
+                out.push(SpeakerSegment { start: t.start + s.start, end: t.start + s.end, text: s.text, speaker: t.speaker });
+            }
+        }
+        Ok(out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_model_has_its_own_folder_and_a_pinned_download() {
+        let mut dirs: Vec<&str> = MODELS.iter().map(|m| m.dir).collect();
+        dirs.sort();
+        dirs.dedup();
+        assert_eq!(dirs.len(), MODELS.len());
+        for m in MODELS {
+            assert!(m.download.url.contains("/resolve/") && m.download.url.ends_with(m.file), "{}", m.id);
+            assert_eq!(m.download.sha256.len(), 64, "{}", m.id);
+            assert!(m.download.size > 0, "{}", m.id);
+        }
+    }
+
+    #[test]
+    fn a_model_knows_its_languages_and_auto() {
+        let p = model("parakeet-v3").unwrap();
+        assert!(knows(p, "ru") && knows(p, "auto") && knows(p, ""));
+        assert!(!knows(p, "ja"));
+        assert!(knows(model("nemotron").unwrap(), "ja"));
+    }
+}

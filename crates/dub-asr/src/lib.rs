@@ -14,6 +14,7 @@ mod reconcile;
 mod resample;
 mod segment;
 mod speaker_global;
+pub mod tcpp;
 mod whisper;
 mod window;
 pub use hallucination::{hallucination_kind, is_hallucination, loop_kind, repeated_lines, HallucinationKind, HallucinationRules, LoopRules};

@@ -884,6 +884,7 @@ dependencies = [
  "audioadapter-buffers",
  "dub-core",
  "hound",
+ "libloading 0.9.0",
  "ort",
  "parakeet-rs",
  "rubato",
