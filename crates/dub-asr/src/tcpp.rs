@@ -106,8 +106,8 @@ pub fn installed(models_root: &Path, m: &Model) -> bool {
     engine_dir(models_root).join(LIBRARY).is_file() && model_path(models_root, m).is_file()
 }
 
-/// Вспомогательная модель transcribe.cpp: разметка речи (Silero VAD v6.2) и определение языка (VoxLingua107, 107 языков).
-/// Обе мелкие и выложены в F32.
+/// Вспомогательная модель transcribe.cpp: разметка речи (Silero VAD v6.2, только F32, считается на CPU) и определение
+/// языка (VoxLingua107, 107 языков; Q8_0 по замеру авторов точнее F32: 86,30% против 85,23% на FLEURS).
 #[derive(Debug)]
 pub struct Helper {
     pub id: &'static str,
@@ -130,11 +130,11 @@ pub const VAD: Helper = Helper {
 pub const LANGID: Helper = Helper {
     id: "langid",
     dir: "langid-voxlingua107",
-    file: "lang-id-voxlingua107-ecapa-F32.gguf",
+    file: "lang-id-voxlingua107-ecapa-Q8_0.gguf",
     download: Download {
-        url: "https://huggingface.co/handy-computer/lang-id-voxlingua107-ecapa-gguf/resolve/e59f0f3847e77723b7d58447ef9456fa0c7e9436/lang-id-voxlingua107-ecapa-F32.gguf",
-        size: 84_993_184,
-        sha256: "d0420e485112ca05e31aa06e1615556102083a9725e89b55a1f0963c0c0ead66",
+        url: "https://huggingface.co/handy-computer/lang-id-voxlingua107-ecapa-gguf/resolve/e59f0f3847e77723b7d58447ef9456fa0c7e9436/lang-id-voxlingua107-ecapa-Q8_0.gguf",
+        size: 26_693_632,
+        sha256: "063e6cb0af3d53085fc7d68356dfde5ecee2ffa7bc79855f7e4ff930081bfe3a",
     },
 };
 
@@ -195,6 +195,14 @@ struct Capabilities {
 }
 
 #[repr(C)]
+struct LoadParams {
+    struct_size: u64,
+    backend: c_int,
+    device: *mut std::ffi::c_void,
+    no_mmap: bool,
+}
+
+#[repr(C)]
 struct VadResult {
     struct_size: u64,
     n_probs: i32,
@@ -252,6 +260,7 @@ struct StreamText {
     raw_tentative_start_bytes: u64,
 }
 
+const ABI_MODEL_LOAD_PARAMS: c_int = 0;
 const ABI_RUN_PARAMS: c_int = 2;
 const ABI_STREAM_PARAMS: c_int = 3;
 const ABI_CAPABILITIES: c_int = 4;
@@ -263,6 +272,7 @@ const ABI_LANGID_RESULT: c_int = 22;
 const ABI_LANGID_CANDIDATE: c_int = 23;
 const ABI_VAD_RESULT: c_int = 27;
 const TIMESTAMPS_WORD: c_int = 3;
+const BACKEND_CPU: c_int = 1;
 
 enum RawModel {}
 enum RawSession {}
@@ -273,7 +283,8 @@ enum RawLangId {}
 struct Api {
     status_string: unsafe extern "C" fn(c_int) -> *const c_char,
     abi_size: unsafe extern "C" fn(c_int) -> usize,
-    load: unsafe extern "C" fn(*const c_char, *const std::ffi::c_void, *mut *mut RawModel) -> c_int,
+    load: unsafe extern "C" fn(*const c_char, *const LoadParams, *mut *mut RawModel) -> c_int,
+    load_params_init: unsafe extern "C" fn(*mut LoadParams),
     model_free: unsafe extern "C" fn(*mut RawModel),
     session_init: unsafe extern "C" fn(*mut RawModel, *const std::ffi::c_void, *mut *mut RawSession) -> c_int,
     session_free: unsafe extern "C" fn(*mut RawSession),
@@ -338,6 +349,7 @@ fn library(dir: &Path) -> Result<Api, String> {
             status_string: sym!("transcribe_status_string"),
             abi_size: sym!("transcribe_abi_struct_size"),
             load: sym!("transcribe_model_load_file"),
+            load_params_init: sym!("transcribe_model_load_params_init"),
             model_free: sym!("transcribe_model_free"),
             session_init: sym!("transcribe_session_init"),
             session_free: sym!("transcribe_session_free"),
@@ -396,6 +408,12 @@ fn library(dir: &Path) -> Result<Api, String> {
             return Err(format!("transcribe.cpp {}: its {name} struct is {theirs} bytes, ours {ours}", path.display()));
         }
     }
+    // the load params grow at their end (`no_mmap` came after engine-0.1.0): the library stamps its own size, and only the
+    // backend and the device before it are set here
+    let load = unsafe { (api.abi_size)(ABI_MODEL_LOAD_PARAMS) };
+    if load < std::mem::offset_of!(LoadParams, no_mmap) {
+        return Err(format!("transcribe.cpp {}: its model load params struct is {load} bytes, shorter than the backend field needs", path.display()));
+    }
     let caps = unsafe { (api.abi_size)(ABI_CAPABILITIES) };
     if caps < std::mem::size_of::<Capabilities>() || caps > std::mem::size_of::<CapsBuffer>() {
         return Err(format!("transcribe.cpp {}: its capabilities struct is {caps} bytes, we read {}..{}", path.display(), std::mem::size_of::<Capabilities>(), std::mem::size_of::<CapsBuffer>()));
@@ -423,6 +441,8 @@ pub struct TcppAsr {
     languages: Vec<String>,
     /// Самый длинный звук за один прогон, с; 0 — без предела (длинное семейство режет само).
     max_secs: f64,
+    /// На модели идёт поток (`TcppStream`): прогоны до его конца отвечают «занято», как в официальных привязках.
+    streaming: bool,
 }
 
 // Один прогон на сессию за раз держит вызывающий (через &mut или Mutex).
@@ -472,13 +492,22 @@ impl TcppAsr {
             (api.limits_init)(&mut limits);
             if (api.get_limits)(session, &mut limits) == 0 { limits.effective_max_audio_ms.max(0) as f64 / 1000.0 } else { 0.0 }
         };
-        Ok(TcppAsr { api, model: raw, session, languages, max_secs })
+        Ok(TcppAsr { api, model: raw, session, languages, max_secs, streaming: false })
     }
 
-    /// Имя `lang` у самой модели: «ru» — это «ru-RU» у модели, что пишет языки с регионом.
+    fn busy(&self) -> Result<(), AsrError> {
+        if self.streaming {
+            return Err(engine_err("transcribe.cpp: the model is busy with live recognition".into()));
+        }
+        Ok(())
+    }
+
+    /// Имя `lang` у самой модели: «ru» — это «ru-RU» у модели, что пишет языки с регионом. Без языка модель с
+    /// языками-регионами (Nemotron) получает `auto`: язык ей нужно назвать всегда.
     fn language(&self, lang: &str) -> Result<Option<CString>, AsrError> {
         if lang.is_empty() || lang == "auto" || self.languages.is_empty() {
-            return Ok(None);
+            let regional = !self.languages.is_empty() && self.languages.iter().all(|l| l.contains('-'));
+            return Ok(regional.then(|| CString::new("auto").expect("no NUL")));
         }
         let prefix = format!("{}-", lang.to_ascii_lowercase());
         let found = self.languages.iter().find(|l| l.eq_ignore_ascii_case(lang)).or_else(|| self.languages.iter().find(|l| l.to_ascii_lowercase().starts_with(&prefix)));
@@ -490,6 +519,7 @@ impl TcppAsr {
 
     /// Слова 16 кГц моно со временем от его начала, с.
     pub fn words(&mut self, pcm: &[f32], lang: &str) -> Result<Vec<Word>, AsrError> {
+        self.busy()?;
         let language = self.language(lang)?;
         let window = if self.max_secs > 0.0 { (self.max_secs * 16_000.0) as usize } else { pcm.len() }.max(16_000);
         let mut out = Vec::new();
@@ -536,6 +566,7 @@ impl TcppAsr {
     /// Слова нескольких коротких отрывков 16 кГц моно одним пакетным прогоном; ошибка отрывка — в его элементе.
     /// Отрывок длиннее того, что модель берёт за раз, идёт сам по себе через `words`.
     pub fn words_batch(&mut self, pieces: &[&[f32]], lang: &str) -> Result<Vec<Result<Vec<Word>, AsrError>>, AsrError> {
+        self.busy()?;
         let language = self.language(lang)?;
         let limit = if self.max_secs > 0.0 { (self.max_secs * 16_000.0) as usize } else { usize::MAX };
         let mut out: Vec<Option<Result<Vec<Word>, AsrError>>> = (0..pieces.len()).map(|_| None).collect();
@@ -594,7 +625,10 @@ unsafe impl Send for TcppStream {}
 
 impl Drop for TcppStream {
     fn drop(&mut self) {
-        let _guard = self.asr.lock().unwrap_or_else(|e| e.into_inner());
+        let mut asr = self.asr.lock().unwrap_or_else(|e| e.into_inner());
+        if self.open {
+            asr.streaming = false;
+        }
         unsafe { (self.api.session_free)(self.session) };
     }
 }
@@ -633,10 +667,27 @@ impl TcppStream {
         }
     }
 
-    /// Дописать звук фразы (16 кГц моно); текст фразы на сейчас.
+    /// Сбросить поток после ошибки и отпустить модель.
+    fn abandon(&mut self, asr: &mut TcppAsr) {
+        unsafe { (self.api.stream_reset)(self.session) };
+        self.open = false;
+        asr.streaming = false;
+    }
+
+    /// Дописать звук фразы (16 кГц моно); текст фразы на сейчас. Ошибка сбрасывает поток.
     pub fn feed(&mut self, pcm: &[f32]) -> Result<String, AsrError> {
-        let _guard = self.asr.lock().unwrap_or_else(|e| e.into_inner());
+        let asr = self.asr.clone();
+        let mut guard = asr.lock().unwrap_or_else(|e| e.into_inner());
+        let said = self.feed_locked(&mut guard, pcm);
+        if said.is_err() {
+            self.abandon(&mut guard);
+        }
+        said
+    }
+
+    fn feed_locked(&mut self, asr: &mut TcppAsr, pcm: &[f32]) -> Result<String, AsrError> {
         if !self.open {
+            asr.busy()?;
             let mut rp = std::mem::MaybeUninit::<RunParams>::zeroed();
             let mut sp = std::mem::MaybeUninit::<StreamParams>::zeroed();
             unsafe {
@@ -647,6 +698,7 @@ impl TcppStream {
                 self.check((self.api.stream_begin)(self.session, &run, sp.as_ptr()))?;
             }
             self.open = true;
+            asr.streaming = true;
         }
         if !pcm.is_empty() {
             let mut u = std::mem::MaybeUninit::<StreamUpdate>::zeroed();
@@ -658,28 +710,34 @@ impl TcppStream {
         self.so_far()
     }
 
-    /// Закончить фразу: её окончательный текст; следующий `feed` начинает новую.
+    /// Закончить фразу: её окончательный текст; следующий `feed` начинает новую. Модель свободна после этого.
     pub fn finish(&mut self) -> Result<String, AsrError> {
         if !self.open {
             return Ok(String::new());
         }
-        let _guard = self.asr.lock().unwrap_or_else(|e| e.into_inner());
+        let asr = self.asr.clone();
+        let mut guard = asr.lock().unwrap_or_else(|e| e.into_inner());
         let mut u = std::mem::MaybeUninit::<StreamUpdate>::zeroed();
         let said = unsafe {
             (self.api.stream_update_init)(u.as_mut_ptr());
-            self.check((self.api.stream_finalize)(self.session, u.as_mut_ptr()))?;
-            self.so_far()
+            self.check((self.api.stream_finalize)(self.session, u.as_mut_ptr())).and_then(|_| self.so_far())
         };
-        unsafe { (self.api.stream_reset)(self.session) };
-        self.open = false;
+        self.abandon(&mut guard);
         said
     }
 }
 
+/// Мелкая модель (разметка речи, определение языка) — на CPU: поднять её на видеокарту дольше, чем она считает.
 fn load_helper(api: &Api, path: &Path) -> Result<*mut RawModel, String> {
     let c_path = CString::new(path.to_string_lossy().as_bytes()).map_err(|e| e.to_string())?;
     let mut raw: *mut RawModel = std::ptr::null_mut();
-    let s = unsafe { (api.load)(c_path.as_ptr(), std::ptr::null(), &mut raw) };
+    let mut lp = std::mem::MaybeUninit::<LoadParams>::zeroed();
+    let s = unsafe {
+        (api.load_params_init)(lp.as_mut_ptr());
+        let mut params = lp.assume_init();
+        params.backend = BACKEND_CPU;
+        (api.load)(c_path.as_ptr(), &params, &mut raw)
+    };
     if s != 0 || raw.is_null() {
         return Err(format!("transcribe.cpp {}: {}", path.display(), text(unsafe { (api.status_string)(s) })));
     }
@@ -766,6 +824,9 @@ impl Drop for LangId {
 }
 
 static LANGID_LOADED: Mutex<Option<(PathBuf, LangId)>> = Mutex::new(None);
+
+/// Короче этого (0,5 с) определение языка не слушает: `INPUT_TOO_SHORT`.
+pub const LANGID_MIN_SAMPLES: usize = 8_000;
 
 /// Языки речи 16 кГц моно по VoxLingua107 из `model`, вероятнее первые: (код, вероятность). Слушает первые 30 с.
 pub fn detect_language(engine_dir: &Path, model: &Path, pcm: &[f32]) -> Result<Vec<(String, f32)>, String> {
