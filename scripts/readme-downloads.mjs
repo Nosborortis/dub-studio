@@ -93,6 +93,7 @@ const NAMES = {
   "gemma-q8_0": "Gemma-4 12B Q8_0 + vision",
   parakeet: "Parakeet-TDT 0.6B v3 Q8_0 (transcribe.cpp)",
   "transcribe-engine": "transcribe.cpp engine (CUDA)",
+  "transcribe-engine-cpu": "transcribe.cpp engine (CPU)",
   "higgs-q6_k": "Higgs Audio v3 Q6_K",
   "higgs-q4_k_m": "Higgs Audio v3 Q4_K_M",
   drama3: "Fish Audio Drama 3 Q4 + drama_engine (24 GB+ GPU)",
