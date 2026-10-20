@@ -114,11 +114,17 @@ static LOADED: LazyLock<Mutex<Option<Arc<Stresser>>>> = LazyLock::new(|| Mutex::
 
 /// Общий на процесс разметчик: грузится при первом обращении (словарь собирается в память один раз).
 pub fn shared(models_root: &Path) -> Result<Arc<Stresser>, String> {
-    let mut slot = LOADED.lock().map_err(|_| "stress lock".to_string())?;
+    // паника загрузки (чужая onnxruntime.dll) не должна валить на замке каждый следующий блок
+    let mut slot = LOADED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     if let Some(s) = slot.as_ref().filter(|s| s.omo_dir == omograph_dir(&dir(models_root))) {
         return Ok(s.clone());
     }
-    let s = Arc::new(Stresser::load(&dir(models_root))?);
+    let root = dir(models_root);
+    let loaded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| Stresser::load(&root))).map_err(|panic| {
+        let text = panic.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| panic.downcast_ref::<String>().cloned()).unwrap_or_default();
+        format!("RUAccent не загрузился: {text}")
+    })?;
+    let s = Arc::new(loaded?);
     *slot = Some(s.clone());
     Ok(s)
 }
@@ -573,6 +579,19 @@ pub fn omograph_tag(models_root: &Path) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_panic_under_the_lock_does_not_fail_every_later_line() {
+        let _ = std::thread::spawn(|| {
+            let _held = LOADED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            panic!("a load that panicked");
+        })
+        .join();
+        assert!(LOADED.is_poisoned());
+        let missing = std::env::temp_dir().join(format!("no-ruaccent-{}", std::process::id()));
+        let error = shared(&missing).err().unwrap_or_default();
+        assert_ne!(error, "stress lock", "the next line names its own cause");
+    }
 
     #[test]
     fn manual_pluses_leave_the_clean_text_and_come_back_in_place() {

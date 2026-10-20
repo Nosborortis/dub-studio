@@ -61,7 +61,7 @@ import { CASTING_CHANGED, JOURNAL_CHANGED, PROJECTS_CHANGED, SETTINGS_CHANGED, V
 import { named } from "./lib/a11y";
 import { goHome, openProject as openProjectIn } from "./lib/openProject";
 import { GlossaryButton } from "./components/GlossaryPanel";
-import { SourceText, TtsSkipNote } from "./components/SegmentText";
+import { SourceText, TtsIgnoredNote, TtsSkipNote } from "./components/SegmentText";
 import { hubChanged, setTelemetry, useHubState } from "./lib/studioHub";
 import { HubBars } from "./components/HubBars";
 import HubTelemetryPreview from "./components/HubTelemetryPreview";
@@ -3215,6 +3215,7 @@ function Editor() {
                     onSelect={(n) => doTakeSelect(seg.id, n)} onPin={(pinned) => doTakePin(seg.id, pinned)} />
                 )}
                 {seg.tts_skip && <TtsSkipNote reason={seg.tts_skip} />}
+                {seg.tts_ignored && seg.tts_ignored.length > 0 && <TtsIgnoredNote tags={seg.tts_ignored} />}
                 {on && (
                   <div className="flex items-center gap-1.5 mt-1.5" onClick={(e) => e.stopPropagation()} title={t("seg.timingHint")}>
                     <Clock size={11} className="text-[var(--color-muted)] shrink-0" />

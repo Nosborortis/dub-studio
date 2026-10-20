@@ -1251,6 +1251,9 @@
       "sound_only": "不配音：只有声音标记",
       "no_words": "不配音：没有文字"
     },
+    "ttsIgnored": "引擎不会读取：{{tags}}",
+    "ttsIgnoredHint": "这是其他配音引擎的标记：所选引擎不读取，不会进入配音",
+    "ttsIgnoredStress": "重音“+”",
     "err": {
       "over_limit": "术语表有 {{total}} 条，超过上限 {{max}}。",
       "empty_term": "第 {{entry}} 条没有术语。",

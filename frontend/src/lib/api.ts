@@ -67,8 +67,9 @@ export type Segment = {
   id: string; start: number; end: number; speaker?: string | null;
   src_text: string; tgt_text: string; voice?: string | null; dirty: boolean; hidden?: boolean; keep_original?: boolean;
   fit?: Fit | null; takes?: TakesSummary | null; shortened?: { from: string; to: string } | null;
-  // что услышит озвучка, если отличается от tgt_text (без тегов звуков, с произношением глоссария); почему фраза не озвучивается
-  tts_text?: string; tts_skip?: TtsSkip;
+  // что услышит озвучка, если отличается от tgt_text (без тегов звуков, с произношением глоссария); почему фраза не озвучивается;
+  // разметка, которую выбранный движок не читает и которая снята («+» — ударение)
+  tts_text?: string; tts_skip?: TtsSkip; tts_ignored?: string[];
 };
 // Двуязычные субтитры (subs.mode = bilingual): порядок строк и вид второй строки (null — как у основной).
 export type Bilingual = {

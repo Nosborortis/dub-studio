@@ -247,6 +247,10 @@ tts-silent-after-cleanup = nenhuma fala restou após limpar o texto, então sil�
     [one] fala
    *[other] falas
 } ({ $lines })
+tts-markup-ignored = o motor de voz não lê esta marcação, então ela foi retirada: { $count } { $count ->
+    [one] fala
+   *[other] falas
+} ({ $lines })
 mcp-bad-speaker-count = speaker_count: espera-se um número inteiro de 0 a { $max }
 mcp-speakers-without-diarize = speaker_count maior que 1 não é compatível com diarize=false
 

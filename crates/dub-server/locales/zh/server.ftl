@@ -193,6 +193,7 @@ translate-coverage-retry = 翻译覆盖：{ $count } 行未翻译；正在补译
 translate-coverage-failed = 翻译覆盖：补译失败（{ $error }）
 translate-coverage-left = 翻译覆盖：仍有 { $count } 行未翻译
 tts-silent-after-cleanup = 清理文本后没有可读内容，保持静音：{ $count } 句（{ $lines }）
+tts-markup-ignored = 配音引擎不读这些标记，已去掉：{ $count } 句（{ $lines }）
 mcp-bad-speaker-count = speaker_count：应为 0 到 { $max } 的整数
 mcp-speakers-without-diarize = speaker_count 大于 1 时不能与 diarize=false 同用
 

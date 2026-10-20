@@ -247,6 +247,10 @@ tts-silent-after-cleanup = no speech left after cleaning the text, so silence: {
     [one] line
    *[other] lines
 } ({ $lines })
+tts-markup-ignored = the voice engine does not read this markup, so it was taken off: { $count } { $count ->
+    [one] line
+   *[other] lines
+} ({ $lines })
 mcp-bad-speaker-count = speaker_count: a whole number from 0 to { $max } is expected
 mcp-speakers-without-diarize = speaker_count above 1 does not go with diarize=false
 

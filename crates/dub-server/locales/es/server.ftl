@@ -247,6 +247,10 @@ tts-silent-after-cleanup = no queda habla tras limpiar el texto, así que silenc
     [one] frase
    *[other] frases
 } ({ $lines })
+tts-markup-ignored = el motor de voz no lee esta marca, así que se quitó: { $count } { $count ->
+    [one] frase
+   *[other] frases
+} ({ $lines })
 mcp-bad-speaker-count = speaker_count: se espera un número entero de 0 a { $max }
 mcp-speakers-without-diarize = speaker_count mayor que 1 no es compatible con diarize=false
 

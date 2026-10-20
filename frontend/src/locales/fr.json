@@ -1275,6 +1275,9 @@
       "sound_only": "Non doublé : seulement des balises de sons",
       "no_words": "Non doublé : aucun mot"
     },
+    "ttsIgnored": "Le moteur ne lira pas : {{tags}}",
+    "ttsIgnoredHint": "Balisage d’un autre moteur de voix : le moteur choisi ne le lit pas, il n’entre pas dans le doublage",
+    "ttsIgnoredStress": "accent « + »",
     "err": {
       "over_limit": "Le glossaire compte {{total}} entrées, plus que {{max}}.",
       "empty_term": "L’entrée {{entry}} n’a pas de terme.",
