@@ -5,6 +5,7 @@ members = [
     "crates/drama",
     "crates/qwentts",
     "crates/dub-asr",
+    "crates/dub-tcpp",
     "crates/dub-core",
     "crates/dub-llm",
     "crates/dub-translate",

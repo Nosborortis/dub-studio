@@ -146,7 +146,7 @@ pub fn verify_captions_e2e(
         input: input_video.to_path_buf(),
         work_dir: work_dir.to_path_buf(),
         repo_root: repo_root.to_path_buf(),
-        asr: models::AsrChoice::Parakeet(unused.clone()), // ocr::stage не трогает ASR (verify-путь)
+        asr: models::AsrChoice::unused(), // ocr::stage не трогает ASR (verify-путь)
         sortformer_onnx: unused.clone(),
         llama_bin: dub_llm::resolve_llama_bin(&repo_root.join("tools").join("llama")),
         mt_model,
@@ -183,8 +183,6 @@ pub struct AppState {
     pub web_root: Option<PathBuf>,
     pub opts: Arc<EngineOpts>,
     pub jobs: JobQueue,
-    /// Каталог TDT-модели ASR (analyze). Env DUB_STUDIO_TDT, иначе <models_root>/tdt.
-    pub tdt_dir: PathBuf,
     /// Путь к модели диаризации (Nemotron 3 Diarization .onnx). Env DUB_STUDIO_SORTFORMER, иначе
     /// <models_root>/nemotron-diar/nemotron3_diar_v3.onnx.
     pub sortformer_onnx: PathBuf,
@@ -375,6 +373,7 @@ impl AppState {
         }
         let web_root = spa::find_web_root(&repo_root);
         let mroot = models_root(&repo_root);
+        setup::remove_retired(&mroot);
         match credentials::migrate_legacy_selection(&mroot) {
             Ok(moved) if moved.openrouter_key || moved.proxy_password => {
                 tracing::info!("secrets moved from active.json to the secret store: {moved:?}")
@@ -382,9 +381,6 @@ impl AppState {
             Ok(_) => {}
             Err(e) => tracing::error!("secrets from active.json were not moved to the store: {e:#}"),
         }
-        let tdt_dir = std::env::var("DUB_STUDIO_TDT")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| mroot.join("tdt"));
         let sortformer_onnx = std::env::var("DUB_STUDIO_SORTFORMER")
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
@@ -417,7 +413,6 @@ impl AppState {
             web_root,
             opts: Arc::new(EngineOpts::default()),
             jobs: JobQueue::new(),
-            tdt_dir,
             sortformer_onnx,
             llama_bin,
             bsroformer_cli,
@@ -876,9 +871,10 @@ fn ensure_job_components(
     if casting && missing("casting") {
         need.push("casting".to_string());
     }
-    // Любая локальная стадия на GPU → полный CUDA-стек: диаризация/ASR грузят onnxruntime-GPU + cuDNN,
-    // ggml-движки (сепарация/Higgs) — cuda-runtime (cudart/cublas/cuFFT). Без cuFFT CUDA-EP не поднимется.
-    let gpu = ["sep_backend", "diar_backend", "asr_backend"]
+    // Сепарация или диаризация на GPU → полный CUDA-стек: диаризация грузит onnxruntime-GPU + cuDNN, ggml-движки
+    // (сепарация/Higgs) — cuda-runtime (cudart/cublas/cuFFT). Без cuFFT CUDA-EP не поднимется. Распознавание на GPU
+    // (transcribe.cpp) берёт из него только cuda-runtime, Whisper — свои библиотеки (whisper-cuda ниже).
+    let gpu = ["sep_backend", "diar_backend"]
         .iter()
         .any(|k| models::stage_backend(models_root, k) == "gpu");
     if gpu {
@@ -888,6 +884,8 @@ fn ensure_job_components(
                 need.push(id.to_string());
             }
         }
+    } else if models::stage_backend(models_root, "asr_backend") == "gpu" && missing("cuda-runtime") {
+        need.push("cuda-runtime".to_string());
     }
     // Whisper на GPU: CTranslate2 требует cuBLAS12 + cuDNN8 РЯДОМ с whisper-faster.exe (наш ONNX-стек
     // выше — CUDA 13, whisper'у не подходит). Без них whisper молча идёт на CPU. Тянем их только когда
@@ -898,6 +896,17 @@ fn ensure_job_components(
         == Some("whisper");
     if asr_whisper && models::stage_backend(models_root, "asr_backend") == "gpu" && missing("whisper-cuda") {
         need.push("whisper-cuda".to_string());
+    }
+    // Parakeet → its chosen variant and the transcribe.cpp build of the recognition backend (CUDA or CPU), which the
+    // settings may have changed after the first run.
+    if !models::openrouter_asr_on(models_root) {
+        if let models::AsrChoice::Ggml { build, model, .. } = models::resolve_asr_choice(repo_root, models_root, &models::load_selection(models_root)) {
+            for id in [build.dir(), model.component] {
+                if missing(id) {
+                    need.push(id.to_string());
+                }
+            }
+        }
     }
     // Диаризация (дубляж/транскрипт) → модель Nemotron 3 Diarization. Её сбой закачки не валит джобу:
     // анализ штатно деградирует в single-speaker и пишет об этом в журнал (см. analyze::run).
@@ -3299,6 +3308,7 @@ async fn align_enqueue(st: &AppState, pid: &str) -> Result<String, Box<Response>
     let backend = models::stage_backend(&st.models_root, "asr_backend");
     let dir_for_job = dir.clone();
     let pid_res = pid.to_string();
+    let (repo_root, models_root) = (st.repo_root.clone(), st.models_root.clone());
     let job: jobs::JobFn = Box::new(move |progress: jobs::ProgressFn| {
         let proj = Project::from_json(&std::fs::read_to_string(dir_for_job.join("project.json")).map_err(|e| e.to_string())?,
         )
@@ -3311,6 +3321,7 @@ async fn align_enqueue(st: &AppState, pid: &str) -> Result<String, Box<Response>
             .map(|f| dir_for_job.join(f))
             .find(|p| p.is_file())
             .ok_or_else(|| t!("align-no-vocals"))?;
+        ensure_job_components(&repo_root, &models_root, false, false, &|ev| progress(ev))?;
         progress(json!({ "stage": "asr", "msg": t!("align-recognizing") }));
         std::env::set_var("DUB_ASR_BACKEND", &backend);
         let words: Vec<subalign::Heard> = models::build_engine(&asr)

@@ -4151,7 +4151,7 @@ mod tests {
             higgs_threads: 1,
             max_stretch: 1.0,
             voices_dir: PathBuf::new(),
-            asr: crate::models::AsrChoice::Parakeet(PathBuf::new()),
+            asr: crate::models::AsrChoice::unused(),
             bench: false,
             ref_secs: 12.0,
             models_root: PathBuf::new(),

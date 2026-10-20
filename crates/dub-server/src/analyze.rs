@@ -1151,8 +1151,8 @@ pub fn run(args: &AnalyzeArgs, paths: &AnalyzePaths, progress: &Progress) -> Res
     } else {
         // Движок выбран настройкой (Parakeet/Whisper) — analyze не знает деталей (build_engine).
         bench.stage("asr");
-        let parakeet = matches!(paths.asr, crate::models::AsrChoice::Parakeet(_));
-        if parakeet && args.src_lang != "auto" && !crate::models::parakeet_knows(&args.src_lang) {
+        let parakeet = matches!(paths.asr, crate::models::AsrChoice::Ggml { .. });
+        if args.src_lang != "auto" && !paths.asr.knows(&args.src_lang) {
             return Err(t!("analyze-asr-language", lang = args.src_lang.clone()));
         }
         // Backend локального ASR (Parakeet onnx CUDA-EP/CPU, Whisper cuda/cpu) — до создания движка/сессии.
@@ -1704,7 +1704,7 @@ mod resume_tests {
             input: p(),
             work_dir: p(),
             repo_root: p(),
-            asr: crate::models::AsrChoice::Parakeet(p()),
+            asr: crate::models::AsrChoice::unused(),
             sortformer_onnx: p(),
             llama_bin: p(),
             mt_model: root.join("gemma.gguf"),

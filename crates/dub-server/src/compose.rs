@@ -941,7 +941,7 @@ mod tests {
             input: p.clone(),
             work_dir: p.clone(),
             repo_root: p.clone(),
-            asr: crate::models::AsrChoice::Parakeet(p.clone()),
+            asr: crate::models::AsrChoice::unused(),
             sortformer_onnx: p.clone(),
             llama_bin: p.clone(),
             mt_model: p.clone(),
