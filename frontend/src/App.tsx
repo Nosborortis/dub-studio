@@ -4128,7 +4128,35 @@ const QUANT_GROUP: Record<string, string> = {
   gemma: "gemma", "gemma-q5_0": "gemma", "gemma-q6_k": "gemma", "gemma-q8_0": "gemma",
   parakeet: "parakeet", "parakeet-ultra": "parakeet",
   roformer: "roformer", "roformer-q5": "roformer", "roformer-q4": "roformer",
+  "qwen3-tts": "qwen3", "qwen3-tts-q8_0": "qwen3",
+  "whisper-tiny": "whisper", "whisper-base": "whisper", "whisper-small": "whisper", "whisper-medium": "whisper",
+  "whisper-large-v3": "whisper", "whisper-large-v3-turbo": "whisper",
 };
+
+// Engines, runtimes and libraries: the studio takes them for the models chosen and for this computer's card, so they
+// are not a choice on the first-run screen.
+const SERVICE = new Set([
+  "higgs-engine", "qwen3-tts-engine", "transcribe-engine", "transcribe-engine-cpu", "whisper-engine", "whisper-cuda",
+  "bsroformer-engine", "bsroformer-engine-cpu", "llama", "onnxruntime", "onnxruntime-gpu", "ffmpeg", "cuda-runtime", "cudnn",
+  "vcruntime",
+]);
+
+/** The service parts a chosen model runs on; of two builds of one engine, the one the server asks for on this computer. */
+function needs(id: string, s: SetupStatus): string[] {
+  const build = (gpu: string, cpu: string) => {
+    const req = (x: string) => s.components.find((c) => c.id === x)?.requirement ?? "optional";
+    if (req(gpu) !== "optional") return gpu;
+    if (req(cpu) !== "optional") return cpu;
+    return s.gpu?.cuda13Ok ? gpu : cpu;
+  };
+  if (id.startsWith("higgs")) return ["higgs-engine"];
+  if (id.startsWith("qwen3-tts")) return ["qwen3-tts-engine"];
+  if (id.startsWith("parakeet")) return [build("transcribe-engine", "transcribe-engine-cpu")];
+  if (QUANT_GROUP[id] === "whisper") return s.gpu?.nvidia ? ["whisper-engine", "whisper-cuda"] : ["whisper-engine"];
+  if (id.startsWith("roformer")) return [build("bsroformer-engine", "bsroformer-engine-cpu")];
+  if (id.startsWith("gemma")) return ["llama"];
+  return [];
+}
 
 // ── «Первый запуск»: панель автозакачки компонентов (модели/движки/системные библиотеки) ──
 // По умолчанию отмечено всё недостающее скачиваемое, кроме опциональных квантов (их качают вручную).
@@ -4182,7 +4210,11 @@ function FirstRun() {
   const pause = () => { api.setupCancel().then(() => refresh()).catch((e) => setErr(String(e))); };
 
   const toggle = (id: string) => setSel((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const selectedComps = status ? status.components.filter((c) => sel.has(c.id)) : [];
+  // what Download fetches: the models chosen, what they run on and the service parts this computer needs anyway
+  const fetchIds = new Set<string>(sel);
+  if (status) for (const id of sel) needs(id, status).forEach((x) => fetchIds.add(x));
+  const selectedComps = status ? status.components.filter((c) => fetchIds.has(c.id) && c.delivery === "download" && !c.installed) : [];
+  const serviceComps = selectedComps.filter((c) => SERVICE.has(c.id));
   const selectedBytes = selectedComps.reduce((a, c) => a + Math.max(0, c.size - c.bytesOnDisk), 0);
   const selectedSpace = selectedComps.reduce((a, c) => a + c.spaceNeeded, 0);
   const noSpace = status?.freeBytes != null && selectedSpace > status.freeBytes;
@@ -4190,14 +4222,17 @@ function FirstRun() {
   const reqLabel = (r: string) => t(r === "required" ? "setup.required" : r === "recommended" ? "setup.recommended" : "setup.optional");
   const deliveryNote = (c: SetupComponent) =>
     c.delivery === "bundled" ? t("setup.reinstallHint") : c.delivery === "external" ? t("setup.external") : "";
-  const GROUP_LABEL: Record<string, string> = { higgs: t("setup.grpHiggs"), gemma: t("setup.grpGemma"), parakeet: t("setup.grpParakeet"), roformer: t("setup.grpRoformer") };
-  const pickOne = (id: string, group: string) => setSel((prev) => {   // radio внутри семейства: выбрать этот квант, снять остальные того же семейства
+  const GROUP_LABEL: Record<string, string> = {
+    higgs: t("setup.grpHiggs"), gemma: t("setup.grpGemma"), parakeet: t("setup.grpParakeet"), roformer: t("setup.grpRoformer"),
+    qwen3: t("setup.grpQwen"), whisper: t("setup.grpWhisper"),
+  };
+  const pickOne = (id: string | null, group: string) => setSel((prev) => {   // radio внутри семейства: выбрать этот квант, снять остальные того же семейства
     const n = new Set(prev);
     Object.entries(QUANT_GROUP).forEach(([cid, g]) => { if (g === group) n.delete(cid); });
-    n.add(id);
+    if (id) n.add(id);
     return n;
   });
-  const comps = status?.components ?? [];
+  const comps = (status?.components ?? []).filter((c) => !SERVICE.has(c.id) && !(c.delivery === "external" && c.installed));
   const gseen = new Set<string>();
   type SetupRow = { kind: "one"; c: SetupComponent } | { kind: "group"; group: string; members: SetupComponent[] };
   const rows: SetupRow[] = comps.flatMap((c): SetupRow[] => {   // одиночные компоненты + по одной группе квантов (на первом её члене)
@@ -4259,6 +4294,13 @@ function FirstRun() {
                     <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-[color-mix(in_oklab,var(--color-accent)_16%,transparent)] text-[var(--color-accent)]">{t("setup.pickOneQuant")}</span>
                   </div>
                   <div className="space-y-0.5">
+                    {members.every((m) => m.requirement === "optional" && !m.installed) && (
+                      <label className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 cursor-pointer hover:bg-[var(--color-surface-2)]">
+                        <input type="radio" name={`grp-${group}`} checked={members.every((m) => !sel.has(m.id))} onChange={() => pickOne(null, group)} disabled={busy}
+                          className="w-4 h-4 accent-[var(--color-accent)] shrink-0" />
+                        <span className="text-[13px] text-[var(--color-muted)]">{t("setup.notNeeded")}</span>
+                      </label>
+                    )}
                     {members.map((c) => {
                       const isDefault = c.requirement !== "optional";
                       const checked = sel.has(c.id);
@@ -4341,9 +4383,16 @@ function FirstRun() {
           })}
         </div>
 
+        {serviceComps.length > 0 && (
+          <details className="mt-3 text-[12px] text-[var(--color-muted)]">
+            <summary className="cursor-pointer">{t("setup.serviceNote", { size: fmtBytes(serviceComps.reduce((a, c) => a + Math.max(0, c.size - c.bytesOnDisk), 0)) })}</summary>
+            <div className="mt-1 pl-4 leading-relaxed">{serviceComps.map((c) => c.name).join(", ")}</div>
+          </details>
+        )}
+
         <div className="mt-6 flex items-center gap-3">
           {status && !status.ready && (
-            <button onClick={() => { sendTelemetryChoice(); download(selectedComps.filter((c) => c.delivery === "download" && !c.installed).map((c) => c.id)); }} disabled={busy || sel.size === 0 || noSpace} title={noSpace ? t("downloads.noSpace", { need: fmtBytes(selectedSpace), free: fmtBytes(status.freeBytes ?? 0) }) : undefined}
+            <button onClick={() => { sendTelemetryChoice(); download(selectedComps.map((c) => c.id)); }} disabled={busy || selectedComps.length === 0 || noSpace} title={noSpace ? t("downloads.noSpace", { need: fmtBytes(selectedSpace), free: fmtBytes(status.freeBytes ?? 0) }) : undefined}
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[var(--color-accent)] text-[var(--color-on-accent)] text-sm font-semibold disabled:opacity-40 hover:brightness-105">
               {busy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
               {t("setup.download")} {selectedBytes > 0 && <span className="opacity-80">· {fmtBytes(selectedBytes)}</span>}
