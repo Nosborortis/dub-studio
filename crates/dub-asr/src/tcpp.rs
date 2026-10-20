@@ -211,6 +211,13 @@ struct VadResult {
 }
 
 #[repr(C)]
+struct LangIdParams {
+    struct_size: u64,
+    allowed: *const *const c_char,
+    n_allowed: i32,
+}
+
+#[repr(C)]
 struct LangIdResult {
     struct_size: u64,
     n_candidates: i32,
@@ -268,6 +275,7 @@ const ABI_WORD: c_int = 7;
 const ABI_STREAM_UPDATE: c_int = 9;
 const ABI_STREAM_TEXT: c_int = 10;
 const ABI_SESSION_LIMITS: c_int = 11;
+const ABI_LANGID_PARAMS: c_int = 21;
 const ABI_LANGID_RESULT: c_int = 22;
 const ABI_LANGID_CANDIDATE: c_int = 23;
 const ABI_VAD_RESULT: c_int = 27;
@@ -319,7 +327,8 @@ struct Api {
     vad_probs: unsafe extern "C" fn(*const RawVad) -> *const f32,
     langid_session_init: unsafe extern "C" fn(*mut RawModel, *const std::ffi::c_void, *mut *mut RawLangId) -> c_int,
     langid_session_free: unsafe extern "C" fn(*mut RawLangId),
-    langid_run: unsafe extern "C" fn(*mut RawLangId, *const f32, c_int, *const std::ffi::c_void) -> c_int,
+    langid_params_init: unsafe extern "C" fn(*mut LangIdParams),
+    langid_run: unsafe extern "C" fn(*mut RawLangId, *const f32, c_int, *const LangIdParams) -> c_int,
     langid_result_init: unsafe extern "C" fn(*mut LangIdResult),
     langid_get_result: unsafe extern "C" fn(*const RawLangId, *mut LangIdResult) -> c_int,
     langid_candidate_init: unsafe extern "C" fn(*mut LangIdCandidate),
@@ -384,6 +393,7 @@ fn library(dir: &Path) -> Result<Api, String> {
             vad_probs: sym!("transcribe_vad_probs"),
             langid_session_init: sym!("transcribe_langid_session_init"),
             langid_session_free: sym!("transcribe_langid_session_free"),
+            langid_params_init: sym!("transcribe_langid_params_init"),
             langid_run: sym!("transcribe_langid_run"),
             langid_result_init: sym!("transcribe_langid_result_init"),
             langid_get_result: sym!("transcribe_langid_get_result"),
@@ -400,6 +410,7 @@ fn library(dir: &Path) -> Result<Api, String> {
         (ABI_STREAM_UPDATE, std::mem::size_of::<StreamUpdate>(), "stream update"),
         (ABI_STREAM_TEXT, std::mem::size_of::<StreamText>(), "stream text"),
         (ABI_VAD_RESULT, std::mem::size_of::<VadResult>(), "vad result"),
+        (ABI_LANGID_PARAMS, std::mem::size_of::<LangIdParams>(), "langid params"),
         (ABI_LANGID_RESULT, std::mem::size_of::<LangIdResult>(), "langid result"),
         (ABI_LANGID_CANDIDATE, std::mem::size_of::<LangIdCandidate>(), "langid candidate"),
     ] {
@@ -828,8 +839,16 @@ static LANGID_LOADED: Mutex<Option<(PathBuf, LangId)>> = Mutex::new(None);
 /// Короче этого (0,5 с) определение языка не слушает: `INPUT_TOO_SHORT`.
 pub const LANGID_MIN_SAMPLES: usize = 8_000;
 
-/// Языки речи 16 кГц моно по VoxLingua107 из `model`, вероятнее первые: (код, вероятность). Слушает первые 30 с.
-pub fn detect_language(engine_dir: &Path, model: &Path, pcm: &[f32]) -> Result<Vec<(String, f32)>, String> {
+/// Ответ определения языка: языки по убыванию вероятности (среди разрешённых) и доля всей вероятности, что пришлась
+/// на разрешённые (1 без ограничения; мала — речь, вероятно, на другом языке).
+#[derive(Debug, Clone)]
+pub struct LangGuess {
+    pub ranked: Vec<(String, f32)>,
+    pub allowed_mass: f32,
+}
+
+/// Язык речи 16 кГц моно по VoxLingua107 из `model` (первые 30 с), выбор среди `allowed` (пусто — все 107).
+pub fn detect_language(engine_dir: &Path, model: &Path, pcm: &[f32], allowed: &[&str]) -> Result<LangGuess, String> {
     let api = library(engine_dir)?;
     let mut slot = LANGID_LOADED.lock().unwrap_or_else(|e| e.into_inner());
     if slot.as_ref().is_none_or(|(p, _)| p != model) {
@@ -844,17 +863,30 @@ pub fn detect_language(engine_dir: &Path, model: &Path, pcm: &[f32]) -> Result<V
         *slot = Some((model.to_path_buf(), LangId { api, model: raw, session }));
     }
     let id = &slot.as_ref().expect("loaded above").1;
-    let s = unsafe { (api.langid_run)(id.session, pcm.as_ptr(), pcm.len() as c_int, std::ptr::null()) };
+    let codes: Vec<CString> = allowed.iter().map(|c| CString::new(*c).map_err(|e| e.to_string())).collect::<Result<_, _>>()?;
+    let ptrs: Vec<*const c_char> = codes.iter().map(|c| c.as_ptr()).collect();
+    let mut lp = std::mem::MaybeUninit::<LangIdParams>::zeroed();
+    let params = unsafe {
+        (api.langid_params_init)(lp.as_mut_ptr());
+        let mut params = lp.assume_init();
+        if !ptrs.is_empty() {
+            params.allowed = ptrs.as_ptr();
+            params.n_allowed = ptrs.len() as i32;
+        }
+        params
+    };
+    let s = unsafe { (api.langid_run)(id.session, pcm.as_ptr(), pcm.len() as c_int, &params) };
     if s != 0 {
         return Err(format!("transcribe.cpp langid: {}", text(unsafe { (api.status_string)(s) })));
     }
     let mut r = std::mem::MaybeUninit::<LangIdResult>::zeroed();
-    let n = unsafe {
+    let (n, allowed_mass) = unsafe {
         (api.langid_result_init)(r.as_mut_ptr());
         if (api.langid_get_result)(id.session, r.as_mut_ptr()) != 0 {
             return Err("transcribe.cpp langid: no result".into());
         }
-        r.assume_init().n_candidates.max(0)
+        let r = r.assume_init();
+        (r.n_candidates.max(0), r.allowed_mass)
     };
     let mut out = Vec::new();
     for i in 0..n.min(5) {
@@ -869,7 +901,7 @@ pub fn detect_language(engine_dir: &Path, model: &Path, pcm: &[f32]) -> Result<V
             }
         }
     }
-    Ok(out)
+    Ok(LangGuess { ranked: out, allowed_mass })
 }
 
 /// Загруженная модель процесса: одна на видеокарте, общая для всех задач, пока не попросят другую или `unload`.
