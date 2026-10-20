@@ -699,10 +699,35 @@ fn whisper_cuda_libs_present(bin: &std::path::Path) -> bool {
     cublas && cudnn
 }
 
+/// Распознаватель transcribe.cpp задачи: модель из кэша процесса выгружается, когда задача отпускает движок, чтобы
+/// видеопамять досталась озвучке и переводу.
+struct Unloading(dub_asr::tcpp::TcppEngine);
+
+impl Drop for Unloading {
+    fn drop(&mut self) {
+        dub_asr::tcpp::unload();
+    }
+}
+
+impl dub_asr::AsrEngine for Unloading {
+    fn transcribe(&mut self, wav: &Path, lang: &str) -> Result<Vec<dub_asr::Segment>, dub_asr::AsrError> {
+        self.0.transcribe(wav, lang)
+    }
+    fn transcribe_turns(&mut self, wav: &Path, turns: &[dub_asr::Turn], lang: &str) -> Result<Vec<dub_asr::SpeakerSegment>, dub_asr::AsrError> {
+        self.0.transcribe_turns(wav, turns, lang)
+    }
+    fn transcribe_many(&mut self, files: &[PathBuf], lang: &str) -> Vec<Result<String, dub_asr::AsrError>> {
+        self.0.transcribe_many(files, lang)
+    }
+    fn transcribe_many_words(&mut self, files: &[PathBuf], lang: &str) -> Vec<Result<Vec<dub_asr::Word>, dub_asr::AsrError>> {
+        self.0.transcribe_many_words(files, lang)
+    }
+}
+
 /// Построить ASR-движок из выбора (boxed trait-object): analyze не знает деталей резолва.
 pub fn build_engine(choice: &AsrChoice) -> Box<dyn dub_asr::AsrEngine> {
     match choice {
-        AsrChoice::Ggml { models_root, build, model } => Box::new(dub_asr::tcpp::TcppEngine::new(models_root, *build, model)),
+        AsrChoice::Ggml { models_root, build, model } => Box::new(Unloading(dub_asr::tcpp::TcppEngine::new(models_root, *build, model))),
         AsrChoice::Whisper { bin, model_dir, model, compute, device,
         } => Box::new(dub_asr::WhisperAsr::new(bin, model_dir, model, compute, device,
         )),
