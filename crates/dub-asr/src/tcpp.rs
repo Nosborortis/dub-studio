@@ -106,6 +106,42 @@ pub fn installed(models_root: &Path, m: &Model) -> bool {
     engine_dir(models_root).join(LIBRARY).is_file() && model_path(models_root, m).is_file()
 }
 
+/// Вспомогательная модель transcribe.cpp: разметка речи (Silero VAD v6.2) и определение языка (VoxLingua107, 107 языков).
+/// Обе мелкие и выложены в F32.
+#[derive(Debug)]
+pub struct Helper {
+    pub id: &'static str,
+    pub dir: &'static str,
+    pub file: &'static str,
+    pub download: Download,
+}
+
+pub const VAD: Helper = Helper {
+    id: "silero-vad",
+    dir: "silero-vad",
+    file: "silero-vad-v6.2-F32.gguf",
+    download: Download {
+        url: "https://huggingface.co/handy-computer/silero-vad-v6.2-gguf/resolve/a9b2d61c20ae4ddf3644edb34969e8185a485448/silero-vad-v6.2-F32.gguf",
+        size: 1_241_056,
+        sha256: "0d871a800c420fdd5d1b17a3aea4296d1c39608f0ff4a9295eb76457eb1c88e6",
+    },
+};
+
+pub const LANGID: Helper = Helper {
+    id: "langid",
+    dir: "langid-voxlingua107",
+    file: "lang-id-voxlingua107-ecapa-F32.gguf",
+    download: Download {
+        url: "https://huggingface.co/handy-computer/lang-id-voxlingua107-ecapa-gguf/resolve/e59f0f3847e77723b7d58447ef9456fa0c7e9436/lang-id-voxlingua107-ecapa-F32.gguf",
+        size: 84_993_184,
+        sha256: "d0420e485112ca05e31aa06e1615556102083a9725e89b55a1f0963c0c0ead66",
+    },
+};
+
+pub fn helper_path(models_root: &Path, h: &Helper) -> PathBuf {
+    models_root.join(h.dir).join(h.file)
+}
+
 /// Знает ли модель `lang`; пусто или auto — язык определяет она сама.
 pub fn knows(m: &Model, lang: &str) -> bool {
     lang.is_empty() || lang == "auto" || m.languages.is_empty() || m.languages.contains(&lang)
@@ -158,14 +194,80 @@ struct Capabilities {
     rest: [u8; 0],
 }
 
+#[repr(C)]
+struct VadResult {
+    struct_size: u64,
+    n_probs: i32,
+    first_frame: i64,
+    n_segments: i32,
+}
+
+#[repr(C)]
+struct LangIdResult {
+    struct_size: u64,
+    n_candidates: i32,
+    allowed_mass: f32,
+}
+
+#[repr(C)]
+struct LangIdCandidate {
+    struct_size: u64,
+    index: i32,
+    code: *const c_char,
+    name: *const c_char,
+    p: f32,
+    logit: f32,
+}
+
+#[repr(C)]
+struct StreamParams {
+    struct_size: u64,
+    family: *const std::ffi::c_void,
+    commit_policy: c_int,
+    stable_prefix_agreement_n: u32,
+}
+
+#[repr(C)]
+struct StreamUpdate {
+    struct_size: u64,
+    result_changed: bool,
+    is_final: bool,
+    revision: i32,
+    input_received_ms: i64,
+    audio_committed_ms: i64,
+    buffered_ms: i64,
+    committed_changed: bool,
+    tentative_changed: bool,
+}
+
+#[repr(C)]
+struct StreamText {
+    struct_size: u64,
+    full_text: *const c_char,
+    full_text_bytes: u64,
+    committed_text: *const c_char,
+    committed_text_bytes: u64,
+    tentative_text: *const c_char,
+    tentative_text_bytes: u64,
+    raw_tentative_start_bytes: u64,
+}
+
 const ABI_RUN_PARAMS: c_int = 2;
+const ABI_STREAM_PARAMS: c_int = 3;
 const ABI_CAPABILITIES: c_int = 4;
 const ABI_WORD: c_int = 7;
+const ABI_STREAM_UPDATE: c_int = 9;
+const ABI_STREAM_TEXT: c_int = 10;
 const ABI_SESSION_LIMITS: c_int = 11;
+const ABI_LANGID_RESULT: c_int = 22;
+const ABI_LANGID_CANDIDATE: c_int = 23;
+const ABI_VAD_RESULT: c_int = 27;
 const TIMESTAMPS_WORD: c_int = 3;
 
 enum RawModel {}
 enum RawSession {}
+enum RawVad {}
+enum RawLangId {}
 
 #[derive(Clone, Copy)]
 struct Api {
@@ -184,6 +286,33 @@ struct Api {
     get_limits: unsafe extern "C" fn(*const RawSession, *mut Limits) -> c_int,
     caps_init: unsafe extern "C" fn(*mut Capabilities),
     get_caps: unsafe extern "C" fn(*const RawModel, *mut Capabilities) -> c_int,
+    run_batch: unsafe extern "C" fn(*mut RawSession, *const *const f32, *const c_int, c_int, *const RunParams) -> c_int,
+    batch_status: unsafe extern "C" fn(*const RawSession, c_int) -> c_int,
+    batch_n_words: unsafe extern "C" fn(*const RawSession, c_int) -> c_int,
+    batch_get_word: unsafe extern "C" fn(*const RawSession, c_int, c_int, *mut RawWord) -> c_int,
+    stream_params_init: unsafe extern "C" fn(*mut StreamParams),
+    stream_update_init: unsafe extern "C" fn(*mut StreamUpdate),
+    stream_text_init: unsafe extern "C" fn(*mut StreamText),
+    stream_begin: unsafe extern "C" fn(*mut RawSession, *const RunParams, *const StreamParams) -> c_int,
+    stream_feed: unsafe extern "C" fn(*mut RawSession, *const f32, c_int, *mut StreamUpdate) -> c_int,
+    stream_finalize: unsafe extern "C" fn(*mut RawSession, *mut StreamUpdate) -> c_int,
+    stream_get_text: unsafe extern "C" fn(*const RawSession, *mut StreamText) -> c_int,
+    stream_reset: unsafe extern "C" fn(*mut RawSession),
+    vad_session_init: unsafe extern "C" fn(*mut RawModel, *const std::ffi::c_void, *mut *mut RawVad) -> c_int,
+    vad_session_free: unsafe extern "C" fn(*mut RawVad),
+    vad_stream_feed: unsafe extern "C" fn(*mut RawVad, *const f32, c_int) -> c_int,
+    vad_stream_flush: unsafe extern "C" fn(*mut RawVad) -> c_int,
+    vad_stream_reset: unsafe extern "C" fn(*mut RawVad),
+    vad_result_init: unsafe extern "C" fn(*mut VadResult),
+    vad_get_result: unsafe extern "C" fn(*const RawVad, *mut VadResult) -> c_int,
+    vad_probs: unsafe extern "C" fn(*const RawVad) -> *const f32,
+    langid_session_init: unsafe extern "C" fn(*mut RawModel, *const std::ffi::c_void, *mut *mut RawLangId) -> c_int,
+    langid_session_free: unsafe extern "C" fn(*mut RawLangId),
+    langid_run: unsafe extern "C" fn(*mut RawLangId, *const f32, c_int, *const std::ffi::c_void) -> c_int,
+    langid_result_init: unsafe extern "C" fn(*mut LangIdResult),
+    langid_get_result: unsafe extern "C" fn(*const RawLangId, *mut LangIdResult) -> c_int,
+    langid_candidate_init: unsafe extern "C" fn(*mut LangIdCandidate),
+    langid_get_candidate: unsafe extern "C" fn(*const RawLangId, c_int, *mut LangIdCandidate) -> c_int,
 }
 
 /// Куда читается структура возможностей движка: с запасом на её рост, первые поля читает `Capabilities`.
@@ -221,10 +350,47 @@ fn library(dir: &Path) -> Result<Api, String> {
             get_limits: sym!("transcribe_session_get_limits"),
             caps_init: sym!("transcribe_capabilities_init"),
             get_caps: sym!("transcribe_model_get_capabilities"),
+            run_batch: sym!("transcribe_run_batch"),
+            batch_status: sym!("transcribe_batch_status"),
+            batch_n_words: sym!("transcribe_batch_n_words"),
+            batch_get_word: sym!("transcribe_batch_get_word"),
+            stream_params_init: sym!("transcribe_stream_params_init"),
+            stream_update_init: sym!("transcribe_stream_update_init"),
+            stream_text_init: sym!("transcribe_stream_text_init"),
+            stream_begin: sym!("transcribe_stream_begin"),
+            stream_feed: sym!("transcribe_stream_feed"),
+            stream_finalize: sym!("transcribe_stream_finalize"),
+            stream_get_text: sym!("transcribe_stream_get_text"),
+            stream_reset: sym!("transcribe_stream_reset"),
+            vad_session_init: sym!("transcribe_vad_session_init"),
+            vad_session_free: sym!("transcribe_vad_session_free"),
+            vad_stream_feed: sym!("transcribe_vad_stream_feed"),
+            vad_stream_flush: sym!("transcribe_vad_stream_flush"),
+            vad_stream_reset: sym!("transcribe_vad_stream_reset"),
+            vad_result_init: sym!("transcribe_vad_result_init"),
+            vad_get_result: sym!("transcribe_vad_get_result"),
+            vad_probs: sym!("transcribe_vad_probs"),
+            langid_session_init: sym!("transcribe_langid_session_init"),
+            langid_session_free: sym!("transcribe_langid_session_free"),
+            langid_run: sym!("transcribe_langid_run"),
+            langid_result_init: sym!("transcribe_langid_result_init"),
+            langid_get_result: sym!("transcribe_langid_get_result"),
+            langid_candidate_init: sym!("transcribe_langid_candidate_init"),
+            langid_get_candidate: sym!("transcribe_langid_get_candidate"),
         }
     };
     // структуры разложены здесь вручную: библиотеку другой раскладки отвергаем до первого вызова, что их заполняет
-    for (which, ours, name) in [(ABI_RUN_PARAMS, std::mem::size_of::<RunParams>(), "run params"), (ABI_WORD, std::mem::size_of::<RawWord>(), "word"), (ABI_SESSION_LIMITS, std::mem::size_of::<Limits>(), "session limits")] {
+    for (which, ours, name) in [
+        (ABI_RUN_PARAMS, std::mem::size_of::<RunParams>(), "run params"),
+        (ABI_WORD, std::mem::size_of::<RawWord>(), "word"),
+        (ABI_SESSION_LIMITS, std::mem::size_of::<Limits>(), "session limits"),
+        (ABI_STREAM_PARAMS, std::mem::size_of::<StreamParams>(), "stream params"),
+        (ABI_STREAM_UPDATE, std::mem::size_of::<StreamUpdate>(), "stream update"),
+        (ABI_STREAM_TEXT, std::mem::size_of::<StreamText>(), "stream text"),
+        (ABI_VAD_RESULT, std::mem::size_of::<VadResult>(), "vad result"),
+        (ABI_LANGID_RESULT, std::mem::size_of::<LangIdResult>(), "langid result"),
+        (ABI_LANGID_CANDIDATE, std::mem::size_of::<LangIdCandidate>(), "langid candidate"),
+    ] {
         let theirs = unsafe { (api.abi_size)(which) };
         if theirs != ours {
             return Err(format!("transcribe.cpp {}: its {name} struct is {theirs} bytes, ours {ours}", path.display()));
@@ -329,14 +495,7 @@ impl TcppAsr {
         let mut out = Vec::new();
         for (n, piece) in pcm.chunks(window).enumerate() {
             let offset = (n * window) as f64 / 16_000.0;
-            let mut p = std::mem::MaybeUninit::<RunParams>::zeroed();
-            let params = unsafe {
-                (self.api.run_params_init)(p.as_mut_ptr());
-                let mut params = p.assume_init();
-                params.timestamps = TIMESTAMPS_WORD;
-                params.language = language.as_ref().map_or(std::ptr::null(), |l| l.as_ptr());
-                params
-            };
+            let params = self.run_params(&language);
             let s = unsafe { (self.api.run)(self.session, piece.as_ptr(), piece.len() as c_int, &params) };
             if s != 0 {
                 return Err(engine_err(format!("transcribe.cpp: {}", text(unsafe { (self.api.status_string)(s) }))));
@@ -360,6 +519,296 @@ impl TcppAsr {
         }
         Ok(out)
     }
+}
+
+impl TcppAsr {
+    fn run_params(&self, language: &Option<CString>) -> RunParams {
+        let mut p = std::mem::MaybeUninit::<RunParams>::zeroed();
+        unsafe {
+            (self.api.run_params_init)(p.as_mut_ptr());
+            let mut params = p.assume_init();
+            params.timestamps = TIMESTAMPS_WORD;
+            params.language = language.as_ref().map_or(std::ptr::null(), |l| l.as_ptr());
+            params
+        }
+    }
+
+    /// Слова нескольких коротких отрывков 16 кГц моно одним пакетным прогоном; ошибка отрывка — в его элементе.
+    /// Отрывок длиннее того, что модель берёт за раз, идёт сам по себе через `words`.
+    pub fn words_batch(&mut self, pieces: &[&[f32]], lang: &str) -> Result<Vec<Result<Vec<Word>, AsrError>>, AsrError> {
+        let language = self.language(lang)?;
+        let limit = if self.max_secs > 0.0 { (self.max_secs * 16_000.0) as usize } else { usize::MAX };
+        let mut out: Vec<Option<Result<Vec<Word>, AsrError>>> = (0..pieces.len()).map(|_| None).collect();
+        let short: Vec<usize> = (0..pieces.len()).filter(|&i| !pieces[i].is_empty() && pieces[i].len() <= limit).collect();
+        for i in (0..pieces.len()).filter(|i| !short.contains(i)) {
+            out[i] = Some(if pieces[i].is_empty() { Ok(Vec::new()) } else { self.words(pieces[i], lang) });
+        }
+        for group in short.chunks(16) {
+            let ptrs: Vec<*const f32> = group.iter().map(|&i| pieces[i].as_ptr()).collect();
+            let lens: Vec<c_int> = group.iter().map(|&i| pieces[i].len() as c_int).collect();
+            let params = self.run_params(&language);
+            let s = unsafe { (self.api.run_batch)(self.session, ptrs.as_ptr(), lens.as_ptr(), group.len() as c_int, &params) };
+            if s != 0 {
+                return Err(engine_err(format!("transcribe.cpp: {}", text(unsafe { (self.api.status_string)(s) }))));
+            }
+            for (k, &i) in group.iter().enumerate() {
+                let status = unsafe { (self.api.batch_status)(self.session, k as c_int) };
+                if status != 0 {
+                    out[i] = Some(Err(engine_err(format!("transcribe.cpp: {}", text(unsafe { (self.api.status_string)(status) })))));
+                    continue;
+                }
+                let n = unsafe { (self.api.batch_n_words)(self.session, k as c_int) };
+                let mut words = Vec::new();
+                for j in 0..n.max(0) {
+                    let mut w = std::mem::MaybeUninit::<RawWord>::zeroed();
+                    unsafe {
+                        (self.api.word_init)(w.as_mut_ptr());
+                        if (self.api.batch_get_word)(self.session, k as c_int, j, w.as_mut_ptr()) != 0 {
+                            continue;
+                        }
+                        let w = w.assume_init();
+                        let word = text(w.text);
+                        if !word.trim().is_empty() {
+                            words.push(Word { word: word.trim().to_string(), start: w.t0_ms as f64 / 1000.0, end: w.t1_ms as f64 / 1000.0 });
+                        }
+                    }
+                }
+                out[i] = Some(Ok(words));
+            }
+        }
+        Ok(out.into_iter().map(|r| r.expect("every piece answered")).collect())
+    }
+}
+
+/// Распознавание по ходу речи: своя сессия на загруженной модели; вычисления идут под тем же замком, что и
+/// прогоны модели (transcribe.cpp не считает две сессии одной модели одновременно).
+pub struct TcppStream {
+    asr: Arc<Mutex<TcppAsr>>,
+    api: Api,
+    session: *mut RawSession,
+    language: Option<CString>,
+    open: bool,
+}
+
+unsafe impl Send for TcppStream {}
+
+impl Drop for TcppStream {
+    fn drop(&mut self) {
+        let _guard = self.asr.lock().unwrap_or_else(|e| e.into_inner());
+        unsafe { (self.api.session_free)(self.session) };
+    }
+}
+
+impl TcppStream {
+    /// Поток на модели `model` (из кэша процесса) для языка `lang` (пусто или auto — модель решает сама).
+    pub fn new(engine_dir: &Path, model: &Path, lang: &str) -> Result<TcppStream, AsrError> {
+        let asr = shared(engine_dir, model)?;
+        let (api, session, language) = {
+            let guard = asr.lock().unwrap_or_else(|e| e.into_inner());
+            let language = guard.language(lang)?;
+            let mut session: *mut RawSession = std::ptr::null_mut();
+            let s = unsafe { (guard.api.session_init)(guard.model, std::ptr::null(), &mut session) };
+            if s != 0 || session.is_null() {
+                return Err(engine_err(format!("transcribe.cpp stream: {}", text(unsafe { (guard.api.status_string)(s) }))));
+            }
+            (guard.api, session, language)
+        };
+        Ok(TcppStream { asr, api, session, language, open: false })
+    }
+
+    fn check(&self, s: c_int) -> Result<(), AsrError> {
+        if s == 0 {
+            Ok(())
+        } else {
+            Err(engine_err(format!("transcribe.cpp stream: {}", text(unsafe { (self.api.status_string)(s) }))))
+        }
+    }
+
+    fn so_far(&self) -> Result<String, AsrError> {
+        let mut out = std::mem::MaybeUninit::<StreamText>::zeroed();
+        unsafe {
+            (self.api.stream_text_init)(out.as_mut_ptr());
+            self.check((self.api.stream_get_text)(self.session, out.as_mut_ptr()))?;
+            Ok(text(out.assume_init().full_text).trim().to_string())
+        }
+    }
+
+    /// Дописать звук фразы (16 кГц моно); текст фразы на сейчас.
+    pub fn feed(&mut self, pcm: &[f32]) -> Result<String, AsrError> {
+        let _guard = self.asr.lock().unwrap_or_else(|e| e.into_inner());
+        if !self.open {
+            let mut rp = std::mem::MaybeUninit::<RunParams>::zeroed();
+            let mut sp = std::mem::MaybeUninit::<StreamParams>::zeroed();
+            unsafe {
+                (self.api.run_params_init)(rp.as_mut_ptr());
+                let mut run = rp.assume_init();
+                run.language = self.language.as_ref().map_or(std::ptr::null(), |l| l.as_ptr());
+                (self.api.stream_params_init)(sp.as_mut_ptr());
+                self.check((self.api.stream_begin)(self.session, &run, sp.as_ptr()))?;
+            }
+            self.open = true;
+        }
+        if !pcm.is_empty() {
+            let mut u = std::mem::MaybeUninit::<StreamUpdate>::zeroed();
+            unsafe {
+                (self.api.stream_update_init)(u.as_mut_ptr());
+                self.check((self.api.stream_feed)(self.session, pcm.as_ptr(), pcm.len() as c_int, u.as_mut_ptr()))?;
+            }
+        }
+        self.so_far()
+    }
+
+    /// Закончить фразу: её окончательный текст; следующий `feed` начинает новую.
+    pub fn finish(&mut self) -> Result<String, AsrError> {
+        if !self.open {
+            return Ok(String::new());
+        }
+        let _guard = self.asr.lock().unwrap_or_else(|e| e.into_inner());
+        let mut u = std::mem::MaybeUninit::<StreamUpdate>::zeroed();
+        let said = unsafe {
+            (self.api.stream_update_init)(u.as_mut_ptr());
+            self.check((self.api.stream_finalize)(self.session, u.as_mut_ptr()))?;
+            self.so_far()
+        };
+        unsafe { (self.api.stream_reset)(self.session) };
+        self.open = false;
+        said
+    }
+}
+
+fn load_helper(api: &Api, path: &Path) -> Result<*mut RawModel, String> {
+    let c_path = CString::new(path.to_string_lossy().as_bytes()).map_err(|e| e.to_string())?;
+    let mut raw: *mut RawModel = std::ptr::null_mut();
+    let s = unsafe { (api.load)(c_path.as_ptr(), std::ptr::null(), &mut raw) };
+    if s != 0 || raw.is_null() {
+        return Err(format!("transcribe.cpp {}: {}", path.display(), text(unsafe { (api.status_string)(s) })));
+    }
+    Ok(raw)
+}
+
+struct Vad {
+    api: Api,
+    model: *mut RawModel,
+    session: *mut RawVad,
+}
+
+unsafe impl Send for Vad {}
+
+impl Drop for Vad {
+    fn drop(&mut self) {
+        unsafe {
+            (self.api.vad_session_free)(self.session);
+            (self.api.model_free)(self.model);
+        }
+    }
+}
+
+static VAD_LOADED: Mutex<Option<(PathBuf, Vad)>> = Mutex::new(None);
+
+/// Вероятность речи на каждый кадр в 32 мс (512 отсчётов 16 кГц моно) по Silero VAD v6.2 из `model`.
+pub fn vad_probabilities(engine_dir: &Path, model: &Path, pcm: &[f32]) -> Result<Vec<f32>, String> {
+    let api = library(engine_dir)?;
+    let mut slot = VAD_LOADED.lock().unwrap_or_else(|e| e.into_inner());
+    if slot.as_ref().is_none_or(|(p, _)| p != model) {
+        *slot = None;
+        let raw = load_helper(&api, model)?;
+        let mut session: *mut RawVad = std::ptr::null_mut();
+        let s = unsafe { (api.vad_session_init)(raw, std::ptr::null(), &mut session) };
+        if s != 0 || session.is_null() {
+            unsafe { (api.model_free)(raw) };
+            return Err(format!("transcribe.cpp {}: {}", model.display(), text(unsafe { (api.status_string)(s) })));
+        }
+        *slot = Some((model.to_path_buf(), Vad { api, model: raw, session }));
+    }
+    let vad = &slot.as_ref().expect("loaded above").1;
+    let mut probs = Vec::with_capacity(pcm.len() / 512 + 1);
+    let mut take = |s: c_int| -> Result<(), String> {
+        if s != 0 {
+            return Err(format!("transcribe.cpp vad: {}", text(unsafe { (api.status_string)(s) })));
+        }
+        let mut r = std::mem::MaybeUninit::<VadResult>::zeroed();
+        unsafe {
+            (api.vad_result_init)(r.as_mut_ptr());
+            if (api.vad_get_result)(vad.session, r.as_mut_ptr()) != 0 {
+                return Ok(());
+            }
+            let n = r.assume_init().n_probs.max(0) as usize;
+            let p = (api.vad_probs)(vad.session);
+            if n > 0 && !p.is_null() {
+                probs.extend_from_slice(std::slice::from_raw_parts(p, n));
+            }
+        }
+        Ok(())
+    };
+    unsafe { (api.vad_stream_reset)(vad.session) };
+    for piece in pcm.chunks(16_000 * 60) {
+        take(unsafe { (api.vad_stream_feed)(vad.session, piece.as_ptr(), piece.len() as c_int) })?;
+    }
+    take(unsafe { (api.vad_stream_flush)(vad.session) })?;
+    Ok(probs)
+}
+
+struct LangId {
+    api: Api,
+    model: *mut RawModel,
+    session: *mut RawLangId,
+}
+
+unsafe impl Send for LangId {}
+
+impl Drop for LangId {
+    fn drop(&mut self) {
+        unsafe {
+            (self.api.langid_session_free)(self.session);
+            (self.api.model_free)(self.model);
+        }
+    }
+}
+
+static LANGID_LOADED: Mutex<Option<(PathBuf, LangId)>> = Mutex::new(None);
+
+/// Языки речи 16 кГц моно по VoxLingua107 из `model`, вероятнее первые: (код, вероятность). Слушает первые 30 с.
+pub fn detect_language(engine_dir: &Path, model: &Path, pcm: &[f32]) -> Result<Vec<(String, f32)>, String> {
+    let api = library(engine_dir)?;
+    let mut slot = LANGID_LOADED.lock().unwrap_or_else(|e| e.into_inner());
+    if slot.as_ref().is_none_or(|(p, _)| p != model) {
+        *slot = None;
+        let raw = load_helper(&api, model)?;
+        let mut session: *mut RawLangId = std::ptr::null_mut();
+        let s = unsafe { (api.langid_session_init)(raw, std::ptr::null(), &mut session) };
+        if s != 0 || session.is_null() {
+            unsafe { (api.model_free)(raw) };
+            return Err(format!("transcribe.cpp {}: {}", model.display(), text(unsafe { (api.status_string)(s) })));
+        }
+        *slot = Some((model.to_path_buf(), LangId { api, model: raw, session }));
+    }
+    let id = &slot.as_ref().expect("loaded above").1;
+    let s = unsafe { (api.langid_run)(id.session, pcm.as_ptr(), pcm.len() as c_int, std::ptr::null()) };
+    if s != 0 {
+        return Err(format!("transcribe.cpp langid: {}", text(unsafe { (api.status_string)(s) })));
+    }
+    let mut r = std::mem::MaybeUninit::<LangIdResult>::zeroed();
+    let n = unsafe {
+        (api.langid_result_init)(r.as_mut_ptr());
+        if (api.langid_get_result)(id.session, r.as_mut_ptr()) != 0 {
+            return Err("transcribe.cpp langid: no result".into());
+        }
+        r.assume_init().n_candidates.max(0)
+    };
+    let mut out = Vec::new();
+    for i in 0..n.min(5) {
+        let mut c = std::mem::MaybeUninit::<LangIdCandidate>::zeroed();
+        unsafe {
+            (api.langid_candidate_init)(c.as_mut_ptr());
+            if (api.langid_get_candidate)(id.session, i, c.as_mut_ptr()) == 0 {
+                let c = c.assume_init();
+                if !c.code.is_null() {
+                    out.push((text(c.code), c.p));
+                }
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// Загруженная модель процесса: одна на видеокарте, общая для всех задач, пока не попросят другую или `unload`.
@@ -403,7 +852,28 @@ impl TcppEngine {
     }
 }
 
+impl TcppEngine {
+    fn many(&self, files: &[PathBuf], lang: &str) -> Vec<Result<Vec<Word>, AsrError>> {
+        let loaded: Vec<Result<Vec<f32>, AsrError>> = files.iter().map(|f| crate::load_wav_16k_mono(f).map(|(pcm, _)| pcm)).collect();
+        let ok: Vec<&[f32]> = loaded.iter().filter_map(|r| r.as_ref().ok().map(Vec::as_slice)).collect();
+        let heard = shared(&self.engine_dir, &self.model).and_then(|asr| asr.lock().unwrap_or_else(|e| e.into_inner()).words_batch(&ok, lang));
+        let mut heard = match heard {
+            Ok(h) => h.into_iter(),
+            Err(e) => return files.iter().map(|_| Err(engine_err(e.to_string()))).collect(),
+        };
+        loaded.into_iter().map(|r| r.and_then(|_| heard.next().expect("one answer per loaded file"))).collect()
+    }
+}
+
 impl AsrEngine for TcppEngine {
+    fn transcribe_many(&mut self, files: &[PathBuf], lang: &str) -> Vec<Result<String, AsrError>> {
+        self.many(files, lang).into_iter().map(|r| r.map(|w| w.iter().map(|w| w.word.as_str()).collect::<Vec<_>>().join(" "))).collect()
+    }
+
+    fn transcribe_many_words(&mut self, files: &[PathBuf], lang: &str) -> Vec<Result<Vec<Word>, AsrError>> {
+        self.many(files, lang)
+    }
+
     fn transcribe(&mut self, wav: &Path, lang: &str) -> Result<Vec<Segment>, AsrError> {
         let (pcm, _) = crate::load_wav_16k_mono(wav)?;
         Ok(segment_words(&self.words(&pcm, lang)?, SEG_MAX_GAP, SEG_MAX_DUR))
