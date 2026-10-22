@@ -36,17 +36,20 @@ jobs:
         run: |
           npm ci
           npm run build
-      - name: Find exe
+      - name: Package exe + frontend
         shell: pwsh
         run: |
           $exe = Get-ChildItem -Recurse -File -Filter Dub-Studio.exe -Path target, desktop\src-tauri\target -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -match '\\release\\' } | Select-Object -First 1
           if (-not $exe) { throw "Dub-Studio.exe not found" }
-          New-Item -ItemType Directory -Force out | Out-Null
-          Copy-Item $exe.FullName out\Dub-Studio.exe
-          Get-Item out\Dub-Studio.exe | Format-List FullName, Length
+          if (-not (Test-Path frontend\dist\index.html)) { throw "frontend\dist\index.html not found" }
+          $pkg = 'out\Dub-Studio-lote'
+          New-Item -ItemType Directory -Force "$pkg\frontend" | Out-Null
+          Copy-Item $exe.FullName "$pkg\Dub-Studio.exe"
+          Copy-Item -Recurse frontend\dist "$pkg\frontend\dist"
+          Get-ChildItem -Recurse $pkg | Select-Object FullName, Length | Format-Table -AutoSize | Out-String -Width 300 | Write-Host
       - uses: actions/upload-artifact@v4
         with:
-          name: Dub-Studio-exe
-          path: out/Dub-Studio.exe
+          name: Dub-Studio-lote
+          path: out/Dub-Studio-lote/
           if-no-files-found: error
