@@ -1,0 +1,52 @@
+name: Build exe (lote automatico)
+
+# Monta so o Dub-Studio.exe (sem instalador e sem assinatura) para trocar na pasta portatil.
+on:
+  push:
+    branches: ['lote-automatico']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            desktop/src-tauri -> target
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Desktop exe
+        working-directory: desktop
+        run: |
+          npm ci
+          npm run build
+      - name: Find exe
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Recurse -File -Filter Dub-Studio.exe -Path target, desktop\src-tauri\target -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\release\\' } | Select-Object -First 1
+          if (-not $exe) { throw "Dub-Studio.exe not found" }
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item $exe.FullName out\Dub-Studio.exe
+          Get-Item out\Dub-Studio.exe | Format-List FullName, Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Dub-Studio-exe
+          path: out/Dub-Studio.exe
+          if-no-files-found: error
