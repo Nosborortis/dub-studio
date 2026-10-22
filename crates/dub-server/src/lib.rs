@@ -558,6 +558,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/setup/open-models", post(setup_open_models))
         .route("/setup/browse", post(setup_browse))
         .route("/pick-folder", post(pick_folder))
+        .route("/open-folder", post(open_folder_route))
         .route("/setup/import", post(setup_import))
         .route("/hw/snapshot", get(hw_snapshot))
         .route("/record/devices", get(record_devices))
@@ -2916,6 +2917,23 @@ async fn pick_folder() -> Json<Value> {
     .ok()
     .flatten();
     Json(json!({ "dir": dir.map(|d| d.to_string_lossy().into_owned()) }))
+}
+
+/// POST /open-folder {dir} — открыть существующий каталог в проводнике (batch: папка с готовыми файлами).
+async fn open_folder_route(Json(body): Json<Value>) -> Response {
+    let Some(dir) = body.get("dir").and_then(|v| v.as_str()) else {
+        return (StatusCode::BAD_REQUEST, Json(json!({ "code": "no_dir" }))).into_response();
+    };
+    let dir = PathBuf::from(dir);
+    if !dir.is_dir() {
+        return (StatusCode::NOT_FOUND, Json(json!({ "code": "not_a_folder", "detail": dir.display().to_string() })))
+            .into_response();
+    }
+    if let Err(e) = open_folder(&dir) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({ "code": "open_failed", "detail": format!("{}: {e}", dir.display()) })))
+            .into_response();
+    }
+    Json(json!({ "ok": true, "path": dir.to_string_lossy() })).into_response()
 }
 
 /// POST /projects/{pid}/save-output {dir, name} — скопировать готовый output проекта в папку `dir` под

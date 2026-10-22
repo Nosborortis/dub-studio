@@ -511,6 +511,7 @@ export const api = {
   reveal: (pid: string, name: string) => postJson<{ ok: boolean }>(`/projects/${pid}/reveal`, { name }),   // показать файл в проводнике с выделением
   saveText: (pid: string, name: string, text: string) => postJson<{ ok: boolean; path: string }>(`/projects/${pid}/save-text`, { name, text }),   // записать SRT/TXT в каталог проекта + reveal (webview не качает blob)
   pickFolder: () => postJson<{ dir: string | null }>("/pick-folder", {}),   // нативный диалог выбора папки (batch-экспорт в одну папку)
+  openFolder: (dir: string) => postJson<{ ok: boolean; path: string }>("/open-folder", { dir }),   // открыть папку в проводнике (batch: папка с результатами)
   saveOutput: (pid: string, dir: string, name: string) => postJson<{ ok: boolean; path?: string }>(`/projects/${pid}/save-output`, { dir, name }),   // копия готового output в dir под именем оригинала
   dubUrl: (pid: string, rev = 0) => `${BASE}/projects/${pid}/dub?rev=${rev}`,   // playable dubbed video (frames + dub audio)
   // Джобы: активные и недавние по проекту (+ его job.json), снапшот, отмена, продолжение с места остановки.

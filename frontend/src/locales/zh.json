@@ -598,7 +598,16 @@
     "saveAll": "全部保存到文件夹",
     "back": "返回",
     "add": "添加文件",
-    "filesCount_other": "{{count}} 个文件"
+    "filesCount_other": "{{count}} 个文件",
+    "openDir": "从文件夹批量处理",
+    "noMedia": "该文件夹中没有视频或音频文件",
+    "outDir": "配音文件保存到",
+    "outDirNone": "尚未选择——点击“开始”时会询问",
+    "pickOut": "选择",
+    "openFolder": "打开文件夹",
+    "outDirHint": "每个文件完成后立即以原文件名保存；批处理结束时自动打开该文件夹。请选择与原文件不同的文件夹。",
+    "saved": "已保存：{{path}}",
+    "saveFailed": "已配音，但未能保存到文件夹"
   },
   "transcribe": {
     "title": "转录与说话人分离",

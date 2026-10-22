@@ -610,7 +610,16 @@
     "add": "Añadir archivos",
     "filesCount_one": "{{count}} archivo",
     "filesCount_many": "{{count}} archivos",
-    "filesCount_other": "{{count}} archivos"
+    "filesCount_other": "{{count}} archivos",
+    "openDir": "Lote desde una carpeta",
+    "noMedia": "No hay archivos de vídeo ni de audio en esa carpeta",
+    "outDir": "Guardar los archivos doblados en",
+    "outDirNone": "Aún sin elegir: se preguntará al pulsar Iniciar",
+    "pickOut": "Elegir",
+    "openFolder": "Abrir carpeta",
+    "outDirHint": "Cada archivo se guarda en cuanto está listo, con su nombre original; la carpeta se abre al terminar el lote. Elige una carpeta distinta de la de los originales.",
+    "saved": "Guardado: {{path}}",
+    "saveFailed": "Doblado, pero no se guardó en la carpeta"
   },
   "transcribe": {
     "title": "Transcripción y diarización",

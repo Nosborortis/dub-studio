@@ -829,6 +829,9 @@ const MEDIA_ACCEPT = `${VIDEO_ACCEPT},${AUDIO_ACCEPT}`;
 const AUDIO_EXT = /\.(wav|mp3|flac|m4a|aac|ogg|opus|wma|aiff|aif|alac)$/i;
 // Файл — аудио (без видеодорожки)? По MIME или расширению. Видео-MIME имеет приоритет (напр. .ogv/.m4v).
 const isAudioFile = (f: File) => !f.type.startsWith("video/") && (f.type.startsWith("audio/") || AUDIO_EXT.test(f.name));
+const VIDEO_EXT = /\.(mp4|mov|mkv|avi|webm|m4v|flv|wmv|ts|mpg|mpeg|3gp|ogv|mts|m2ts|vob|f4v)$/i;
+const isMediaFile = (f: File) => f.type.startsWith("video/") || VIDEO_EXT.test(f.name) || isAudioFile(f);
+const byNaturalName = (a: File, b: File) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
 
 // Стиль перевода (#112): пресет -> АНГЛИЙСКАЯ инструкция для Геммы (уходит на бэк как translate_style).
 // "" = обычный (без указаний). "custom" -> берётся свой текст из textarea. Формулировки на английском.
@@ -924,6 +927,9 @@ function DropZone() {
   const s = useStore();
   const inputRef = useRef<HTMLInputElement>(null);
   const batchRef = useRef<HTMLInputElement>(null);
+  const batchDirRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { batchDirRef.current?.setAttribute("webkitdirectory", ""); }, []);
+  const [batchErr, setBatchErr] = useState("");
   const [over, setOver] = useState(false);
   // Дефолты запуска хранит сервис (GET/PATCH /settings/launch): поля формы ниже — их рабочая копия,
   // каждое изменение уходит на сервер, а с сервера форма заполняется при открытии.
@@ -1622,6 +1628,10 @@ function DropZone() {
           <button onClick={() => batchRef.current?.click()}
             className="mt-2 w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-muted)] text-[13px] font-medium hover:text-[var(--color-text)] hover:border-[#3a414c] transition">
             <FolderDown size={15} />{t("batch.open")}</button>
+          <button onClick={() => { setBatchErr(""); batchDirRef.current?.click(); }}
+            className="mt-2 w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-muted)] text-[13px] font-medium hover:text-[var(--color-text)] hover:border-[#3a414c] transition">
+            <FolderOpen size={15} />{t("batch.openDir")}</button>
+          {batchErr && <div className="mt-1.5 text-[12px] text-[var(--color-warn)] text-center">{batchErr}</div>}
           <div className="mt-2 flex items-center justify-center gap-2 text-[12px] text-[var(--color-muted)]">
             <ShieldCheck size={14} className="text-[var(--color-accent-2)]" /> {t("hero.formats")}
           </div>
@@ -1648,9 +1658,23 @@ function DropZone() {
       <input ref={inputRef} type="file" accept={MEDIA_ACCEPT} className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) pickFile(f); }} />
       <input ref={batchRef} type="file" multiple accept={MEDIA_ACCEPT} className="hidden"
-        onChange={(e) => { const fs = [...(e.target.files || [])]; if (fs.length) { batchState.files = fs; batchState.tgt = tgt; batchState.src = src; batchState.audio = audio; batchState.subs = subs; batchState.burn = burn; batchState.detectText = detectText; batchState.funnyOn = funnyOn; batchState.funny = funny; batchState.voGain = voGain; batchState.trStyle = resolveTrStyle(trStyle, trStyleCustom); batchState.keepOrig = keepOrig; batchState.container = container; batchState.voiceSrc = voiceSrc; batchState.slotsM = slotsM; batchState.slotsF = slotsF; s.setStage("batch"); } }} />
+        onChange={(e) => { startBatch([...(e.target.files || [])]); e.target.value = ""; }} />
+      <input ref={batchDirRef} type="file" multiple className="hidden"
+        onChange={(e) => {
+          const all = [...(e.target.files || [])];
+          e.target.value = "";
+          if (all.length === 0) return;
+          const media = all.filter(isMediaFile);
+          if (media.length === 0) { setBatchErr(t("batch.noMedia")); return; }
+          startBatch(media);
+        }} />
     </div>
   );
+
+  function startBatch(picked: File[]) {
+    const fs = [...picked].sort(byNaturalName);
+    if (fs.length) { batchState.files = fs; batchState.tgt = tgt; batchState.src = src; batchState.audio = audio; batchState.subs = subs; batchState.burn = burn; batchState.detectText = detectText; batchState.funnyOn = funnyOn; batchState.funny = funny; batchState.voGain = voGain; batchState.trStyle = resolveTrStyle(trStyle, trStyleCustom); batchState.keepOrig = keepOrig; batchState.container = container; batchState.voiceSrc = voiceSrc; batchState.slotsM = slotsM; batchState.slotsF = slotsF; s.setStage("batch"); }
+  }
 }
 
 // `allowed` — ключи шагов ТЕКУЩЕЙ джобы: стадия отфильтрованного шага (напр. ocr_detect при
@@ -4433,7 +4457,15 @@ function FirstRun() {
 const batchState: { files: File[]; tgt: string; src: string; audio: string; subs: string; burn: boolean; detectText: boolean; funnyOn: boolean; funny: string; voGain: number; trStyle: string; keepOrig: boolean; container: "mp4" | "mkv"; voiceSrc: "clone" | "library"; slotsM: string[]; slotsF: string[] } =
   { files: [], tgt: "ru", src: "auto", audio: "dub", subs: "translate", burn: true, detectText: false, funnyOn: false, funny: "", voGain: -12, trStyle: "", keepOrig: false, container: "mp4", voiceSrc: "clone", slotsM: [], slotsF: [] };
 
-type BatchItem = { name: string; status: "queued" | "analyzing" | "rendering" | "done" | "error"; pid: string | null; pct: number; msg?: string; detail?: string };
+type BatchItem = { name: string; status: "queued" | "analyzing" | "rendering" | "done" | "error"; pid: string | null; pct: number; msg?: string; detail?: string; saved?: string };
+
+const BATCH_OUT_KEY = "dub.batchOutDir";
+function loadBatchOutDir(): string {
+  try { return localStorage.getItem(BATCH_OUT_KEY) ?? ""; } catch { return ""; }
+}
+function storeBatchOutDir(dir: string) {
+  try { localStorage.setItem(BATCH_OUT_KEY, dir); } catch (e) { console.warn("[batch] the output folder was not remembered:", e); }
+}
 
 // Пакетный режим: пачка файлов -> для каждого createProject -> analyze -> (dub/funny) render, последовательно
 // (движок одно-воркерный, GPU сериализует). Переиспользует существующие эндпоинты, отдельного backend не нужно.
@@ -4446,6 +4478,22 @@ function BatchView() {
   const [running, setRunning] = useState(false);
   const [doneN, setDoneN] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [outDir, setOutDir] = useState<string>(loadBatchOutDir);
+  const [folderErr, setFolderErr] = useState("");
+
+  async function chooseOutDir(): Promise<string | null> {
+    const { dir } = await api.pickFolder();
+    if (!dir) return null;
+    setOutDir(dir);
+    storeBatchOutDir(dir);
+    return dir;
+  }
+
+  async function openOutDir(dir: string) {
+    setFolderErr("");
+    try { await api.openFolder(dir); }
+    catch (e) { setFolderErr(`${t("downloads.errOpenFolder")} · ${String(e)}`); }
+  }
 
   const eMode = audio;
   const eSubs = audio === "transcribe" ? "transcribe" : subs;
@@ -4453,7 +4501,11 @@ function BatchView() {
   const doRender = audio === "dub" || audio === "voiceover";
 
   async function start() {
+    const dir = doRender ? (outDir || await chooseOutDir()) : null;
+    if (doRender && !dir) return;
     setRunning(true);
+    setFolderErr("");
+    let savedN = 0;
     for (let i = 0; i < filesRef.current.length; i++) {
       const upd = (patch: Partial<BatchItem>) => setItems((xs) => xs.map((x, j) => (j === i ? { ...x, ...patch } : x)));
       try {
@@ -4481,14 +4533,27 @@ function BatchView() {
           upd({ status: "rendering", pct: 0 });
           const r = await api.render(project_id);
           await api.watchJob(r.job_id, (e) => { if (e.type === "progress") upd({ pct: e.pct ?? 0, detail: e.msg || undefined }); });
+          if (dir) {
+            try {
+              const sv = await api.saveOutput(project_id, dir, bf.name);
+              savedN++;
+              upd({ status: "done", pct: 100, saved: sv.path });
+            } catch (err) {
+              upd({ status: "error", msg: `${t("batch.saveFailed")} · ${String(err)}` });
+            }
+          } else {
+            upd({ status: "done", pct: 100 });
+          }
+        } else {
+          upd({ status: "done", pct: 100 });
         }
-        upd({ status: "done", pct: 100 });
       } catch (err) {
         upd({ status: "error", msg: String(err) });
       }
       setDoneN((n) => n + 1);
     }
     setRunning(false);
+    if (dir && savedN > 0) await openOutDir(dir);
   }
 
   // Сохранить все готовые выходы в ОДНУ выбранную папку под ИСХОДНЫМИ именами (запрос юзера).
@@ -4533,6 +4598,7 @@ function BatchView() {
                   </div>
                 )}
                 {it.status === "error" && <div className="text-[10px] text-[var(--color-warn)] truncate mono">{it.msg}</div>}
+                {it.saved && <div className="text-[10px] text-[var(--color-muted)] truncate mono" title={it.saved}>{t("batch.saved", { path: it.saved })}</div>}
               </div>
               <span className="text-[11px] text-[var(--color-muted)] shrink-0">{t(`batch.${it.status}`)}</span>
               {it.status === "done" && it.pid && (
@@ -4541,6 +4607,24 @@ function BatchView() {
             </div>
           ))}
         </div>
+
+        {doRender && (
+          <div className="mt-3 flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+            <FolderOpen size={15} className="shrink-0 text-[var(--color-accent)]" />
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] text-[var(--color-muted)]">{t("batch.outDir")}</div>
+              <div className="text-[12px] truncate mono" title={outDir || undefined}>{outDir || t("batch.outDirNone")}</div>
+            </div>
+            <button onClick={() => { chooseOutDir().catch((e) => setFolderErr(String(e))); }} disabled={running}
+              className="text-[12px] px-2.5 py-1 rounded-md border border-[var(--color-border)] hover:border-[var(--color-accent)] disabled:opacity-50 shrink-0">{t("batch.pickOut")}</button>
+            {outDir && (
+              <button onClick={() => openOutDir(outDir)}
+                className="text-[12px] text-[var(--color-accent)] inline-flex items-center gap-1 shrink-0 hover:underline"><ExternalLink size={12} />{t("batch.openFolder")}</button>
+            )}
+          </div>
+        )}
+        {doRender && <div className="mt-1 text-[11px] text-[var(--color-muted)]">{t("batch.outDirHint")}</div>}
+        {folderErr && <div className="mt-1 text-[12px] text-[var(--color-warn)]">{folderErr}</div>}
 
         <button onClick={start} disabled={running || items.length === 0}
           className="mt-3 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[var(--color-accent)] text-[var(--color-on-accent)] text-sm font-semibold disabled:opacity-50 hover:brightness-105 transition">

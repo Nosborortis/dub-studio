@@ -610,7 +610,16 @@
     "add": "Adicionar arquivos",
     "filesCount_one": "{{count}} arquivo",
     "filesCount_many": "{{count}} arquivos",
-    "filesCount_other": "{{count}} arquivos"
+    "filesCount_other": "{{count}} arquivos",
+    "openDir": "Lote de uma pasta",
+    "noMedia": "Nenhum arquivo de vídeo ou áudio nessa pasta",
+    "outDir": "Salvar os arquivos dublados em",
+    "outDirNone": "Ainda não escolhida — será perguntada ao clicar em Iniciar",
+    "pickOut": "Escolher",
+    "openFolder": "Abrir pasta",
+    "outDirHint": "Cada arquivo é salvo assim que fica pronto, com o nome original; a pasta abre quando o lote termina. Escolha uma pasta diferente da dos originais.",
+    "saved": "Salvo: {{path}}",
+    "saveFailed": "Dublado, mas não foi salvo na pasta"
   },
   "transcribe": {
     "title": "Transcrição e diarização",

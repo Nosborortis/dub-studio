@@ -610,7 +610,16 @@
     "add": "Ajouter des fichiers",
     "filesCount_one": "{{count}} fichier",
     "filesCount_many": "{{count}} fichiers",
-    "filesCount_other": "{{count}} fichiers"
+    "filesCount_other": "{{count}} fichiers",
+    "openDir": "Lot depuis un dossier",
+    "noMedia": "Aucun fichier vidéo ou audio dans ce dossier",
+    "outDir": "Enregistrer les fichiers doublés dans",
+    "outDirNone": "Pas encore choisi — il sera demandé au clic sur Démarrer",
+    "pickOut": "Choisir",
+    "openFolder": "Ouvrir le dossier",
+    "outDirHint": "Chaque fichier est enregistré dès qu'il est prêt, sous son nom d'origine ; le dossier s'ouvre à la fin du lot. Choisissez un autre dossier que celui des originaux.",
+    "saved": "Enregistré : {{path}}",
+    "saveFailed": "Doublé, mais non enregistré dans le dossier"
   },
   "transcribe": {
     "title": "Transcription et diarisation",

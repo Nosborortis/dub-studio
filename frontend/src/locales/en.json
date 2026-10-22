@@ -77,7 +77,16 @@
     "back": "Back",
     "add": "Add files",
     "filesCount_one": "{{count}} file",
-    "filesCount_other": "{{count}} files"
+    "filesCount_other": "{{count}} files",
+    "openDir": "Batch from a folder",
+    "noMedia": "No video or audio files in that folder",
+    "outDir": "Save dubbed files to",
+    "outDirNone": "Not chosen yet — you will be asked when you press Start",
+    "pickOut": "Choose",
+    "openFolder": "Open folder",
+    "outDirHint": "Each file is saved as soon as it is ready, with its original name; the folder opens when the batch ends. Choose a folder other than the originals.",
+    "saved": "Saved: {{path}}",
+    "saveFailed": "Dubbed, but not saved to the folder"
   },
   "transcribe": {
     "title": "Transcript and diarization",
